@@ -48,6 +48,7 @@ import {
 import { parseProviderModel } from "./models/model-validation.js";
 import { createDirectAgentHandler } from "./session/direct-agent.js";
 import { createRootSessionManager } from "./session/root-session.js";
+import { createGenerationGuard } from "./interactive/generation-guard.js";
 
 const UI_PADDING = { x: 0, y: 0 };
 
@@ -500,17 +501,8 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     /** @type {{ pid?: number, kill?: () => void } | null} */
     let activeBashProc = null;
 
-    /** Monotonically increasing counter; each new operation increments it.
-     *  Late callbacks check their captured generation against the current value. */
-    let operationGeneration = 0;
-
-    /** Check if the given generation is still the current one.
-     *  Returns false when a newer operation has started (i.e., we were canceled).
-     *  @param {number} gen
-     */
-    function generationStillCurrent(gen) {
-        return gen === operationGeneration;
-    }
+    const generationGuard = createGenerationGuard();
+    const generationStillCurrent = generationGuard.isCurrent;
 
     /** Reset UI to idle state regardless of what was running.
      *  Safe to call multiple times (idempotent). */
@@ -708,7 +700,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 }
 
                 // Generation gating: suppress late results if canceled
-                const thisGen = ++operationGeneration;
+                const thisGen = generationGuard.bump();
 
                 try {
                     const activeToolId = `bash-${Date.now()}`;
@@ -878,7 +870,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
             // dispatch actually handled via standard registry for TUI route now.
             // (The `agent` command is handled in the generic registry routing block below.)
 
-            const thisGen = ++operationGeneration;
+            const thisGen = generationGuard.bump();
 
             const { commandRegistry } = await import("../cmd/registry.js");
 
@@ -966,7 +958,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         }
 
         // Generation gating
-        const thisGen = ++operationGeneration;
+        const thisGen = generationGuard.bump();
 
         const images = savedImages;
 
@@ -1035,7 +1027,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         // Intercept Esc: ALWAYS cancels whatever is going on
         if (matchesKey(data, Key.escape)) {
             // 1. Bump generation to suppress late results from whatever is running
-            ++operationGeneration;
+            generationGuard.invalidateAll();
             // 1.5 Clear the submission queue
             submissionQueue.length = 0;
             // 2. Dismiss any active prompt overlay/block

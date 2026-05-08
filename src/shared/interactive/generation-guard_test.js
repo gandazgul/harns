@@ -1,74 +1,62 @@
 import { assert, assertEquals } from "@std/assert";
+import { createGenerationGuard } from "./generation-guard.js";
 
-// ─── Tests for the generation-gating helper pattern used in chat-session.js ───
+// ─── Tests for the real createGenerationGuard() factory ───
 
-/**
- * Simulates the generation-gating pattern:
- * - operationGeneration is a monotonically increasing counter
- * - Each new operation increments it before starting
- * - generationStillCurrent(gen) returns false if a newer operation has started
- */
-function createGenerationGuard() {
-    let operationGeneration = 0;
-
-    function bumpGeneration() {
-        return ++operationGeneration;
-    }
-
-    /** @param {number} gen */
-    function generationStillCurrent(gen) {
-        return gen === operationGeneration;
-    }
-
-    return { bumpGeneration, generationStillCurrent };
-}
-
-Deno.test("generationStillCurrent returns true before any bump", () => {
-    const { bumpGeneration, generationStillCurrent } = createGenerationGuard();
+Deno.test("isCurrent returns true before any bump", () => {
+    const { bump, isCurrent } = createGenerationGuard();
     // Initial generation is 0
-    assertEquals(generationStillCurrent(0), true);
+    assertEquals(isCurrent(0), true);
     // After bump, generation 0 is stale
-    bumpGeneration();
-    assertEquals(generationStillCurrent(0), false);
+    bump();
+    assertEquals(isCurrent(0), false);
 });
 
-Deno.test("generationStillCurrent returns true for current, false for stale", () => {
-    const { bumpGeneration, generationStillCurrent } = createGenerationGuard();
-    const gen1 = bumpGeneration(); // gen1 = 1
-    assertEquals(generationStillCurrent(gen1), true);
+Deno.test("isCurrent returns true for current, false for stale", () => {
+    const { bump, isCurrent } = createGenerationGuard();
+    const gen1 = bump(); // gen1 = 1
+    assertEquals(isCurrent(gen1), true);
 
-    const gen2 = bumpGeneration(); // gen2 = 2
-    assertEquals(generationStillCurrent(gen1), false); // gen1 is stale
-    assertEquals(generationStillCurrent(gen2), true); // gen2 is current
+    const gen2 = bump(); // gen2 = 2
+    assertEquals(isCurrent(gen1), false); // gen1 is stale
+    assertEquals(isCurrent(gen2), true); // gen2 is current
 });
 
 Deno.test("multiple bumps invalidate all previous generations", () => {
-    const { bumpGeneration, generationStillCurrent } = createGenerationGuard();
-    const generations = [bumpGeneration(), bumpGeneration(), bumpGeneration()];
+    const { bump, isCurrent } = createGenerationGuard();
+    const generations = [bump(), bump(), bump()];
     // Only the last one should be current
-    assertEquals(generationStillCurrent(generations[0]), false);
-    assertEquals(generationStillCurrent(generations[1]), false);
-    assertEquals(generationStillCurrent(generations[2]), true);
+    assertEquals(isCurrent(generations[0]), false);
+    assertEquals(isCurrent(generations[1]), false);
+    assertEquals(isCurrent(generations[2]), true);
+});
+
+Deno.test("invalidateAll bumps without exposing the new id", () => {
+    const { bump, isCurrent, invalidateAll } = createGenerationGuard();
+    const gen = bump();
+    assertEquals(isCurrent(gen), true);
+    invalidateAll();
+    assertEquals(isCurrent(gen), false);
 });
 
 Deno.test("late result suppression pattern works correctly", async () => {
-    const { bumpGeneration, generationStillCurrent } = createGenerationGuard();
+    const { bump, isCurrent } = createGenerationGuard();
     /** @type {string[]} */
     const results = [];
 
     // Simulate starting an operation
-    const gen = bumpGeneration();
+    const gen = bump();
 
     // Simulate user pressing Esc BEFORE the async completes
     // (this bumps the generation, making `gen` stale)
-    bumpGeneration();
+    bump();
 
     // Now simulate the async operation completing
     await new Promise((resolve) => {
         /** @type {() => void} */
         const r = /** @type {() => void} */ (resolve);
         setTimeout(() => {
-            if (generationStillCurrent(gen)) {
+            if (isCurrent(gen)) {
                 results.push("completed");
             }
             r();
@@ -80,17 +68,17 @@ Deno.test("late result suppression pattern works correctly", async () => {
 });
 
 Deno.test("completed result is accepted when not canceled", async () => {
-    const { bumpGeneration, generationStillCurrent } = createGenerationGuard();
+    const { bump, isCurrent } = createGenerationGuard();
     /** @type {string[]} */
     const results = [];
 
-    const gen = bumpGeneration();
+    const gen = bump();
 
     await new Promise((resolve) => {
         /** @type {() => void} */
         const r = /** @type {() => void} */ (resolve);
         setTimeout(() => {
-            if (generationStillCurrent(gen)) {
+            if (isCurrent(gen)) {
                 results.push("completed");
             }
             r();
@@ -101,7 +89,9 @@ Deno.test("completed result is accepted when not canceled", async () => {
     assertEquals(results, ["completed"]);
 });
 
-// ─── Tests for cancel callback pattern ───
+// ─── Tests for cancel-callback pattern ───
+// These document the cancel-callback behavior used in chat-session.js
+// (cancelActiveOperation()), not an exported helper.
 
 /** Simulates the cancel flow from chat-session.js */
 function tryCancelOperation(/** @type {(() => void) | null} */ cancelFn) {
@@ -164,7 +154,8 @@ Deno.test("cancel callback that throws does not crash the flow", () => {
     assertEquals(activeOperationCancel, null);
 });
 
-// ─── Tests for bash process kill pattern ───
+// ─── Tests for bash-process kill pattern ───
+// Documents the wasCanceled flag pattern used in chat-session.js bash interception.
 
 Deno.test("bash process kill flag is set on cancel", () => {
     let wasCanceled = false;
