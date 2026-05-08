@@ -4,29 +4,13 @@
  * user interaction — distinct from individual agent invocations (see session.js).
  */
 
-import {
-    CombinedAutocompleteProvider,
-    Container,
-    Editor,
-    Image,
-    Key,
-    matchesKey,
-    Spacer,
-    Text,
-} from "@mariozechner/pi-tui";
-import { ModelSelectorComponent } from "@mariozechner/pi-coding-agent";
+import { CombinedAutocompleteProvider, Container, Editor, Key, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
 import { initTUI, stopTUI } from "./ui/tui.js";
-import { getEditorTheme, imageTheme, initHarnsTheme, theme } from "./ui/theme.js";
+import { getEditorTheme, initHarnsTheme, theme } from "./ui/theme.js";
 import { readClipboardImage } from "./clipboard.js";
 import { createUiApi } from "./ui/api.js";
 import { SpinnerBlock } from "./ui/blocks.js";
-import {
-    abortActiveSession,
-    listPromptTemplates,
-    listSkills,
-    runAgentSession,
-    steerRootSession,
-} from "./session/session.js";
+import { abortActiveSession, listPromptTemplates, runAgentSession, steerRootSession } from "./session/session.js";
 import { cancelActivePlanReview } from "./workflow/submit-plan.js";
 import { ensureMnemosyneBinary } from "./runtime-preflight.js";
 import { commandRegistry } from "../cmd/registry.js";
@@ -49,6 +33,9 @@ import { parseProviderModel } from "./models/model-validation.js";
 import { createDirectAgentHandler } from "./session/direct-agent.js";
 import { createRootSessionManager } from "./session/root-session.js";
 import { createGenerationGuard } from "./interactive/generation-guard.js";
+import { restorePersistedMessagesToUi } from "./interactive/message-hydration.js";
+import { installUiApiOverrides } from "./interactive/ui-api-overrides.js";
+import { renderBootBanner } from "./interactive/boot-banner.js";
 
 const UI_PADDING = { x: 0, y: 0 };
 
@@ -56,14 +43,6 @@ const CHAT_PROMPT_AGENT_NAME = "operator";
 
 /** @type {Set<string>} */
 export let CHAT_BUILTIN_SLASH_NAMES = new Set();
-
-/**
- * @param {{ name: string, source: "local" | "home" | "bundled" }} template
- */
-function toUserFacingPromptPath(template) {
-    if (template.source === "local") return `./.hns/prompts/${template.name}.md`;
-    return `~/.hns/prompts/${template.name}.md`;
-}
 
 /**
  * Update the active agent and its message handler dynamically.
@@ -155,168 +134,6 @@ export function resolveTemplateModel(templateModel, modelRegistry) {
 
     const configuredModel = /** @type {{ provider: string, id: string }} */ (resolvedModel);
     return { ok: true, provider: configuredModel.provider, id: configuredModel.id };
-}
-
-/**
- * @param {{ type?: string, text?: string, [key: string]: unknown }} block
- * @returns {string}
- */
-function blockToDisplayText(block) {
-    if (!block || typeof block !== "object") return "";
-
-    if (block.type === "text") {
-        return typeof block.text === "string" ? block.text : "";
-    }
-
-    if (block.type === "thinking") {
-        return typeof block.thinking === "string" ? block.thinking : "";
-    }
-
-    if (block.type === "tool_result") {
-        const content = block.content;
-        if (typeof content === "string") {
-            return content;
-        }
-        if (Array.isArray(content)) {
-            return content
-                .map((part) => {
-                    if (part && typeof part === "object" && part.type === "text" && typeof part.text === "string") {
-                        return part.text;
-                    }
-                    return "";
-                })
-                .filter(Boolean)
-                .join("\n");
-        }
-        return "";
-    }
-
-    // Non-textual blocks are rendered separately (e.g. tool blocks, images) or ignored.
-    return "";
-}
-
-/**
- * @param {unknown} message
- * @returns {string}
- */
-function messageToDisplayText(message) {
-    if (!message || typeof message !== "object") return "";
-
-    const content = /** @type {{ content?: unknown }} */ (message).content;
-    if (typeof content === "string") return content;
-    if (!Array.isArray(content)) return "";
-
-    return content
-        .map((block) =>
-            blockToDisplayText(/** @type {{ type?: string, text?: string, [key: string]: unknown }} */ (block))
-        )
-        .filter(Boolean)
-        .join("\n\n")
-        .trim();
-}
-
-/**
- * @param {import('@mariozechner/pi-coding-agent').SessionManager} sessionManager
- * @param {import('./ui/types.js').UiAPI} uiAPI
- */
-export function restorePersistedMessagesToUi(sessionManager, uiAPI) {
-    const context = sessionManager.buildSessionContext();
-    const messages = Array.isArray(context?.messages) ? context.messages : [];
-    if (messages.length === 0) return;
-
-    for (const message of messages) {
-        if (!message || typeof message !== "object") continue;
-
-        const role = /** @type {{ role?: string }} */ (message).role;
-
-        if (role === "custom") {
-            const display = /** @type {{ display?: boolean }} */ (message).display;
-            if (display === false) continue;
-            const text = messageToDisplayText(message);
-            if (text) uiAPI.appendSystemMessage(text);
-            continue;
-        }
-
-        if (role === "assistant") {
-            const content = /** @type {{ content?: unknown }} */ (message).content;
-
-            if (Array.isArray(content)) {
-                /** @type {{ appendText: (delta: string) => void } | null} */
-                let appender = null;
-
-                for (const block of content) {
-                    if (!block || typeof block !== "object") continue;
-
-                    const typedBlock =
-                        /** @type {{ type?: string, text?: unknown, thinking?: unknown, name?: unknown, id?: unknown }} */ (block);
-
-                    if (typedBlock.type === "thinking") {
-                        if (typeof typedBlock.thinking === "string" && typedBlock.thinking.trim()) {
-                            uiAPI.appendSystemMessage(typedBlock.thinking);
-                        }
-                        continue;
-                    }
-
-                    if (typedBlock.type === "text") {
-                        if (typeof typedBlock.text === "string" && typedBlock.text) {
-                            if (!appender) {
-                                appender = uiAPI.appendAgentMessageStart(getActiveAgentName() || "assistant");
-                            }
-                            appender.appendText(typedBlock.text);
-                        }
-                        continue;
-                    }
-
-                    if (typedBlock.type === "tool_use") {
-                        const toolName = typeof typedBlock.name === "string" ? typedBlock.name : "tool";
-                        const toolId = typeof typedBlock.id === "string"
-                            ? typedBlock.id
-                            : `restored-tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                        const toolBlock = uiAPI.startToolExecution?.(toolId, toolName, "");
-                        toolBlock?.endExecution(false, 0);
-                    }
-                }
-                continue;
-            }
-
-            const text = messageToDisplayText(message);
-            if (text) {
-                const appender = uiAPI.appendAgentMessageStart(getActiveAgentName() || "assistant");
-                appender.appendText(text);
-            }
-            continue;
-        }
-
-        if (role === "user") {
-            const text = messageToDisplayText(message);
-            if (text) {
-                uiAPI.appendUserMessage?.(text);
-            }
-
-            const content = /** @type {{ content?: unknown }} */ (message).content;
-            if (Array.isArray(content)) {
-                for (const block of content) {
-                    if (
-                        block && typeof block === "object" &&
-                        /** @type {{ type?: string }} */ (block).type === "image" &&
-                        typeof /** @type {{ data?: unknown }} */ (block).data === "string" &&
-                        typeof /** @type {{ mimeType?: unknown }} */ (block).mimeType === "string"
-                    ) {
-                        uiAPI.appendImage?.(
-                            /** @type {{ data: string }} */ (block).data,
-                            /** @type {{ mimeType: string }} */ (block).mimeType,
-                        );
-                    }
-                }
-            }
-            continue;
-        }
-
-        const fallbackText = messageToDisplayText(message);
-        if (fallbackText) {
-            uiAPI.appendSystemMessage(fallbackText);
-        }
-    }
 }
 
 /**
@@ -536,83 +353,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         return false;
     }
 
-    // Chat session specific UI overrides/extensions
-    uiAPI.setAgentInfo = (agentName, agentModel) => {
-        setActiveAgentName(agentName);
-        if (agentModel) {
-            const slashIndex = agentModel.indexOf("/");
-            if (slashIndex > 0) {
-                setActiveModelState(agentModel, agentModel.slice(0, slashIndex));
-            } else {
-                setActiveModelState(agentModel);
-            }
-        }
-        tui.requestRender();
-    };
-
-    uiAPI.disableInput = () => {
-        if (editor) {
-            // editor.disableSubmit = true;
-            tui.requestRender();
-        }
-    };
-
-    uiAPI.enableInput = () => {
-        if (editor) {
-            editor.disableSubmit = false;
-            tui.requestRender();
-        }
-    };
-
-    uiAPI.showModelSelector = () => {
-        return new Promise((resolve) => {
-            const settingsManager = getSettingsManager();
-            const modelRegistry = getModelRegistry();
-            const activeModelState = getActiveModelState();
-            const currentModel = modelRegistry.find(activeModelState.provider, activeModelState.model);
-
-            let settled = false;
-            const restoreSelector = () => {
-                if (settled) return;
-                settled = true;
-                container.removeChild(selector);
-                container.addChild(editor);
-                tui.setFocus(editor);
-                tui.requestRender();
-                resolve();
-            };
-
-            const selector = new ModelSelectorComponent(
-                tui,
-                currentModel,
-                settingsManager,
-                modelRegistry,
-                [], // No scoped models for now
-                (model) => {
-                    setActiveModel(model.id, model.provider);
-                    restoreSelector();
-                },
-                () => {
-                    restoreSelector();
-                },
-            );
-
-            container.removeChild(editor);
-            container.addChild(selector);
-            tui.setFocus(selector);
-            tui.requestRender();
-        });
-    };
-
-    uiAPI.appendImage = (base64, mimeType) => {
-        if (uiAPI.isOutputSuppressed?.()) return;
-        const img = new Image(base64, mimeType, imageTheme, {
-            maxWidthCells: 60,
-            maxHeightCells: 20,
-        });
-        messageList.addChild(img);
-        tui.requestRender();
-    };
+    installUiApiOverrides({ uiAPI, tui, editor, container, messageList, setActiveModel });
 
     // @ts-ignore: TS doesn't know about pi-tui Editor internals
     editor.onFocus = () => {
@@ -1115,36 +856,12 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         originalHandleInput(data);
     };
 
-    // User-facing prompt listing and collision warnings — boot summary block.
-    const peachStyle = { headingColor: "mdHeading" };
-    if (invokablePromptTemplates.length > 0) {
-        const names = invokablePromptTemplates.map((template) => `/${template.name}`).join(", ");
-        uiAPI.appendSystemMessage(
-            `${names} (slash commands execute via ${CHAT_PROMPT_AGENT_NAME})`,
-            false,
-            `Loaded prompt templates (${invokablePromptTemplates.length}):`,
-            peachStyle,
-        );
-    } else {
-        uiAPI.appendSystemMessage("none", false, "Loaded prompt templates:", peachStyle);
-    }
-
-    const skills = await listSkills();
-    if (skills && skills.length > 0) {
-        const skillNames = skills.map((s) => s.name).join(", ");
-        uiAPI.appendSystemMessage(skillNames, false, `Loaded skills (${skills.length}):`, peachStyle);
-    } else {
-        uiAPI.appendSystemMessage("none", false, "Loaded skills:", peachStyle);
-    }
-
-    for (const blocked of blockedPromptTemplates) {
-        if (blocked.source !== "local" && blocked.source !== "home") continue;
-        const userPath = toUserFacingPromptPath(blocked);
-        uiAPI.appendSystemMessage(
-            `Warning: ${userPath} command can't be invoked because it would override Harns built-in commands. Please rename it.`,
-            true,
-        );
-    }
+    await renderBootBanner({
+        uiAPI,
+        invokablePromptTemplates,
+        blockedPromptTemplates,
+        chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
+    });
 
     // Hydrate TUI from persisted root-session history (e.g. --continue)
     // Keep this after startup system notices so those appear first.

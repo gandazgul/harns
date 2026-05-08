@@ -5,7 +5,7 @@
 
 import { getHarnsSessionDir } from "../../shared/session/root-session.js";
 import { setRootSessionManager } from "../../shared/session/session-state.js";
-import { restorePersistedMessagesToUi } from "../../shared/chat-session.js";
+import { restorePersistedMessagesToUi } from "../../shared/interactive/message-hydration.js";
 
 /**
  * Handle resume session command.
