@@ -1,11 +1,11 @@
 /**
- * @module shared/direct-agent
+ * @module shared/session/direct-agent
  * Handler for direct agent invocation — sends user prompts straight to
  * a named agent, bypassing the router triage flow. The agent takes over
  * the TUI with full streaming output (not suppressed like parallel tasks).
  */
 
-import { runAgentSession } from "./session/session.js";
+import { runAgentSession } from "./session.js";
 
 /**
  * Create an onMessage handler that sends prompts directly to a specific agent.
@@ -14,7 +14,7 @@ import { runAgentSession } from "./session/session.js";
  * signature used by `setActiveAgent()` / `startInteractiveSession()`.
  *
  * @param {string} agentName - Agent definition name (filename without .md)
- * @returns {import('./session/types.js').AgentMessageHandler}
+ * @returns {import('./types.js').AgentMessageHandler}
  */
 export function createDirectAgentHandler(agentName) {
     return async (userRequest, images, uiAPI, sessionManager) => {

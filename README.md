@@ -245,18 +245,13 @@ Harns updates these statuses during the review loop and resume flow.
     ├── plan-store.js        # Plan persistence/front matter utilities
     ├── prompt-templates/    # Reusable prompt template files
     ├── shared/              # Shared core modules
-    │   ├── agents.js        # Agent resolution & loading
     │   ├── chat-session.js  # Interactive TUI session
     │   ├── clipboard.js     # Clipboard utilities
-    │   ├── direct-agent.js  # Direct single-agent execution
-    │   ├── input.js         # Input parsing helpers
     │   ├── models/          # Model registry & validation
-    │   ├── output-sanitize.js
-    │   ├── prompts.js       # Prompt construction helpers
     │   ├── runtime-preflight.js
-    │   ├── session/         # Session state management
-    │   ├── tui.js           # Terminal UI helpers
-    │   ├── ui/              # UI component blocks & theme
+    │   ├── session/         # Session state, agent discovery, direct-agent handler
+    │   ├── settings.js      # Settings manager singleton
+    │   ├── ui/              # UI components, theme, TUI singleton, prompt overlays
     │   └── workflow/        # Plan workflow & Plannotator review
     └── tools/               # Agent-accessible tool implementations
         ├── plan-written.js

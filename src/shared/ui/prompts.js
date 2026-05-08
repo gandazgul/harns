@@ -1,12 +1,27 @@
 /**
- * @module shared/prompts
+ * @module shared/ui/prompts
  * Interactive user-facing prompt helpers for TUI overlays and stdin fallback.
  */
 
 import { Container, Input, SelectList, Text } from "@mariozechner/pi-tui";
 import { getTUI } from "./tui.js";
-import { readUserInput } from "./input.js";
-import { getSelectListTheme, theme } from "./ui/theme.js";
+import { getSelectListTheme, theme } from "./theme.js";
+
+/**
+ * Read a single line-ish response from stdin (fallback used when no TUI is active).
+ *
+ * @param {number} [maxBytes=256]
+ * @returns {Promise<string>}
+ */
+async function readUserInput(maxBytes = 256) {
+    const buf = new Uint8Array(maxBytes);
+    const bytesRead = await Deno.stdin.read(buf);
+    if (bytesRead === null) return "";
+    return new TextDecoder()
+        .decode(buf.subarray(0, bytesRead))
+        .replaceAll("\0", "")
+        .trim();
+}
 
 /**
  * @returns {{ tui: import('@mariozechner/pi-tui').TUI } | null}

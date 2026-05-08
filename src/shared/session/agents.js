@@ -1,9 +1,9 @@
 /**
- * @module shared/agents
+ * @module shared/session/agents
  * Agent discovery — scans agent definitions (bundled + overrides) and returns merged metadata.
  */
 
-import { listAgentDefNames, loadAgentDef } from "./session/session.js";
+import { listAgentDefNames, loadAgentDef } from "./session.js";
 
 /**
  * @typedef {Object} AgentInfo
@@ -32,8 +32,11 @@ export async function listAvailableAgents() {
                 description: def.description || "",
                 model: def.model || "unknown",
             });
-        } catch {
-            // Skip unreadable or invalid files
+        } catch (err) {
+            // Surface malformed agent definitions instead of silently dropping them.
+            console.error(
+                `[Harns] Skipping agent "${name}": ${err instanceof Error ? err.message : String(err)}`,
+            );
         }
     }
 

@@ -6,8 +6,8 @@
 import { Type } from "@mariozechner/pi-ai";
 import { defineTool } from "@mariozechner/pi-coding-agent";
 import { getActiveUiAPI, setActiveAgent } from "../shared/chat-session.js";
-import { createDirectAgentHandler } from "../shared/direct-agent.js";
-import { listAvailableAgents } from "../shared/agents.js";
+import { createDirectAgentHandler } from "../shared/session/direct-agent.js";
+import { listAvailableAgents } from "../shared/session/agents.js";
 
 /**
  * Trigger the target agent with the given reason.

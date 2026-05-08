@@ -1,4 +1,4 @@
-import { listAvailableAgents } from "../../shared/agents.js";
+import { listAvailableAgents } from "../../shared/session/agents.js";
 
 /**
  * @param {string} argumentPrefix

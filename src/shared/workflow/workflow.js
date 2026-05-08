@@ -14,7 +14,7 @@ import quikdownAst from "quikdown/ast";
 import { CWD, MAX_PARALLEL_TASKS } from "../../constants.js";
 import { loadPlan, updatePlanStatus } from "../../plan-store.js";
 import { runAgentSession } from "../session/session.js";
-import { confirm, select } from "../prompts.js";
+import { confirm, select } from "../ui/prompts.js";
 
 /**
  * Extract the last text output from the agent's assistant messages.

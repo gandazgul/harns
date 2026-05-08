@@ -15,7 +15,7 @@ import {
     Text,
 } from "@mariozechner/pi-tui";
 import { ModelSelectorComponent } from "@mariozechner/pi-coding-agent";
-import { initTUI, stopTUI } from "./tui.js";
+import { initTUI, stopTUI } from "./ui/tui.js";
 import { getEditorTheme, imageTheme, initHarnsTheme, theme } from "./ui/theme.js";
 import { readClipboardImage } from "./clipboard.js";
 import { createUiApi } from "./ui/api.js";
@@ -46,7 +46,7 @@ import {
     setRootSessionManager,
 } from "./session/session-state.js";
 import { parseProviderModel } from "./models/model-validation.js";
-import { createDirectAgentHandler } from "./direct-agent.js";
+import { createDirectAgentHandler } from "./session/direct-agent.js";
 import { createRootSessionManager } from "./session/root-session.js";
 
 const UI_PADDING = { x: 0, y: 0 };
@@ -727,7 +727,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
 
                     if (isExcluded) {
                         try {
-                            const { stopTUI, initTUI } = await import("./tui.js");
+                            const { stopTUI, initTUI } = await import("./ui/tui.js");
                             stopTUI();
                             const cmd = new Deno.Command("sh", {
                                 args: ["-c", command],

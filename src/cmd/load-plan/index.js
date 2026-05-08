@@ -21,7 +21,7 @@ import {
     startInteractiveSession as startInteractiveSessionFn,
 } from "../../shared/chat-session.js";
 import { resetTuiState as resetTuiStateFn } from "../command-helpers.js";
-import { createDirectAgentHandler as createDirectAgentHandlerFn } from "../../shared/direct-agent.js";
+import { createDirectAgentHandler as createDirectAgentHandlerFn } from "../../shared/session/direct-agent.js";
 export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
 
 /**

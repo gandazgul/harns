@@ -5,7 +5,7 @@
 
 import { StringEnum, Type } from "@mariozechner/pi-ai";
 import { defineTool } from "@mariozechner/pi-coding-agent";
-import { promptText, select } from "../shared/prompts.js";
+import { promptText, select } from "../shared/ui/prompts.js";
 
 const OTHER_VALUE = "other";
 

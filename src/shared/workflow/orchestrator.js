@@ -19,7 +19,7 @@
 import { CWD } from "../../constants.js";
 import { ensurePlansDir } from "../../plan-store.js";
 import { setActiveAgent } from "../chat-session.js";
-import { createDirectAgentHandler } from "../direct-agent.js";
+import { createDirectAgentHandler } from "../session/direct-agent.js";
 import { runAgentSession } from "../session/session.js";
 import { executePlan, runPlanningAgent } from "./workflow.js";
 
