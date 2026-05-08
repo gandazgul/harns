@@ -4,14 +4,12 @@
  * user interaction — distinct from individual agent invocations (see session.js).
  */
 
-import { CombinedAutocompleteProvider, Container, Editor, Key, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
-import { initTUI, stopTUI } from "./ui/tui.js";
+import { CombinedAutocompleteProvider, Container, Editor, Spacer, Text } from "@mariozechner/pi-tui";
+import { initTUI } from "./ui/tui.js";
 import { getEditorTheme, initHarnsTheme, theme } from "./ui/theme.js";
-import { readClipboardImage } from "./clipboard.js";
 import { createUiApi } from "./ui/api.js";
 import { SpinnerBlock } from "./ui/blocks.js";
-import { abortActiveSession, listPromptTemplates, steerRootSession } from "./session/session.js";
-import { cancelActivePlanReview } from "./workflow/submit-plan.js";
+import { listPromptTemplates, steerRootSession } from "./session/session.js";
 import { ensureMnemosyneBinary } from "./runtime-preflight.js";
 import { commandRegistry } from "../cmd/registry.js";
 import { getModelRegistry } from "./models/model-registry.js";
@@ -37,6 +35,7 @@ import { installUiApiOverrides } from "./interactive/ui-api-overrides.js";
 import { renderBootBanner } from "./interactive/boot-banner.js";
 import { handleBashCommand } from "./interactive/bash-interceptor.js";
 import { handleSlashCommand } from "./interactive/slash-dispatch.js";
+import { installKeybindings } from "./interactive/keybindings.js";
 
 const UI_PADDING = { x: 0, y: 0 };
 
@@ -517,102 +516,18 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // Re-render UI after handling pasted images
     tui.requestRender();
 
-    let lastCtrlC = 0;
-
-    // Custom keybindings for Editor
-    const originalHandleInput = editor.handleInput.bind(editor);
-    /** @param {string} data */
-    editor.handleInput = async (data) => {
-        // Intercept Esc: ALWAYS cancels whatever is going on
-        if (matchesKey(data, Key.escape)) {
-            // 1. Bump generation to suppress late results from whatever is running
-            generationGuard.invalidateAll();
-            // 1.5 Clear the submission queue
-            submissionQueue.length = 0;
-            // 2. Dismiss any active prompt overlay/block
-            dismissActivePrompt();
-            // 3. Cancel active operation (bash, registered callback, etc.)
-            const opCanceled = cancelActiveOperation();
-            // 4. Fall back to abort active agent session
-            const sessionAborted = abortActiveSession();
-            // 5. Fall back to cancel active plan review wait
-            const planCanceled = cancelActivePlanReview();
-            // 6. Always force-reset UI to idle
-            forceResetUI();
-            // 7. Give user feedback about what was canceled
-            if (opCanceled) {
-                uiAPI.appendSystemMessage("Operation canceled.", false, "Harns");
-            } else if (sessionAborted) {
-                uiAPI.appendSystemMessage("Agent run canceled.", false, "Harns");
-            } else if (planCanceled) {
-                uiAPI.appendSystemMessage("Plan review canceled.", false, "Harns");
-            }
-            tui.requestRender();
-            return;
-        }
-
-        // Intercept Ctrl+C
-        if (matchesKey(data, Key.ctrl("c"))) {
-            const now = Date.now();
-            if (now - lastCtrlC < 1000) {
-                stopTUI();
-                setTimeout(() => Deno.exit(0), 100);
-                return;
-            } else {
-                lastCtrlC = now;
-                const aborted = abortActiveSession();
-                if (aborted) {
-                    uiAPI.appendSystemMessage("Keyboard interrupt. Press again to quit.", false, "Harns");
-                    tui.requestRender();
-                }
-                return;
-            }
-        }
-
-        // Ctrl+V for paste image
-        if (matchesKey(data, Key.ctrl("v"))) {
-            const img = await readClipboardImage();
-            if (img) {
-                pastedImages.push(img);
-                previewImages.addChild(
-                    new Text(theme.fg("dim", `[Attached image: ${img.mimeType}]`)),
-                );
-                tui.requestRender();
-            }
-            return;
-        }
-        // Ctrl+O toggles expand/collapse for tool output blocks
-        if (matchesKey(data, Key.ctrl("o"))) {
-            if (uiAPI.toggleToolOutputsExpanded) {
-                uiAPI.toggleToolOutputsExpanded();
-                tui.requestRender();
-                return;
-            }
-        }
-
-        // Shift+Enter or Alt+Enter for new line
-        if (
-            matchesKey(data, Key.shift("enter")) || matchesKey(data, Key.alt("enter"))
-        ) {
-            // @ts-ignore: private pi-tui internals used intentionally
-            editor.addNewLine();
-            tui.requestRender();
-            return;
-        }
-        // Delete pasted images when editor is empty
-        if (
-            matchesKey(data, Key.backspace) &&
-            // @ts-ignore: private pi-tui internals used intentionally
-            editor.isEditorEmpty() && pastedImages.length > 0
-        ) {
-            pastedImages.pop();
-            const lastChild = previewImages.children[previewImages.children.length - 1];
-            if (lastChild) previewImages.removeChild(lastChild);
-            tui.requestRender();
-            return;
-        }
-        originalHandleInput(data);
-    };
+    const originalHandleInput = installKeybindings({
+        editor,
+        tui,
+        uiAPI,
+        pastedImages,
+        previewImages,
+        submissionQueue,
+        generationGuard,
+        cancelActiveOperation,
+        dismissActivePrompt,
+        forceResetUI,
+    });
 
     await renderBootBanner({
         uiAPI,
