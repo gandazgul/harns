@@ -104,7 +104,11 @@ export function restorePersistedMessagesToUi(sessionManager, uiAPI) {
 
                     if (typedBlock.type === "thinking") {
                         if (typeof typedBlock.thinking === "string" && typedBlock.thinking.trim()) {
-                            uiAPI.appendSystemMessage(typedBlock.thinking);
+                            const thinkingAppender = uiAPI.appendThinkingStart?.();
+                            if (thinkingAppender) {
+                                thinkingAppender.appendDelta(typedBlock.thinking);
+                                thinkingAppender.end();
+                            }
                         }
                         continue;
                     }

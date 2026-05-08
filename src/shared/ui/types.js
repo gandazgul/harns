@@ -26,6 +26,7 @@
 
 /**
  * @typedef {{
+ *   appendThinkingStart?: () => { appendDelta: (delta: string) => void; end: () => void },
  *   appendSystemMessage: (text: string, isError?: boolean, header?: string, style?: { headingColor?: string }) => void,
  *   appendAgentMessageStart: (agentName: string) => AgentMessageAppender,
  *   appendUserMessage?: (text: string) => void,

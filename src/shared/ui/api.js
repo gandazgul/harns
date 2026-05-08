@@ -4,6 +4,7 @@ import {
     PromptSelectBlock,
     PromptTextBlock,
     SystemMessageBlock,
+    ThinkingBlock,
     ToolExecutionBlock,
     UserPromptBlock,
 } from "./blocks.js";
@@ -41,6 +42,28 @@ export function createUiApi(tui, messageList, spinner) {
     };
 
     return {
+        /**
+         * Start streaming a thinking block into the message list.
+         * @returns {{ appendDelta: (delta: string) => void, end: () => void }}
+         */
+        appendThinkingStart: () => {
+            if (outputSuppressed) {
+                return { appendDelta: () => {}, end: () => {} };
+            }
+            const block = new ThinkingBlock();
+            messageList.addChild(block);
+            messageList.addChild(new Spacer(1));
+            tui.requestRender();
+            return {
+                /** @param {string} delta */
+                appendDelta: (delta) => {
+                    block.appendText(delta);
+                    tui.requestRender();
+                },
+                end: () => {},
+            };
+        },
+
         /** @param {string} text */
         appendUserMessage: (text) => {
             if (outputSuppressed) return;

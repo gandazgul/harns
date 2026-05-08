@@ -800,21 +800,14 @@ export async function runAgentSession(
     let currentMarkdownBlock = null;
     /** @type {string[]} */
     const invokedToolNames = [];
-    let pendingThinkingText = "";
+    /** @type {{ appendDelta: (delta: string) => void, end: () => void } | null} */
+    let currentThinkingStream = null;
 
-    const flushThinking = () => {
-        if (!pendingThinkingText.trim()) {
-            pendingThinkingText = "";
-            return;
+    const endThinking = () => {
+        if (currentThinkingStream) {
+            currentThinkingStream.end();
+            currentThinkingStream = null;
         }
-
-        if (uiAPI) {
-            uiAPI.appendSystemMessage(pendingThinkingText);
-        } else {
-            console.log(`\n${pendingThinkingText}`);
-        }
-
-        pendingThinkingText = "";
     };
 
     session.subscribe((event) => {
@@ -825,23 +818,30 @@ export async function runAgentSession(
                     // We only create assistant blocks lazily when we receive actual text deltas
                     // (or when rendering an assistant error on message_end).
                     currentMarkdownBlock = null;
-                    pendingThinkingText = "";
+                    endThinking();
                 }
                 break;
             }
             case "message_update": {
                 if (event.assistantMessageEvent.type === "thinking_delta") {
-                    pendingThinkingText += event.assistantMessageEvent.delta;
+                    if (!currentThinkingStream && uiAPI) {
+                        currentThinkingStream = uiAPI.appendThinkingStart?.() ?? null;
+                    }
+                    if (currentThinkingStream) {
+                        currentThinkingStream.appendDelta(event.assistantMessageEvent.delta);
+                    } else {
+                        console.log(event.assistantMessageEvent.delta);
+                    }
                     break;
                 }
 
                 if (event.assistantMessageEvent.type === "thinking_end") {
-                    flushThinking();
+                    endThinking();
                     break;
                 }
 
                 if (event.assistantMessageEvent.type === "text_delta") {
-                    flushThinking();
+                    endThinking();
                     if (uiAPI) {
                         if (!currentMarkdownBlock) {
                             currentMarkdownBlock = uiAPI.appendAgentMessageStart(
@@ -860,7 +860,7 @@ export async function runAgentSession(
             }
             case "message_end": {
                 if (event.message.role === "assistant") {
-                    flushThinking();
+                    endThinking();
                 }
 
                 if (
@@ -1017,9 +1017,9 @@ export async function runAgentSession(
         activeSessions.delete(session);
         if (isRoot) setRootAgentSession(null);
 
-        // Defensive cleanup: clear pending thinking buffer and force idle UI state.
+        // Defensive cleanup: end any active thinking stream and force idle UI state.
         // This handles abort/error edge paths where turn_end events may never fire.
-        pendingThinkingText = "";
+        endThinking();
         if (uiAPI) {
             try {
                 if (uiAPI.setBusy) uiAPI.setBusy(false);

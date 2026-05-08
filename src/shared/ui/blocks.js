@@ -165,6 +165,41 @@ export class UserPromptBlock {
 }
 
 /**
+ * Thinking Block.
+ * Muted, streaming display of model reasoning. No background — visually
+ * distinct from the vibrant AgentMessageBlock and from styled tool/system
+ * blocks, so a thinking pass can sit cleanly between agent text and a tool
+ * execution without colliding with their backgrounds.
+ */
+export class ThinkingBlock {
+    constructor() {
+        this.container = new Container();
+        this.container.addChild(new Text(theme.fg("dim", "✻ Thinking..."), 0, 0));
+
+        this.currentText = "";
+        this.body = new Text("", 0, 0);
+        this.container.addChild(this.body);
+        this.container.addChild(new Spacer(1));
+    }
+
+    /** @param {string} delta */
+    appendText(delta) {
+        this.currentText += delta;
+        this.body.setText(theme.fg("thinkingText", this.currentText));
+        this.invalidate();
+    }
+
+    invalidate() {
+        this.container.invalidate();
+    }
+
+    /** @param {number} w */
+    render(w) {
+        return this.container.render(w);
+    }
+}
+
+/**
  * Agent Message Block (Markdown).
  * Renders without a background, matching the upstream Pi style.
  */
