@@ -3,7 +3,7 @@
  * Handler for the model listing and switching command.
  */
 
-import { setActiveModel as setActiveModelFn } from "../../shared/chat-session.js";
+import { setActiveModel as setActiveModelFn } from "../../shared/interactive/chat-session.js";
 import { getModelRegistry as getModelRegistryFn } from "../../shared/models/model-registry.js";
 import { parseProviderModel as parseProviderModelFn } from "../../shared/models/model-validation.js";
 export { getModelCompletions } from "./getArgumentCompletions.js";

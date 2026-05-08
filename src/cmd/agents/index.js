@@ -7,7 +7,7 @@ import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 import {
     setActiveAgent as setActiveAgentFn,
     startInteractiveSession as startInteractiveSessionFn,
-} from "../../shared/chat-session.js";
+} from "../../shared/interactive/chat-session.js";
 import { listAvailableAgents as listAvailableAgentsFn } from "../../shared/session/agents.js";
 import { COMMAND_NAMES } from "../../constants.js";
 import { createDirectAgentHandler as createDirectAgentHandlerFn } from "../../shared/session/direct-agent.js";

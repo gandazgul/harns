@@ -5,7 +5,7 @@
 
 import { Type } from "@mariozechner/pi-ai";
 import { defineTool } from "@mariozechner/pi-coding-agent";
-import { getActiveUiAPI, setActiveAgent } from "../shared/chat-session.js";
+import { getActiveUiAPI, setActiveAgent } from "../shared/interactive/chat-session.js";
 import { createDirectAgentHandler } from "../shared/session/direct-agent.js";
 import { listAvailableAgents } from "../shared/session/agents.js";
 

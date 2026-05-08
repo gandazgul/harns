@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { parseProviderModel } from "./model-validation.js";
-import { resolveTemplateModel } from "../chat-session.js";
+import { resolveTemplateModel } from "../interactive/chat-session.js";
 
 Deno.test("parseProviderModel accepts strict provider/id", () => {
     const parsed = parseProviderModel("openai/gpt-4.1");

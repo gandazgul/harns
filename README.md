@@ -245,8 +245,8 @@ Harns updates these statuses during the review loop and resume flow.
     ├── plan-store.js        # Plan persistence/front matter utilities
     ├── prompt-templates/    # Reusable prompt template files
     ├── shared/              # Shared core modules
-    │   ├── chat-session.js  # Interactive TUI session
     │   ├── clipboard.js     # Clipboard utilities
+    │   ├── interactive/     # Interactive TUI loop (chat-session, bash/slash dispatch, keybindings, etc.)
     │   ├── models/          # Model registry & validation
     │   ├── runtime-preflight.js
     │   ├── session/         # Session state, agent discovery, direct-agent handler

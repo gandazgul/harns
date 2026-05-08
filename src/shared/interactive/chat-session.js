@@ -1,19 +1,19 @@
 /**
- * @module shared/chat-session
+ * @module shared/interactive/chat-session
  * High-level interactive loop for the TUI. This manages the long-running
  * user interaction — distinct from individual agent invocations (see session.js).
  */
 
 import { CombinedAutocompleteProvider, Container, Editor, Spacer, Text } from "@mariozechner/pi-tui";
-import { initTUI } from "./ui/tui.js";
-import { getEditorTheme, initHarnsTheme, theme } from "./ui/theme.js";
-import { createUiApi } from "./ui/api.js";
-import { SpinnerBlock } from "./ui/blocks.js";
-import { listPromptTemplates, steerRootSession } from "./session/session.js";
-import { ensureMnemosyneBinary } from "./runtime-preflight.js";
-import { commandRegistry } from "../cmd/registry.js";
-import { getModelRegistry } from "./models/model-registry.js";
-import { getSettingsManager, initSettings } from "./settings.js";
+import { initTUI } from "../ui/tui.js";
+import { getEditorTheme, initHarnsTheme, theme } from "../ui/theme.js";
+import { createUiApi } from "../ui/api.js";
+import { SpinnerBlock } from "../ui/blocks.js";
+import { listPromptTemplates, steerRootSession } from "../session/session.js";
+import { ensureMnemosyneBinary } from "../runtime-preflight.js";
+import { commandRegistry } from "../../cmd/registry.js";
+import { getModelRegistry } from "../models/model-registry.js";
+import { getSettingsManager, initSettings } from "../settings.js";
 import {
     clearUserModelOverride,
     getActiveAgentName,
@@ -26,16 +26,16 @@ import {
     setActiveOnMessage,
     setActiveUiAPI,
     setRootSessionManager,
-} from "./session/session-state.js";
-import { parseProviderModel } from "./models/model-validation.js";
-import { createRootSessionManager } from "./session/root-session.js";
-import { createGenerationGuard } from "./interactive/generation-guard.js";
-import { restorePersistedMessagesToUi } from "./interactive/message-hydration.js";
-import { installUiApiOverrides } from "./interactive/ui-api-overrides.js";
-import { renderBootBanner } from "./interactive/boot-banner.js";
-import { handleBashCommand } from "./interactive/bash-interceptor.js";
-import { handleSlashCommand } from "./interactive/slash-dispatch.js";
-import { installKeybindings } from "./interactive/keybindings.js";
+} from "../session/session-state.js";
+import { parseProviderModel } from "../models/model-validation.js";
+import { createRootSessionManager } from "../session/root-session.js";
+import { createGenerationGuard } from "./generation-guard.js";
+import { restorePersistedMessagesToUi } from "./message-hydration.js";
+import { installUiApiOverrides } from "./ui-api-overrides.js";
+import { renderBootBanner } from "./boot-banner.js";
+import { handleBashCommand } from "./bash-interceptor.js";
+import { handleSlashCommand } from "./slash-dispatch.js";
+import { installKeybindings } from "./keybindings.js";
 
 const UI_PADDING = { x: 0, y: 0 };
 
@@ -47,8 +47,8 @@ export let CHAT_BUILTIN_SLASH_NAMES = new Set();
 /**
  * Update the active agent and its message handler dynamically.
  * @param {string} agentName
- * @param {import('./session/types.js').AgentMessageHandler} handler
- * @param {import('./ui/types.js').UiAPI} [uiAPI]
+ * @param {import('../session/types.js').AgentMessageHandler} handler
+ * @param {import('../ui/types.js').UiAPI} [uiAPI]
  * @param {string} [agentModel]
  */
 export function setActiveAgent(agentName, handler, uiAPI, agentModel) {
@@ -95,7 +95,7 @@ export async function setActiveModel(model, provider) {
 
 /**
  * Get the active UI API reference.
- * @returns {import('./workflow/workflow.js').UiAPI | null}
+ * @returns {import('../workflow/workflow.js').UiAPI | null}
  */
 export function getActiveUiAPI() {
     return getActiveUiAPIState();
@@ -139,7 +139,7 @@ export function resolveTemplateModel(templateModel, modelRegistry) {
 /**
  * Starts the interactive TUI loop.
  * @param {string | null} initialUserRequest
- * @param {import('./session/types.js').AgentMessageHandler | null} onMessage - Handler for user submissions
+ * @param {import('../session/types.js').AgentMessageHandler | null} onMessage - Handler for user submissions
  * @param {{ sessionStartMode?: "new" | "continue" }} [options]
  */
 export async function startInteractiveSession(initialUserRequest, onMessage, options = {}) {
@@ -178,7 +178,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     const runningTasksComponent = new SpinnerBlock();
     container.addChild(runningTasksComponent);
 
-    /** @type {import('./session/types.js').ImageAttachment[]} */
+    /** @type {import('../session/types.js').ImageAttachment[]} */
     const pastedImages = [];
     const previewImages = new Container();
     container.addChild(previewImages);
@@ -390,7 +390,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     }
 
     // Handle Editor events
-    /** @type {Array<{text: string, images: import('./session/types.js').ImageAttachment[]}>} */
+    /** @type {Array<{text: string, images: import('../session/types.js').ImageAttachment[]}>} */
     const submissionQueue = [];
     let isProcessingSubmission = false;
 
@@ -412,7 +412,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // Handle Editor events
     /**
      * @param {string} text
-     * @param {import('./session/types.js').ImageAttachment[]} savedImages
+     * @param {import('../session/types.js').ImageAttachment[]} savedImages
      */
     async function executeUserRequest(text, savedImages) {
         const userRequest = text.trim();
@@ -461,7 +461,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         const images = savedImages;
 
         uiAPI.appendUserMessage?.(userRequest);
-        images.forEach((/** @type {import('./session/types.js').ImageAttachment} */ img) => {
+        images.forEach((/** @type {import('../session/types.js').ImageAttachment} */ img) => {
             if (uiAPI.appendImage) uiAPI.appendImage(img.base64, img.mimeType);
         });
 

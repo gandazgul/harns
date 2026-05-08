@@ -19,7 +19,7 @@ import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 import {
     setActiveAgent as setActiveAgentFn,
     startInteractiveSession as startInteractiveSessionFn,
-} from "../../shared/chat-session.js";
+} from "../../shared/interactive/chat-session.js";
 import { resetTuiState as resetTuiStateFn } from "../command-helpers.js";
 import { createDirectAgentHandler as createDirectAgentHandlerFn } from "../../shared/session/direct-agent.js";
 export { getLoadPlanCompletions } from "./getArgumentCompletions.js";

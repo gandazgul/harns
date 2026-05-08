@@ -8,7 +8,7 @@
  */
 
 import { COMMAND_NAMES } from "../../constants.js";
-import { startInteractiveSession as startInteractiveSessionFn } from "../../shared/chat-session.js";
+import { startInteractiveSession as startInteractiveSessionFn } from "../../shared/interactive/chat-session.js";
 import { createRouterOrchestratorHandler as createRouterOrchestratorHandlerFn } from "../../shared/workflow/orchestrator.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 
