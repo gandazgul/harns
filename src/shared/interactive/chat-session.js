@@ -170,10 +170,9 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         theme.fg("dim", `v${HNS_VERSION}`)
     }`;
 
-    const sep = theme.fg("muted", " · ");
     const compactHelp = theme.fg(
         "dim",
-        ["esc interrupt", "ctrl+c clear/exit", "/ commands", "! bash", "ctrl+o more"].join(sep),
+        ["esc interrupt", "ctrl+c clear/exit", "/ commands", "! bash", "ctrl+o more"].join(" · "),
     );
     const expandedHelp = theme.fg(
         "dim",

@@ -15,6 +15,8 @@ async function runCmd(cmd, args) {
     };
 }
 
+await runCmd("deno", ["run", "-A", "scripts/write-version.js"]);
+
 const compile = await runCmd("deno", [
     "compile",
     "-A",
