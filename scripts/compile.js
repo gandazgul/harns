@@ -1,0 +1,45 @@
+/**
+ * Run a command and return success + stdout.
+ *
+ * @param {string} cmd
+ * @param {string[]} args
+ * @returns {Promise<{ success: boolean, stdout: string, stderr: string }>}
+ */
+async function runCmd(cmd, args) {
+    const command = new Deno.Command(cmd, { args, stdout: "piped", stderr: "piped" });
+    const { success, stdout, stderr } = await command.output();
+    return {
+        success,
+        stdout: new TextDecoder().decode(stdout),
+        stderr: new TextDecoder().decode(stderr),
+    };
+}
+
+const compile = await runCmd("deno", [
+    "compile",
+    "-A",
+
+    "--include",
+    "src/agent-definitions",
+    "--include",
+    "src/prompt-templates",
+    "--include",
+    "src/shared/session/SYSTEM_PROMPT_TEMPLATE.md",
+    "--include",
+    "src/skills",
+    "--include",
+    "src/cmd/init/CONTEXTmd-format.md",
+    "--include",
+    "src/cmd/init/init-agent-prompt.md",
+
+    "--output",
+    "./bin/hns",
+    "src/cli.js",
+]);
+
+console.log(compile.stdout);
+
+if (!compile.success) {
+    console.error(compile.stderr);
+    Deno.exit(1);
+}

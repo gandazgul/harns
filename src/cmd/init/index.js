@@ -9,20 +9,18 @@
  */
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
+import { dirname, fromFileUrl, join } from "@std/path";
 import { COMMAND_NAMES } from "../../constants.js";
-import {
-    loadAgentDefFromPath as loadAgentDefFromPathFn,
-    runAgentSession as runAgentSessionFn,
-} from "../../shared/session/session.js";
+import { loadAgentDefFromPath as loadAgentDefFromPathFn } from "../../shared/session/agents.js";
+import { runAgentSession as runAgentSessionFn } from "../../shared/session/session.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 import {
     isInitDone as isInitDoneFn,
     recordInitDone as recordInitDoneFn,
     recordInitOffered as recordInitOfferedFn,
 } from "./init-state.js";
-import { dirname, fromFileUrl, join } from "@std/path";
 
-const __dirname = dirname(fromFileUrl(import.meta.url));
+export const __dirname = dirname(fromFileUrl(import.meta.url));
 
 /**
  * @typedef {Object} CommandDependencies

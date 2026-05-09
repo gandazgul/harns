@@ -20,8 +20,8 @@
  * @property {string} displayName - Agent display name (from frontmatter or filename)
  * @property {string} model - Model identifier
  * @property {string} description - One-line description from merged frontmatter
- * @property {string[]} [tools] - Allowed tool names from merged frontmatter
- * @property {string} [systemPrompt] - Core system prompt + merged agent prompt
+ * @property {string[]} tools - Allowed tool names from merged frontmatter
+ * @property {string} systemPrompt - Core system prompt + merged agent prompt
  */
 
 /**

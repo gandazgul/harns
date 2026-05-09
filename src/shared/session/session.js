@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
 import { dirname, fromFileUrl, join } from "@std/path";
-import { AGENT_DEFS_DIR, CWD, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
+import { CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
 import mnemosyneExtension, {
     memoryDeleteToolDef,
     memoryRecallGlobalToolDef,
@@ -40,21 +40,14 @@ import cymbalExtension, {
 import { ensureCymbalBinary, ensureMnemosyneBinary } from "../runtime-preflight.js";
 import { executeSwitchAgent, switchAgentTool, triggerAgent } from "../../tools/switch-agent.js";
 import { createUserInterviewTool } from "../../tools/user-interview.js";
-import { PROTECTED_TOOL_NAMES } from "../../tools/registry.js";
 import { getModelRegistry } from "../models/model-registry.js";
 import { parseProviderModel } from "../models/model-validation.js";
 import { getActiveModelState, getRootAgentSession, isUserModelOverride, setRootAgentSession } from "./session-state.js";
-
-const __dirname = dirname(fromFileUrl(import.meta.url));
-const HOME_DIR = Deno.env.get("HOME") || "";
-
-const HOME_AGENT_DEFS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "agents") : null;
-const LOCAL_AGENT_DEFS_DIR = join(CWD, ".hns", "agents");
+import { directoryExists, fileExists } from "../helpers.js";
+import { loadAgentDef, resolveAgentDefsDir, resolveSessionToolNames } from "./agents.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
-
-const CORE_SYSTEM_PROMPT = await Deno.readTextFile(join(__dirname, "SYSTEM_PROMPT_TEMPLATE.md"));
 
 /** @typedef {"local" | "home" | "bundled"} PromptTemplateSource */
 
@@ -70,126 +63,6 @@ const promptTemplateModelByName = new Map();
  * @property {string} path
  * @property {PromptTemplateSource} source
  */
-
-/**
- * @returns {string[]}
- */
-function getAgentDefLayerDirs() {
-    return [
-        AGENT_DEFS_DIR,
-        ...(HOME_AGENT_DEFS_DIR ? [HOME_AGENT_DEFS_DIR] : []),
-        LOCAL_AGENT_DEFS_DIR,
-    ];
-}
-
-/**
- * @returns {string[]}
- */
-function getAgentDefDirsByPriority() {
-    return [
-        LOCAL_AGENT_DEFS_DIR,
-        ...(HOME_AGENT_DEFS_DIR ? [HOME_AGENT_DEFS_DIR] : []),
-        AGENT_DEFS_DIR,
-    ];
-}
-
-/**
- * @param {string} path
- * @returns {Promise<boolean>}
- */
-async function directoryExists(path) {
-    try {
-        const stat = await Deno.stat(path);
-        return stat.isDirectory;
-    } catch {
-        return false;
-    }
-}
-
-/**
- * @param {string} path
- * @returns {Promise<boolean>}
- */
-async function fileExists(path) {
-    try {
-        const stat = await Deno.stat(path);
-        return stat.isFile;
-    } catch {
-        return false;
-    }
-}
-
-/**
- * Normalize unknown tool list input into a deduped array of non-empty strings.
- *
- * @param {unknown} tools
- * @returns {string[]}
- */
-function normalizeToolNames(tools) {
-    if (!Array.isArray(tools)) return [];
-
-    /** @type {string[]} */
-    const normalized = [];
-
-    for (const tool of tools) {
-        const toolName = typeof tool === "string" ? tool.trim() : "";
-        if (!toolName) continue;
-        if (!normalized.includes(toolName)) normalized.push(toolName);
-    }
-
-    return normalized;
-}
-
-/**
- * Resolve final requested tool names for a session while enforcing agent policy.
- *
- * - `toolNames` may narrow the agent's tool set but cannot add tools outside `agentTools`.
- * - `customToolNames` are always added (for user-provided dynamic/extension tools).
- *
- * @param {string[]} agentTools
- * @param {unknown} toolNames
- * @param {unknown} customToolNames
- * @returns {string[]}
- */
-export function resolveSessionToolNames(agentTools, toolNames, customToolNames) {
-    const normalizedAgentTools = normalizeToolNames(agentTools);
-    const selectedToolNames = normalizeToolNames(toolNames || normalizedAgentTools);
-    const normalizedCustomToolNames = normalizeToolNames(customToolNames);
-    const allowedToolNames = new Set(normalizedAgentTools);
-
-    /** @type {string[]} */
-    const tools = [];
-    for (const toolName of selectedToolNames) {
-        if (!allowedToolNames.has(toolName)) continue;
-        if (!tools.includes(toolName)) tools.push(toolName);
-    }
-    for (const toolName of normalizedCustomToolNames) {
-        if (!tools.includes(toolName)) tools.push(toolName);
-    }
-
-    return tools;
-}
-
-/**
- * Resolve an existing agent definitions directory for pi-coding-agent resource loading.
- * Priority: local (`.hns/agents`) > home (`~/.hns/agents`) > bundled defaults.
- *
- * @returns {Promise<string>}
- */
-export async function resolveAgentDefsDir() {
-    for (const dir of getAgentDefDirsByPriority()) {
-        if (await directoryExists(dir)) return dir;
-    }
-
-    throw new Error(
-        [
-            "Could not find any agent defs directory.",
-            `Tried local: ${LOCAL_AGENT_DEFS_DIR}`,
-            ...(HOME_AGENT_DEFS_DIR ? [`Tried home: ${HOME_AGENT_DEFS_DIR}`] : []),
-            `Tried bundled: ${AGENT_DEFS_DIR}`,
-        ].join(" "),
-    );
-}
 
 /**
  * Resolve prompt template search paths by priority: local > home > bundled.
@@ -353,160 +226,6 @@ export async function listSkills() {
     }
 
     return skills;
-}
-
-/**
- * List all known agent definition names across bundled + home + local layers.
- *
- * @returns {Promise<string[]>}
- */
-export async function listAgentDefNames() {
-    const names = new Set();
-
-    for (const dir of getAgentDefLayerDirs()) {
-        if (!(await directoryExists(dir))) continue;
-        for await (const entry of Deno.readDir(dir)) {
-            if (!entry.isFile || !entry.name.endsWith(".md")) continue;
-            names.add(entry.name.replace(/\.md$/, ""));
-        }
-    }
-
-    return [...names].sort((a, b) => a.localeCompare(b));
-}
-
-/**
- * Load and merge an agent definition from layered files: * 1) bundled: `src/agent-definitions/<name>.md`
- * 2) home override: `~/.hns/agents/<name>.md`
- * 3) local override: `<cwd>/.hns/agents/<name>.md`
- *
- * Higher layers override scalar attrs. Prompt body appends by default; if a
- * layer sets `promptOverride: true`, lower-layer prompt content is discarded.
- * Tool lists are replaced when a higher layer defines `tools`.
- *
- * @param {string} agentName
- * @returns {Promise<import('./types.js').AgentDefinition>}
- */
-export async function loadAgentDef(agentName) {
-    const layerDirs = getAgentDefLayerDirs();
-
-    /** @type {{ name?: string, model?: string, description?: string, promptOverride?: boolean, tools?: unknown[], [key: string]: unknown }} */
-    let mergedAttrs = {};
-    /** @type {string[]} */
-    let mergedTools = [];
-    /** @type {string[]} */
-    let bundledTools = [];
-    /** @type {string[]} */
-    let promptSegments = [];
-    let found = false;
-
-    for (let index = 0; index < layerDirs.length; index++) {
-        const dir = layerDirs[index];
-        const filePath = join(dir, `${agentName}.md`);
-        if (!(await fileExists(filePath))) continue;
-
-        const raw = await Deno.readTextFile(filePath);
-        if (!hasFrontMatter(raw)) {
-            throw new Error(`Agent def ${filePath} has no frontmatter`);
-        }
-
-        const { attrs, body } = extractYaml(raw);
-        found = true;
-
-        if (index === 0 && Object.prototype.hasOwnProperty.call(attrs, "tools")) {
-            bundledTools = normalizeToolNames(attrs.tools);
-        }
-
-        mergedAttrs = { ...mergedAttrs, ...attrs };
-        if (Object.prototype.hasOwnProperty.call(attrs, "tools")) {
-            mergedTools = normalizeToolNames(attrs.tools);
-        }
-
-        if (attrs.promptOverride === true) {
-            promptSegments = [];
-        }
-
-        const trimmedBody = body.trim();
-        if (trimmedBody) promptSegments.push(trimmedBody);
-    }
-
-    if (!found) {
-        throw new Error(
-            [
-                `Could not find agent def for "${agentName}".`,
-                `Checked bundled: ${join(AGENT_DEFS_DIR, `${agentName}.md`)}`,
-                ...(HOME_AGENT_DEFS_DIR ? [`Checked home: ${join(HOME_AGENT_DEFS_DIR, `${agentName}.md`)}`] : []),
-                `Checked local: ${join(LOCAL_AGENT_DEFS_DIR, `${agentName}.md`)}`,
-            ].join(" "),
-        );
-    }
-
-    const name = typeof mergedAttrs.name === "string" && mergedAttrs.name.trim() ? mergedAttrs.name : agentName;
-    const model = typeof mergedAttrs.model === "string" && mergedAttrs.model.trim()
-        ? mergedAttrs.model
-        : "claude-sonnet-4-20250514";
-    const description = typeof mergedAttrs.description === "string" ? mergedAttrs.description : "";
-
-    const mergedPromptBody = promptSegments.join("\n\n").trim();
-    const systemPrompt = CORE_SYSTEM_PROMPT.replace("{{AGENT_PROMPT}}", mergedPromptBody);
-
-    const protectedToolsForAgent = bundledTools.filter((toolName) => PROTECTED_TOOL_NAMES.includes(toolName));
-    const tools = [...mergedTools];
-    for (const toolName of protectedToolsForAgent) {
-        if (!tools.includes(toolName)) tools.push(toolName);
-    }
-
-    return {
-        name,
-        model,
-        description,
-        tools,
-        systemPrompt,
-    };
-}
-
-/**
- * Load an agent definition from an arbitrary file path.
- * Used for special agents (like init) that live outside the standard
- * agent-defs directories and should not be discoverable via /agent listings.
- *
- * @param {string} filePath - Absolute path to the agent .md file
- * @returns {Promise<import('./types.js').AgentDefinition>}
- */
-export async function loadAgentDefFromPath(filePath) {
-    if (!(await fileExists(filePath))) {
-        throw new Error(`Agent def not found at ${filePath}`);
-    }
-
-    const raw = await Deno.readTextFile(filePath);
-    if (!hasFrontMatter(raw)) {
-        throw new Error(`Agent def ${filePath} has no frontmatter`);
-    }
-
-    const { attrs, body } = extractYaml(raw);
-
-    const name = typeof attrs.name === "string" && attrs.name.trim() ? attrs.name.trim() : "unknown";
-    const model = typeof attrs.model === "string" && attrs.model.trim()
-        ? attrs.model.trim()
-        : "claude-sonnet-4-20250514";
-    const description = typeof attrs.description === "string" ? attrs.description.trim() : "";
-
-    const mergedTools = normalizeToolNames(attrs.tools);
-    const promptBody = body.trim();
-    const systemPrompt = CORE_SYSTEM_PROMPT.replace("{{AGENT_PROMPT}}", promptBody);
-
-    const protectedToolsForAgent = mergedTools.filter((toolName) => PROTECTED_TOOL_NAMES.includes(toolName));
-    const tools = [...mergedTools];
-    for (const toolName of protectedToolsForAgent) {
-        if (!tools.includes(toolName)) tools.push(toolName);
-    }
-
-    return {
-        name,
-        model,
-        description,
-        tools,
-        systemPrompt,
-    };
 }
 
 /** @type {Set<import('@earendil-works/pi-coding-agent').AgentSession>} */
