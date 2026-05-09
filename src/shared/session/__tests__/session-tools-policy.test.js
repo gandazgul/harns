@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { CWD } from "../../../constants.js";
-import { loadAgentDef, resolveSessionToolNames } from "../session.js";
+import { loadAgentDef, resolveSessionToolNames } from "../agents.js";
 
 const localAgentsDir = join(CWD, ".hns", "agents");
 const routerOverridePath = join(localAgentsDir, "router.md");

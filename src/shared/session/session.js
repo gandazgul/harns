@@ -16,7 +16,7 @@ import {
     SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
-import { dirname, fromFileUrl, join } from "@std/path";
+import { join } from "@std/path";
 import { CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
 import mnemosyneExtension, {
     memoryDeleteToolDef,

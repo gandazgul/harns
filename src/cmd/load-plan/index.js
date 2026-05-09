@@ -7,7 +7,11 @@
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { CLI_BIN, CWD } from "../../constants.js";
-import { resolvePlan as resolvePlanFn, updatePlanStatus as updatePlanStatusFn } from "../../plan-store.js";
+import {
+    injectFrontMatter,
+    resolvePlan as resolvePlanFn,
+    updatePlanStatus as updatePlanStatusFn,
+} from "../../plan-store.js";
 import {
     askApprovalWithTasks as askApprovalWithTasksFn,
     askPostApproval as askPostApprovalFn,
@@ -77,6 +81,39 @@ function extractSection(body, name) {
     const re = new RegExp(`(^|\\n)##\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`, "i");
     const match = body.match(re);
     return match ? match[2].trim() : null;
+}
+
+/**
+ * Remove the `### Tasks` section (and any following `### Slice Details` block,
+ * including `#### Task N` sub-blocks) from a plan body. Strips up to the next
+ * `##` heading or end of file. Returns the body unchanged if no Tasks heading
+ * is present.
+ *
+ * @param {string} body
+ * @returns {string}
+ */
+export function stripTasksSection(body) {
+    const re = /(^|\n)###\s+Tasks\s*\n[\s\S]*?(?=\n##\s|$)/i;
+    if (!re.test(body)) return body;
+    const stripped = body.replace(re, "$1").replace(/\n{3,}/g, "\n\n").trimEnd();
+    return stripped + "\n";
+}
+
+/**
+ * Strip the Tasks + Slice Details blocks from a plan file in-place and write
+ * the result back. Used when the user re-opens an approved/completed plan for
+ * review — slicer output must be discarded so the architect → slicer flow can
+ * regenerate tasks against any revised design.
+ *
+ * @param {{ path: string, body: string, attrs: import('../../plan-store.js').PlanFrontMatter }} plan
+ * @returns {Promise<void>}
+ */
+async function stripTasksFromPlanFile(plan) {
+    const stripped = stripTasksSection(plan.body);
+    if (stripped === plan.body) return;
+    plan.body = stripped;
+    const withFm = injectFrontMatter(stripped, plan.attrs);
+    await Deno.writeTextFile(plan.path, withFm);
 }
 
 /**
@@ -287,6 +324,9 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     await updatePlanStatus(CWD, plan.planName, "approved", plan.attrs);
                     plan.attrs.status = "approved";
                 } else {
+                    // Re-opening for review: discard the slicer's tasks so the
+                    // architect → slicer flow regenerates them against any revisions.
+                    await stripTasksFromPlanFile(plan);
                     await updatePlanStatus(CWD, plan.planName, "in_review", plan.attrs);
                     plan.attrs.status = "in_review";
                 }
@@ -366,6 +406,10 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 }
 
                 if (answer === "review") {
+                    // Re-opening for review: discard the slicer's tasks so the
+                    // architect → slicer flow regenerates them against any revisions.
+                    await stripTasksFromPlanFile(plan);
+
                     setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
 
                     const reviewResult = await submitPlanForReview({

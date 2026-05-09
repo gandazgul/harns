@@ -113,6 +113,130 @@ export async function runPlanningAgent({ agentName, initialRequest, triageMeta, 
 }
 
 /**
+ * Build the user-request text handed to the slicer agent. Exported for tests.
+ *
+ * @param {string} planName
+ * @param {import('../../tools/plan-written.js').TriageMeta | undefined} triageMeta
+ * @returns {string}
+ */
+export function buildSlicerRequest(planName, triageMeta) {
+    const lines = [
+        `## Slice Plan: ${planName}`,
+        "",
+        `The architect has finished a design-only plan at plans/${planName}.md. The user approved the design.`,
+        "Your job: read the plan, then append a Tasks section and per-slice detail blocks using the edit tool.",
+        "Follow the format at src/agent-definitions/plan-formats/slicer-tasks-format.md exactly.",
+        "",
+    ];
+    if (triageMeta) {
+        lines.push("## Triage Report");
+        if (triageMeta.classification) lines.push(`- Classification: ${triageMeta.classification}`);
+        if (triageMeta.complexity) lines.push(`- Complexity: ${triageMeta.complexity}`);
+        if (triageMeta.summary) lines.push(`- Summary: ${triageMeta.summary}`);
+        if (triageMeta.affectedPaths?.length) {
+            lines.push(`- Affected paths: ${triageMeta.affectedPaths.join(", ")}`);
+        }
+        lines.push("");
+    }
+    lines.push(
+        "Apply the self-check rules in your system prompt before editing. End your turn after the edit — do not " +
+            "generate further text.",
+    );
+    return lines.join("\n");
+}
+
+/**
+ * Run the slicer agent against an approved design-only plan. Slicer reads the
+ * plan, decides how to break it into vertical slices, and appends a Tasks
+ * section + per-slice detail blocks via the edit tool. Returns a result the
+ * caller uses to validate the new task table and transition status.
+ *
+ * @param {Object} opts
+ * @param {string} opts.planName
+ * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
+ * @param {UiAPI} [opts.uiAPI]
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
+ * @param {{ runAgentSession?: typeof runAgentSession }} [opts.__deps] - Test-only injection point.
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManager, __deps }) {
+    const session = __deps?.runAgentSession || runAgentSession;
+
+    if (uiAPI) uiAPI.appendSystemMessage(`=== Running slicer ===`, false, "Harns");
+    else console.log(`\n[Harns] === Running slicer ===\n`);
+
+    try {
+        await session({
+            agentName: "slicer",
+            userRequest: buildSlicerRequest(planName, triageMeta),
+            triageMeta,
+            uiAPI,
+            sessionManager,
+        });
+        return { ok: true };
+    } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        if (uiAPI) uiAPI.appendSystemMessage(`Slicer failed: ${error}`, true, "Harns");
+        else console.error(`[Harns] Slicer failed: ${error}`);
+        return { ok: false, error };
+    }
+}
+
+/**
+ * Ensure a PROJECT plan has a parseable Tasks table. If one already exists
+ * (resumed plan), no-op and return ok. Otherwise invoke the slicer agent,
+ * then validate that it produced a parseable Tasks table. Used by plan_written
+ * after the user approves the architect's design.
+ *
+ * Returns `{ ok: true, slicerInvoked }` on success, `{ ok: false, error, stage }`
+ * when the slicer fails or its output is unparseable. On failure, the plan
+ * file itself is unchanged and status is left at `approved` so the caller can
+ * surface the error and let the user retry.
+ *
+ * @param {Object} opts
+ * @param {string} opts.planName
+ * @param {string} opts.planPath - Absolute path to the plan markdown file.
+ * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
+ * @param {UiAPI} [opts.uiAPI]
+ * @param {{
+ *   runSlicerAgent?: typeof runSlicerAgent,
+ *   readTextFile?: (path: string) => Promise<string>,
+ *   extractTasks?: typeof extractTasks,
+ * }} [opts.__deps] - Test-only injection point.
+ * @returns {Promise<{ ok: true, slicerInvoked: boolean } | { ok: false, error: string, stage: "slicer" | "validation" }>}
+ */
+export async function ensureSlicerTasks({ planName, planPath, triageMeta, uiAPI, __deps }) {
+    const slicer = __deps?.runSlicerAgent || runSlicerAgent;
+    const readTextFile = __deps?.readTextFile || Deno.readTextFile.bind(Deno);
+    const parseTasks = __deps?.extractTasks || extractTasks;
+
+    // If the plan already has a parseable Tasks section (resumed plan), skip the slicer.
+    try {
+        const currentMd = await readTextFile(planPath);
+        parseTasks(currentMd);
+        return { ok: true, slicerInvoked: false };
+    } catch {
+        // Tasks missing or unparseable — slicer must run.
+    }
+
+    const slicerResult = await slicer({ planName, triageMeta, uiAPI });
+    if (!slicerResult.ok) {
+        return { ok: false, error: slicerResult.error || "slicer failed", stage: "slicer" };
+    }
+
+    // Validate that the slicer's output is parseable.
+    try {
+        const slicedMd = await readTextFile(planPath);
+        parseTasks(slicedMd);
+    } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        return { ok: false, error, stage: "validation" };
+    }
+
+    return { ok: true, slicerInvoked: true };
+}
+
+/**
  * Ask user what to do after plan approval.
  *
  * @param {string} planName

@@ -16,8 +16,7 @@ import { join } from "@std/path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { CLI_BIN, CWD, PLANS_DIR_NAME } from "../constants.js";
-import { loadPlan } from "../plan-store.js";
-import { extractTasks } from "../shared/workflow/workflow.js";
+import { loadPlan, updatePlanStatus } from "../plan-store.js";
 
 /**
  * @typedef {{
@@ -95,18 +94,32 @@ async function resolveTriageMeta(triageMeta, planName) {
 }
 
 /**
+ * @typedef {Object} PlanWrittenDeps
+ * @property {(opts: { cwd: string, planName: string, planPath: string, triageMeta: TriageMeta, uiAPI?: any }) => Promise<{ canceled?: boolean, approved?: boolean, feedback?: string }>} [submitPlanForReview]
+ * @property {(planName: string, uiAPI?: any) => Promise<"proceed" | "save">} [askApprovalWithTasks]
+ * @property {(planName: string, uiAPI?: any) => Promise<"proceed" | "save">} [askPostApproval]
+ * @property {(opts: { planName: string, planPath: string, triageMeta?: TriageMeta, uiAPI?: any }) => Promise<{ ok: true, slicerInvoked: boolean } | { ok: false, error: string, stage: "slicer" | "validation" }>} [ensureSlicerTasks]
+ * @property {(cwd: string, planName: string, status: string, recoveryAttrs?: any) => Promise<void>} [updatePlanStatus]
+ * @property {(path: string) => Promise<{ isFile: boolean }>} [stat]
+ * @property {string} [cwd]
+ */
+
+/**
  * Create the plan_written tool with lifecycle context captured at session start.
  *
  * @param {{
  *   uiAPI?: import('../shared/workflow/workflow.js').UiAPI,
  *   triageMeta?: TriageMeta,
  *   agentName?: string,
+ *   __deps?: PlanWrittenDeps,
  * }} [opts]
  * @returns {import('@earendil-works/pi-coding-agent').ToolDefinition}
  */
 export function createPlanWrittenTool(
-    { uiAPI, triageMeta, agentName = "planner" } = {},
+    { uiAPI, triageMeta, agentName = "planner", __deps } = {},
 ) {
+    const deps = __deps || {};
+    const cwd = deps.cwd ?? CWD;
     return defineTool({
         name: "plan_written",
         label: "Plan Written",
@@ -126,9 +139,10 @@ export function createPlanWrittenTool(
                 );
             }
 
-            const planPath = join(CWD, PLANS_DIR_NAME, `${planName}.md`);
+            const planPath = join(cwd, PLANS_DIR_NAME, `${planName}.md`);
+            const statFn = deps.stat || Deno.stat.bind(Deno);
             try {
-                const stat = await Deno.stat(planPath);
+                const stat = await statFn(planPath);
                 if (!stat.isFile) {
                     return textResult(
                         `plan_written: plans/${planName}.md is not a file. Write the plan markdown first, then call plan_written again.`,
@@ -142,29 +156,19 @@ export function createPlanWrittenTool(
 
             const effectiveMeta = await resolveTriageMeta(triageMeta, planName);
 
-            // PROJECT plans must have a parseable Tasks table. Validate up-front so the
-            // agent can fix the table before the user is dragged into review.
-            if (effectiveMeta.classification === "PROJECT") {
-                try {
-                    const planMd = await Deno.readTextFile(planPath);
-                    extractTasks(planMd);
-                } catch (e) {
-                    const error = e instanceof Error ? e.message : String(e);
-                    return textResult(
-                        `plan_written: could not parse the Tasks table in plans/${planName}.md: ${error}\n` +
-                            "Fix the markdown table (Task | Assignee | Dependencies | Description) and call plan_written again.",
-                    );
-                }
-            }
-
             uiAPI?.appendSystemMessage(`Plan declared: plans/${planName}.md`, false, "Harns");
 
             // Lazy imports break the circular dep: plan-written → workflow → session → plan-written.
-            const { submitPlanForReview } = await import("../shared/workflow/submit-plan.js");
-            const { askApprovalWithTasks, askPostApproval } = await import("../shared/workflow/workflow.js");
+            const submitPlanForReview = deps.submitPlanForReview ||
+                (await import("../shared/workflow/submit-plan.js")).submitPlanForReview;
+            const workflow = await import("../shared/workflow/workflow.js");
+            const askApprovalWithTasks = deps.askApprovalWithTasks || workflow.askApprovalWithTasks;
+            const askPostApproval = deps.askPostApproval || workflow.askPostApproval;
+            const ensureSlicerTasks = deps.ensureSlicerTasks || workflow.ensureSlicerTasks;
+            const updatePlanStatusFn = deps.updatePlanStatus || updatePlanStatus;
 
             const reviewResult = await submitPlanForReview({
-                cwd: CWD,
+                cwd,
                 planName,
                 planPath,
                 triageMeta: effectiveMeta,
@@ -189,6 +193,36 @@ export function createPlanWrittenTool(
                     }),
                     { ...params, outcome: "feedback", feedback: reviewResult.feedback },
                 );
+            }
+
+            // PROJECT plans: ensure a Tasks section exists, invoking the slicer when missing.
+            // Resumed plans that already have a parseable Tasks section skip the slicer.
+            if (effectiveMeta.classification === "PROJECT") {
+                const sliceResult = await ensureSlicerTasks({
+                    planName,
+                    planPath,
+                    triageMeta: effectiveMeta,
+                    uiAPI,
+                });
+
+                if (!sliceResult.ok) {
+                    const intro = sliceResult.stage === "slicer"
+                        ? `plan_written: the slicer agent failed to produce tasks for plans/${planName}.md`
+                        : `plan_written: slicer ran but the resulting Tasks table is not parseable`;
+                    return textResult(
+                        `${intro}: ${sliceResult.error}\n` +
+                            "The plan remains approved. Re-invoke plan_written to retry the slicer.",
+                        { ...params, outcome: "feedback", feedback: sliceResult.error },
+                    );
+                }
+
+                // Slicer is done (or was skipped because tasks already existed) — flip status
+                // to ready_for_work so the dispatcher knows tasks can be assigned.
+                try {
+                    await updatePlanStatusFn(cwd, planName, "ready_for_work", effectiveMeta);
+                } catch {
+                    /* status write failure is non-fatal; tasks are still present */
+                }
             }
 
             const action = effectiveMeta.classification === "PROJECT"

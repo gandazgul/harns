@@ -48,7 +48,7 @@ export async function ensurePlansDir(cwd) {
  * @property {string[]} affectedPaths - Files that will be created/modified
  * @property {string} createdAt - ISO timestamp
  * @property {string} [updatedAt] - ISO timestamp (set on revision)
- * @property {"draft"|"in_review"|"approved"|"feedback"|"completed"} status
+ * @property {"draft"|"in_review"|"approved"|"ready_for_work"|"feedback"|"completed"} status
  * @property {"internal"|"external"} [origin] - "internal" = created by a Harns agent; "external" = a pre-existing markdown file loaded from an arbitrary path and resumed with Harns
  */
 

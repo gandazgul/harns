@@ -1,7 +1,7 @@
 import { assertEquals, assertMatch } from "@std/assert";
 import { executeSwitchAgent, switchAgentTool } from "../switch-agent.js";
 import { getActiveModel, setActiveAgent } from "../../shared/interactive/chat-session.js";
-import { loadAgentDef } from "../../shared/session/session.js";
+import { loadAgentDef } from "../../shared/session/agents.js";
 
 /**
  * @param {{ execute: unknown }} tool
