@@ -246,20 +246,23 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         /** @param {number} w */
         render: (w) => {
             const { model, provider } = getModelAndProvider();
-            const leftStr = `${cwd} (${branch})`;
-            const rightStr = model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
-            const spaceCount = Math.max(0, w - leftStr.length - rightStr.length);
+            const modelStr = model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
             const activeAgentName = getActiveAgentName();
-            const agentLine = " ".repeat(Math.max(0, w - activeAgentName.length)) +
+
+            const line1Left = `${cwd} (${branch})`;
+            const line1Pad = Math.max(1, w - line1Left.length - activeAgentName.length);
+            const line1 = theme.fg("dim", line1Left) +
+                " ".repeat(line1Pad) +
                 theme.fg("accent", activeAgentName);
-            const lines = [
-                agentLine,
-                theme.fg("dim", leftStr + " ".repeat(spaceCount) + rightStr),
-            ];
-            if (ctrlCPendingExit) {
-                lines.push(theme.fg("warning", "Ctrl+C - Press again to exit"));
-            }
-            return lines;
+
+            const line2LeftRaw = ctrlCPendingExit ? "Ctrl+C - Press again to exit" : "";
+            const line2LeftStyled = ctrlCPendingExit ? theme.fg("warning", line2LeftRaw) : "";
+            const line2Pad = Math.max(1, w - line2LeftRaw.length - modelStr.length);
+            const line2 = line2LeftStyled +
+                " ".repeat(line2Pad) +
+                theme.fg("dim", modelStr);
+
+            return [line1, line2];
         },
     };
     container.addChild(footer);
