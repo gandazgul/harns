@@ -3,7 +3,7 @@
  *
  * Wraps the editor's input handler with chat-session keybindings:
  *   Esc          cancel whatever is in flight (bash, agent, plan review, prompts)
- *   Ctrl+C       single press = abort agent run; double press inside 1s = exit
+ *   Ctrl+C       cancel like Esc + clear input; press again within 1s to exit
  *   Ctrl+V       paste image from system clipboard
  *   Ctrl+O       toggle tool-output expand/collapse
  *   Shift+Enter  insert literal newline (also Alt+Enter)
@@ -33,6 +33,8 @@ import { theme } from "../ui/theme.js";
  * @property {() => boolean} cancelActiveOperation
  * @property {() => void} dismissActivePrompt
  * @property {() => void} forceResetUI
+ * @property {() => void} markCtrlCPendingExit
+ * @property {() => boolean} isCtrlCPendingExit
  */
 
 /**
@@ -54,9 +56,20 @@ export function installKeybindings(ctx) {
         cancelActiveOperation,
         dismissActivePrompt,
         forceResetUI,
+        markCtrlCPendingExit,
+        isCtrlCPendingExit,
     } = ctx;
 
-    let lastCtrlC = 0;
+    function cancelEverything() {
+        generationGuard.invalidateAll();
+        submissionQueue.length = 0;
+        dismissActivePrompt();
+        const opCanceled = cancelActiveOperation();
+        const sessionAborted = abortActiveSession();
+        const planCanceled = cancelActivePlanReview();
+        forceResetUI();
+        return { opCanceled, sessionAborted, planCanceled };
+    }
 
     const originalHandleInput = editor.handleInput.bind(editor);
 
@@ -64,13 +77,7 @@ export function installKeybindings(ctx) {
     editor.handleInput = async (data) => {
         // Esc: ALWAYS cancels whatever is going on
         if (matchesKey(data, Key.escape)) {
-            generationGuard.invalidateAll();
-            submissionQueue.length = 0;
-            dismissActivePrompt();
-            const opCanceled = cancelActiveOperation();
-            const sessionAborted = abortActiveSession();
-            const planCanceled = cancelActivePlanReview();
-            forceResetUI();
+            const { opCanceled, sessionAborted, planCanceled } = cancelEverything();
 
             if (opCanceled) {
                 uiAPI.appendSystemMessage("Operation canceled.", false, "Harns");
@@ -83,20 +90,22 @@ export function installKeybindings(ctx) {
             return;
         }
 
-        // Ctrl+C: single press aborts active session; double-press within 1s exits
+        // Ctrl+C: cancel like Esc + clear input; press again within 1s to exit
         if (matchesKey(data, Key.ctrl("c"))) {
-            const now = Date.now();
-            if (now - lastCtrlC < 1000) {
+            if (isCtrlCPendingExit()) {
                 stopTUI();
                 setTimeout(() => Deno.exit(0), 100);
                 return;
             }
-            lastCtrlC = now;
-            const aborted = abortActiveSession();
-            if (aborted) {
-                uiAPI.appendSystemMessage("Keyboard interrupt. Press again to quit.", false, "Harns");
-                tui.requestRender();
+            cancelEverything();
+            editor.setText("");
+            if (pastedImages.length > 0) {
+                pastedImages.length = 0;
+                while (previewImages.children.length > 0) {
+                    previewImages.removeChild(previewImages.children[previewImages.children.length - 1]);
+                }
             }
+            markCtrlCPendingExit();
             return;
         }
 

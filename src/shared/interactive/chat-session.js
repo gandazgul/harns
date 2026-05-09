@@ -226,6 +226,21 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         return { model, provider };
     };
 
+    let ctrlCPendingExit = false;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let ctrlCPendingTimer = null;
+
+    function markCtrlCPendingExit() {
+        ctrlCPendingExit = true;
+        if (ctrlCPendingTimer) clearTimeout(ctrlCPendingTimer);
+        ctrlCPendingTimer = setTimeout(() => {
+            ctrlCPendingExit = false;
+            ctrlCPendingTimer = null;
+            tui.requestRender();
+        }, 1000);
+        tui.requestRender();
+    }
+
     const footer = {
         invalidate: () => {},
         /** @param {number} w */
@@ -237,10 +252,14 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
             const activeAgentName = getActiveAgentName();
             const agentLine = " ".repeat(Math.max(0, w - activeAgentName.length)) +
                 theme.fg("accent", activeAgentName);
-            return [
+            const lines = [
                 agentLine,
                 theme.fg("dim", leftStr + " ".repeat(spaceCount) + rightStr),
             ];
+            if (ctrlCPendingExit) {
+                lines.push(theme.fg("warning", "Ctrl+C - Press again to exit"));
+            }
+            return lines;
         },
     };
     container.addChild(footer);
@@ -527,6 +546,8 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         cancelActiveOperation,
         dismissActivePrompt,
         forceResetUI,
+        markCtrlCPendingExit,
+        isCtrlCPendingExit: () => ctrlCPendingExit,
     });
 
     await renderBootBanner({
