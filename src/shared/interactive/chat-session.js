@@ -7,6 +7,7 @@
 import { CombinedAutocompleteProvider, Container, Editor, Spacer, Text } from "@earendil-works/pi-tui";
 import { initTUI } from "../ui/tui.js";
 import { getEditorTheme, initHarnsTheme, theme } from "../ui/theme.js";
+import { HNS_VERSION } from "../version.js";
 import { createUiApi } from "../ui/api.js";
 import { SpinnerBlock } from "../ui/blocks.js";
 import { listPromptTemplates, steerRootSession } from "../session/session.js";
@@ -42,8 +43,6 @@ import { renderBootBanner } from "./boot-banner.js";
 import { handleBashCommand } from "./bash-interceptor.js";
 import { handleSlashCommand } from "./slash-dispatch.js";
 import { installKeybindings } from "./keybindings.js";
-
-const UI_PADDING = { x: 0, y: 0 };
 
 const CHAT_PROMPT_AGENT_NAME = "operator";
 
@@ -167,14 +166,45 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     const container = new Container();
 
     // Header
-    container.addChild(new Spacer(1));
-    container.addChild(
-        new Text(
-            theme.fg("accent", theme.bold("Harns ─ Plan-by-Default Harness")),
-            UI_PADDING.x,
-            UI_PADDING.y,
-        ),
+    const titleLine = `${theme.fg("accent", theme.bold("Harns ─ Plan-by-Default Harness"))} ${
+        theme.fg("dim", `v${HNS_VERSION}`)
+    }`;
+
+    const sep = theme.fg("muted", " · ");
+    const compactHelp = theme.fg(
+        "dim",
+        ["esc interrupt", "ctrl+c clear/exit", "/ commands", "! bash", "ctrl+o more"].join(sep),
     );
+    const expandedHelp = theme.fg(
+        "dim",
+        [
+            "esc          to interrupt",
+            "ctrl+c       to clear input",
+            "ctrl+c twice to exit",
+            "shift+tab    to cycle thinking (not-implemented)",
+            "ctrl+o       to expand tool outputs / collapse this help",
+            "ctrl+t       to expand thinking (not-implemented)",
+            "ctrl+g       for external editor (not-implemented)",
+            "ctrl+v       to paste image",
+            "shift+enter  to insert newline",
+            "/            for commands",
+            "!            to run bash",
+            "!!           to run bash (no context)",
+        ].join("\n"),
+    );
+
+    let helpExpanded = false;
+    const helpText = new Text(compactHelp, 0, 0);
+    /** @param {boolean} expanded */
+    function setHelpExpanded(expanded) {
+        helpExpanded = expanded;
+        helpText.setText(expanded ? expandedHelp : compactHelp);
+    }
+
+    container.addChild(new Spacer(1));
+    container.addChild(new Text(titleLine, 0, 0));
+    container.addChild(new Spacer(1));
+    container.addChild(helpText);
     container.addChild(new Spacer(1));
 
     const messageList = new Container();
@@ -592,6 +622,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         forceResetUI,
         markCtrlCPendingExit,
         isCtrlCPendingExit: () => ctrlCPendingExit,
+        toggleStartupHelp: () => setHelpExpanded(!helpExpanded),
     });
 
     await renderBootBanner({

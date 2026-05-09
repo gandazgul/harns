@@ -35,6 +35,7 @@ import { theme } from "../ui/theme.js";
  * @property {() => void} forceResetUI
  * @property {() => void} markCtrlCPendingExit
  * @property {() => boolean} isCtrlCPendingExit
+ * @property {() => void} [toggleStartupHelp]
  */
 
 /**
@@ -58,6 +59,7 @@ export function installKeybindings(ctx) {
         forceResetUI,
         markCtrlCPendingExit,
         isCtrlCPendingExit,
+        toggleStartupHelp,
     } = ctx;
 
     function cancelEverything() {
@@ -122,13 +124,16 @@ export function installKeybindings(ctx) {
             return;
         }
 
-        // Ctrl+O: toggle expand/collapse for tool output blocks
+        // Ctrl+O: toggle expand/collapse for tool output blocks and the startup help
         if (matchesKey(data, Key.ctrl("o"))) {
+            if (toggleStartupHelp) toggleStartupHelp();
             if (uiAPI.toggleToolOutputsExpanded) {
                 uiAPI.toggleToolOutputsExpanded();
                 tui.requestRender();
                 return;
             }
+            tui.requestRender();
+            return;
         }
 
         // Shift+Enter / Alt+Enter: insert newline
