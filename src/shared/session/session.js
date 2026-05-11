@@ -44,7 +44,8 @@ import { getModelRegistry } from "../models/model-registry.js";
 import { parseProviderModel } from "../models/model-validation.js";
 import { getActiveModelState, getRootAgentSession, isUserModelOverride, setRootAgentSession } from "./session-state.js";
 import { directoryExists, fileExists } from "../helpers.js";
-import { loadAgentDef, resolveAgentDefsDir, resolveSessionToolNames } from "./agents.js";
+import { loadAgentDef, resolveAgentDefsDir as _resolveAgentDefsDir, resolveSessionToolNames } from "./agents.js";
+import { getSettingsDir } from "../settings.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
@@ -499,7 +500,6 @@ export async function runAgentSession(
 ) {
     await ensureMnemosyneBinary();
     await ensureCymbalBinary();
-    const resourceAgentDir = await resolveAgentDefsDir();
     const agentDef = _agentDefOverride || await loadAgentDef(agentName);
 
     const customToolNames = (customTools || []).map((t) => t.name);
@@ -539,6 +539,78 @@ export async function runAgentSession(
         finalCustomTools.push(createUserInterviewTool(uiAPI));
     }
 
+    // Custom bash tool that intercepts sed commands
+    if (tools.includes("bash") && !finalCustomTools.find((t) => t.name === "bash")) {
+        finalCustomTools.push({
+            name: "bash",
+            label: "bash",
+            description:
+                "Execute a bash command in the current working directory. Returns stdout and stderr. sed commands are blocked - use the write tool instead.",
+            promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
+            parameters: {
+                type: "object",
+                properties: {
+                    command: { type: "string", description: "The bash command to execute" },
+                    timeout: { type: "number", description: "Optional timeout in seconds" },
+                },
+                required: ["command"],
+            },
+            /** @type {import('@earendil-works/pi-coding-agent').ToolDefinition<any, any, any>['execute']} */
+            async execute(_toolCallId, { command, timeout }, _signal, _onUpdate, _ctx) {
+                // Check if the command contains sed
+                const hasSed = /\b(sed|\\sed)\b/i.test(command) || command.trim().toLowerCase().startsWith("sed");
+
+                if (hasSed) {
+                    const writeAvailable = tools.includes("write");
+                    const message = writeAvailable
+                        ? "Use the write tool instead of sed to edit files"
+                        : "sed is blocked because the write tool is not available to you";
+
+                    return {
+                        content: [{ type: "text", text: message }],
+                        details: { blocked: true },
+                    };
+                }
+
+                // Create timeout signal if timeout is specified
+                let timeoutSignal = undefined;
+                if (timeout) {
+                    timeoutSignal = AbortSignal.timeout(timeout * 1000);
+                }
+
+                // Combine provided signal with timeout signal if both exist
+                let finalSignal = _signal;
+                if (_signal && timeoutSignal) {
+                    finalSignal = AbortSignal.any([_signal, timeoutSignal]);
+                } else if (timeoutSignal) {
+                    finalSignal = timeoutSignal;
+                }
+
+                // Execute the command using Deno.Command
+                const cmd = new Deno.Command("bash", {
+                    args: ["-c", command],
+                    cwd: CWD,
+                    signal: finalSignal,
+                });
+
+                const output = await cmd.output();
+
+                const stdout = new TextDecoder().decode(output.stdout);
+                const stderr = new TextDecoder().decode(output.stderr);
+
+                // Combine stdout and stderr, prioritizing stdout
+                const combinedOutput = stdout + (stderr ? `\n${stderr}` : "");
+
+                return {
+                    content: [{ type: "text", text: combinedOutput || "(no output)" }],
+                    details: {
+                        exitCode: output.code,
+                    },
+                };
+            },
+        });
+    }
+
     // Update the agent info in the UI footer.
     if (uiAPI?.setAgentInfo) {
         // If the user has an active /model override, don't clobber it — only update the agent name.
@@ -555,7 +627,7 @@ export async function runAgentSession(
 
     const loader = new DefaultResourceLoader({
         cwd: CWD,
-        agentDir: resourceAgentDir,
+        agentDir: getSettingsDir("global"),
         systemPromptOverride: () => finalSystemPrompt,
         extensionFactories: [mnemosyneExtension, cymbalExtension],
         additionalPromptTemplatePaths: getPromptTemplatePaths(),
