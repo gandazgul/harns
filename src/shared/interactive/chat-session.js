@@ -391,6 +391,9 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 // User declined or dismissed — record that init was offered
                 await recordInitOfferedFn();
             }
+            // Restore focus to editor after init prompt (before the wrapper is applied)
+            tui.setFocus(editor);
+            tui.requestRender();
         }
     }
 

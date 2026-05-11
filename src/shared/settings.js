@@ -3,6 +3,21 @@ import { dirname, join } from "@std/path";
 import lockfile from "proper-lockfile";
 
 /**
+ * Get the settings directory path for a given scope.
+ *
+ * @param {string} scope
+ *
+ * @returns {string}
+ */
+export function getSettingsDir(scope) {
+    const homeDir = Deno.env.get("HOME") || "";
+    if (scope === "global") {
+        return join(homeDir, ".hns");
+    }
+    return join(Deno.cwd(), ".hns");
+}
+
+/**
  * Harns custom storage for SettingsManager.
  *
  * Implementation Details:
@@ -26,11 +41,7 @@ class HarnsSettingsStorage {
      * @returns {string}
      */
     #resolvePath(scope) {
-        const homeDir = Deno.env.get("HOME") || "";
-        if (scope === "global") {
-            return join(homeDir, ".hns", "settings.json");
-        }
-        return join(this.#cwd, ".hns", "settings.json");
+        return getSettingsDir(scope) + "/settings.json";
     }
 
     /**
@@ -118,27 +129,27 @@ class HarnsSettingsStorage {
     withLock(scope, callback) {
         const path = this.#resolvePath(scope);
 
-        // Ensure the file exists before locking; proper-lockfile requires the
-        // target to exist.
-        try {
-            Deno.statSync(path);
-        } catch (_e) {
-            const parentDir = dirname(path);
+        const content = this.#readSettings(scope);
+        const newContent = callback(content);
+        if (newContent !== undefined && newContent !== content) {
+            // Ensure the file exists before locking; proper-lockfile requires the
+            // target to exist.
             try {
-                Deno.mkdirSync(parentDir, { recursive: true });
-            } catch (_e2) { /* ignore */ }
-            Deno.writeTextFileSync(path, "{}");
-        }
-
-        const release = this.#acquireLockSyncWithRetry(path);
-        try {
-            const content = this.#readSettings(scope);
-            const newContent = callback(content);
-            if (newContent !== undefined && newContent !== content) {
-                this.#writeSettings(scope, newContent);
+                Deno.statSync(path);
+            } catch (_e) {
+                const parentDir = dirname(path);
+                try {
+                    Deno.mkdirSync(parentDir, { recursive: true });
+                } catch (_e2) { /* ignore */ }
+                Deno.writeTextFileSync(path, "{}");
             }
-        } finally {
-            release();
+
+            const release = this.#acquireLockSyncWithRetry(path);
+            try {
+                this.#writeSettings(scope, newContent);
+            } finally {
+                release();
+            }
         }
     }
 }
@@ -188,6 +199,7 @@ export function getCustomSetting(key, scope = "project") {
                 result = parsed[key];
             } catch (_e) { /* ignore */ }
         }
+
         return undefined; // Return undefined to signify no file changes
     });
 
@@ -206,13 +218,14 @@ export async function setCustomSetting(key, value, scope = "project") {
 
     // @ts-ignore storageInstance is definitely assigned here
     storageInstance.withLock(scope, (content) => {
-        let parsed = {};
+        let parsed = /** @type {Record<string, any>} */ ({});
         if (content) {
             try {
-                parsed = JSON.parse(content);
+                parsed = /** @type {Record<string, any>} */ (JSON.parse(content));
             } catch (_e) { /* ignore */ }
         }
         parsed[key] = value;
+
         return JSON.stringify(parsed, null, 2);
     });
 
