@@ -5,11 +5,12 @@
  * the TUI with full streaming output (not suppressed like parallel tasks).
  */
 
-import { runAgentSession as runAgentSessionFn } from "./session.js";
+import { runAgentSession as runAgentSessionFn, runRootTurn as runRootTurnFn } from "./session.js";
 import {
     executePlan as executePlanFn,
     readLatestPlanOutcome as readLatestPlanOutcomeFn,
 } from "../workflow/workflow.js";
+import { getRootAgentName } from "./session-state.js";
 
 /**
  * Create an onMessage handler that sends prompts directly to a specific agent.
@@ -27,6 +28,7 @@ import {
  * @param {string} agentName - Agent definition name (filename without .md)
  * @param {{
  *   runAgentSession?: typeof runAgentSessionFn,
+ *   runRootTurn?: typeof runRootTurnFn,
  *   readLatestPlanOutcome?: typeof readLatestPlanOutcomeFn,
  *   executePlan?: typeof executePlanFn,
  * }} [__deps] - Test-only injection point.
@@ -34,17 +36,24 @@ import {
  */
 export function createDirectAgentHandler(agentName, __deps) {
     const runAgentSession = __deps?.runAgentSession || runAgentSessionFn;
+    const runRootTurn = __deps?.runRootTurn || runRootTurnFn;
     const readLatestPlanOutcome = __deps?.readLatestPlanOutcome || readLatestPlanOutcomeFn;
     const executePlan = __deps?.executePlan || executePlanFn;
 
     return async (userRequest, images, uiAPI, sessionManager) => {
-        const messages = await runAgentSession({
-            agentName,
-            userRequest,
-            images,
-            uiAPI,
-            sessionManager,
-        });
+        // If the live root is already this agent (the common case after a switch has been
+        // applied), reuse it. Otherwise fall back to a transient invocation — this can happen
+        // before the first applyPendingRootSwap (e.g. mid-turn from a workflow sub-step).
+        const useRoot = getRootAgentName() === agentName;
+        const messages = useRoot
+            ? await runRootTurn({ agentName, userRequest, images, uiAPI })
+            : await runAgentSession({
+                agentName,
+                userRequest,
+                images,
+                uiAPI,
+                sessionManager,
+            });
 
         // If the agent's plan_written returned approved_execute, dispatch the plan.
         // Other outcomes (saved/feedback/canceled/repair_required) self-terminate

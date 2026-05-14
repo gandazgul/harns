@@ -42,7 +42,17 @@ import { executeSwitchAgent, switchAgentTool, triggerAgent } from "../../tools/s
 import { createUserInterviewTool } from "../../tools/user-interview.js";
 import { getModelRegistry } from "../models/model-registry.js";
 import { parseProviderModel } from "../models/model-validation.js";
-import { getActiveModelState, getRootAgentSession, isUserModelOverride, setRootAgentSession } from "./session-state.js";
+import {
+    addSubAgentSession,
+    getActiveModelState,
+    getRootAgentName,
+    getRootAgentSession,
+    getSubAgentSessions,
+    isUserModelOverride,
+    removeSubAgentSession,
+    setRootAgentName,
+    setRootAgentSession,
+} from "./session-state.js";
 import { directoryExists, fileExists } from "../helpers.js";
 import { loadAgentDef, resolveAgentDefsDir as _resolveAgentDefsDir, resolveSessionToolNames } from "./agents.js";
 import { getSettingsDir } from "../settings.js";
@@ -309,20 +319,27 @@ export async function listLoadedAgentMdFiles() {
     return results;
 }
 
-/** @type {Set<import('@earendil-works/pi-coding-agent').AgentSession>} */
-const activeSessions = new Set();
-
 /**
- * Stop all currently active agent sessions.
+ * Stop all currently active agent sessions — root (if alive) plus any transient sub-agents.
  *
  * @returns {boolean} true when at least one active session was aborted
  */
 export function abortActiveSession() {
-    const hadActiveSessions = activeSessions.size > 0;
-    for (const session of activeSessions) {
-        session.abort();
+    let aborted = false;
+    const root = getRootAgentSession();
+    if (root) {
+        try {
+            root.abort();
+        } catch (_e) { /* ignore */ }
+        aborted = true;
     }
-    return hadActiveSessions;
+    for (const sub of getSubAgentSessions()) {
+        try {
+            sub.abort();
+        } catch (_e) { /* ignore */ }
+        aborted = true;
+    }
+    return aborted;
 }
 
 /**
@@ -519,36 +536,34 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
 }
 
 /**
- * Run a single agent invocation and wait for idle.
+ * Build a configured AgentSession for the given agent without running a prompt.
+ *
+ * Used by:
+ *  - runRootTurn's initial root construction (via ensureRootAgentSession in chat-session)
+ *  - runAgentSession's transient sub-agent path
  *
  * @param {Object} opts
  * @param {string} opts.agentName
- * @param {string[]} [opts.toolNames] - Optional explicit tool override; defaults to agent frontmatter tools.
+ * @param {string[]} [opts.toolNames]
  * @param {import('@earendil-works/pi-coding-agent').ToolDefinition[]} [opts.customTools]
- * @param {string} [opts.modelOverride] - Optional explicit model override in provider/id format.
- * @param {string} opts.userRequest - The user-facing request/instruction to send to the agent
- * @param {Array<{base64: string, mimeType: string}>} [opts.images]
+ * @param {string} [opts.modelOverride]
  * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
- * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta] - Optional triage metadata threaded into auto-wired plan_written.
- * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride] - Internal: skip loadAgentDef() and use this pre-loaded definition.
+ * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
+ * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride]
  *
- * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
+ * @returns {Promise<{ session: import('@earendil-works/pi-coding-agent').AgentSession, agentDef: import('./types.js').AgentDefinition, finalSystemPrompt: string }>}
  */
-export async function runAgentSession(
-    {
-        agentName,
-        toolNames,
-        customTools,
-        modelOverride,
-        userRequest,
-        images,
-        uiAPI,
-        sessionManager,
-        triageMeta,
-        _agentDefOverride,
-    },
-) {
+export async function buildAgentSession({
+    agentName,
+    toolNames,
+    customTools,
+    modelOverride,
+    uiAPI,
+    sessionManager,
+    triageMeta,
+    _agentDefOverride,
+}) {
     await ensureMnemosyneBinary();
     await ensureCymbalBinary();
     const agentDef = _agentDefOverride || await loadAgentDef(agentName);
@@ -642,10 +657,36 @@ export async function runAgentSession(
     // Ensure extension lifecycle hooks (e.g. session_start) are activated for this agent invocation.
     await session.bindExtensions({});
 
+    return { session, agentDef, finalSystemPrompt };
+}
+
+/**
+ * Per-session subscriber state. Lives alongside the AgentSession and is reset
+ * at the start of each prompt via resetTurn().
+ *
+ * @typedef {Object} SubscriberState
+ * @property {() => void} resetTurn  Clear turn-scoped fields (invokedToolNames, currentMarkdownBlock).
+ * @property {() => string[]} drainInvokedToolNames  Snapshot of tools used this turn; clears the list.
+ * @property {() => void} endThinking  End any in-progress thinking stream (defensive cleanup).
+ * @property {() => void} unsubscribe  Detach the subscription.
+ */
+
+/**
+ * Attach UI event subscribers to an AgentSession. Called once per AgentSession lifetime
+ * (whether root or transient). Returns lifecycle handles for the caller to reset turn-scoped
+ * state between prompts.
+ *
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
+ * @param {import('./types.js').AgentDefinition} agentDef
+ * @param {import('../workflow/workflow.js').UiAPI | undefined} uiAPI
+ *
+ * @returns {SubscriberState}
+ */
+export function attachUiSubscribers(session, agentDef, uiAPI) {
     /** @type {{ appendText: (delta: string) => void } | null} */
     let currentMarkdownBlock = null;
     /** @type {string[]} */
-    const invokedToolNames = [];
+    let invokedToolNames = [];
     /** @type {{ appendDelta: (delta: string) => void, end: () => void } | null} */
     let currentThinkingStream = null;
 
@@ -656,7 +697,7 @@ export async function runAgentSession(
         }
     };
 
-    session.subscribe((event) => {
+    const unsubscribe = session.subscribe((event) => {
         switch (event.type) {
             case "message_start": {
                 if (event.message.role === "assistant") {
@@ -813,8 +854,77 @@ export async function runAgentSession(
                 if (uiAPI && uiAPI.setBusy) uiAPI.setBusy(false);
                 break;
             }
+            case "compaction_start": {
+                // Manual /compact has its own UI in cmd/compact/index.js — avoid duplicate status.
+                if (uiAPI && event.reason !== "manual") {
+                    const label = event.reason === "overflow"
+                        ? "Context overflow detected, auto-compacting..."
+                        : "Auto-compacting context...";
+                    uiAPI.appendSystemMessage(label);
+                }
+                break;
+            }
+            case "compaction_end": {
+                // Manual /compact's success/failure is reported by the slash command itself
+                // (which awaits session.compact()). Only emit a UI message for auto runs.
+                if (uiAPI && event.reason !== "manual") {
+                    if (event.aborted) {
+                        uiAPI.appendSystemMessage("Auto-compaction cancelled.");
+                    } else if (event.result) {
+                        uiAPI.appendSystemMessage(
+                            `Auto-compacted. Tokens before: ${event.result.tokensBefore.toLocaleString()}`,
+                        );
+                    } else if (event.errorMessage) {
+                        uiAPI.appendSystemMessage(`Auto-compaction failed: ${event.errorMessage}`);
+                    }
+                }
+                break;
+            }
         }
     });
+
+    return {
+        resetTurn: () => {
+            currentMarkdownBlock = null;
+            invokedToolNames = [];
+        },
+        drainInvokedToolNames: () => {
+            const snapshot = invokedToolNames.slice();
+            invokedToolNames = [];
+            return snapshot;
+        },
+        endThinking,
+        unsubscribe,
+    };
+}
+
+/**
+ * Run a single prompt() on an already-constructed AgentSession with attached subscribers.
+ * Handles debug logging, defensive UI cleanup, and per-turn state reset.
+ *
+ * @param {Object} opts
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} opts.session
+ * @param {import('./types.js').AgentDefinition} opts.agentDef
+ * @param {string} opts.agentName
+ * @param {string} opts.userRequest
+ * @param {string} opts.finalSystemPrompt  Used only for debug log.
+ * @param {Array<{base64: string, mimeType: string}>} [opts.images]
+ * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
+ * @param {SubscriberState} opts.subscriberState
+ *
+ * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
+ */
+async function runPrompt({
+    session,
+    agentDef,
+    agentName,
+    userRequest,
+    finalSystemPrompt,
+    images,
+    uiAPI,
+    subscriberState,
+}) {
+    subscriberState.resetTurn();
 
     const requestOptions = {};
     if (images && images.length > 0) {
@@ -849,23 +959,16 @@ export async function runAgentSession(
     /** @type {Error | null} */
     let promptError = null;
 
-    const isRoot = activeSessions.size === 0;
-
     try {
-        activeSessions.add(session);
-        if (isRoot) setRootAgentSession(session);
         await session.prompt(userRequest, requestOptions);
         await session.agent.waitForIdle();
     } catch (error) {
         promptError = error instanceof Error ? error : new Error(String(error));
         throw error;
     } finally {
-        activeSessions.delete(session);
-        if (isRoot) setRootAgentSession(null);
-
         // Defensive cleanup: end any active thinking stream and force idle UI state.
         // This handles abort/error edge paths where turn_end events may never fire.
-        endThinking();
+        subscriberState.endThinking();
         if (uiAPI) {
             try {
                 if (uiAPI.setBusy) uiAPI.setBusy(false);
@@ -877,6 +980,7 @@ export async function runAgentSession(
         if (debugEnabled) {
             const messages = session.agent.state.messages;
             const summary = extractAssistantSummary(messages);
+            const invokedToolNames = subscriberState.drainInvokedToolNames();
             const logEntry = agentName === "router"
                 ? [
                     `Event: ROUTER INVOCATION END`,
@@ -903,6 +1007,135 @@ export async function runAgentSession(
     }
 
     return session.agent.state.messages;
+}
+
+/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, finalSystemPrompt: string, subscriberState: SubscriberState, agentName: string }>} */
+const rootSessionMetadata = new WeakMap();
+
+/**
+ * Eagerly build and install the root AgentSession for the given agent.
+ * If a root already exists, it is disposed first.
+ *
+ * @param {Object} opts
+ * @param {string} opts.agentName  Internal name (matches agent definition filename).
+ * @param {string[]} [opts.toolNames]
+ * @param {import('@earendil-works/pi-coding-agent').ToolDefinition[]} [opts.customTools]
+ * @param {string} [opts.modelOverride]
+ * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
+ *
+ * @returns {Promise<import('@earendil-works/pi-coding-agent').AgentSession>}
+ */
+export async function ensureRootAgentSession(opts) {
+    const existing = getRootAgentSession();
+    if (existing) {
+        const meta = rootSessionMetadata.get(existing);
+        try {
+            meta?.subscriberState.unsubscribe();
+        } catch (_e) { /* ignore */ }
+        try {
+            existing.dispose();
+        } catch (_e) { /* ignore */ }
+        rootSessionMetadata.delete(existing);
+        setRootAgentSession(null);
+        setRootAgentName(null);
+    }
+
+    const { session, agentDef, finalSystemPrompt } = await buildAgentSession(opts);
+    const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI);
+
+    setRootAgentSession(session);
+    setRootAgentName(opts.agentName);
+    rootSessionMetadata.set(session, { agentDef, finalSystemPrompt, subscriberState, agentName: opts.agentName });
+
+    return session;
+}
+
+/**
+ * Run a turn on the existing root AgentSession. The root must already be built
+ * (via ensureRootAgentSession) and must match the requested agentName.
+ *
+ * @param {Object} opts
+ * @param {string} opts.agentName  Internal name used to verify the root matches.
+ * @param {string} opts.userRequest
+ * @param {Array<{base64: string, mimeType: string}>} [opts.images]
+ * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
+ *
+ * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
+ */
+export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
+    const session = getRootAgentSession();
+    if (!session) {
+        throw new Error(`runRootTurn: no root AgentSession (expected agent "${agentName}")`);
+    }
+    if (getRootAgentName() !== agentName) {
+        throw new Error(
+            `runRootTurn: root agent is "${getRootAgentName()}", not "${agentName}". setActiveAgent must rebuild first.`,
+        );
+    }
+    const meta = rootSessionMetadata.get(session);
+    if (!meta) {
+        throw new Error(
+            "runRootTurn: root AgentSession is missing metadata (was it built via ensureRootAgentSession?)",
+        );
+    }
+
+    return await runPrompt({
+        session,
+        agentDef: meta.agentDef,
+        agentName,
+        userRequest,
+        finalSystemPrompt: meta.finalSystemPrompt,
+        images,
+        uiAPI,
+        subscriberState: meta.subscriberState,
+    });
+}
+
+/**
+ * Run a single transient agent invocation: build a fresh AgentSession, run one prompt, dispose.
+ * Used for tool-spawned sub-agents (switch_agent.triggerAgent) and workflow sub-phases
+ * (orchestrator's planner/architect/engineer/reviewer calls).
+ *
+ * @param {Object} opts
+ * @param {string} opts.agentName
+ * @param {string[]} [opts.toolNames] - Optional explicit tool override; defaults to agent frontmatter tools.
+ * @param {import('@earendil-works/pi-coding-agent').ToolDefinition[]} [opts.customTools]
+ * @param {string} [opts.modelOverride] - Optional explicit model override in provider/id format.
+ * @param {string} opts.userRequest - The user-facing request/instruction to send to the agent
+ * @param {Array<{base64: string, mimeType: string}>} [opts.images]
+ * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
+ * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta] - Optional triage metadata threaded into auto-wired plan_written.
+ * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride] - Internal: skip loadAgentDef() and use this pre-loaded definition.
+ *
+ * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
+ */
+export async function runAgentSession(opts) {
+    const { session, agentDef, finalSystemPrompt } = await buildAgentSession(opts);
+    const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI);
+    addSubAgentSession(session);
+
+    try {
+        return await runPrompt({
+            session,
+            agentDef,
+            agentName: opts.agentName,
+            userRequest: opts.userRequest,
+            finalSystemPrompt,
+            images: opts.images,
+            uiAPI: opts.uiAPI,
+            subscriberState,
+        });
+    } finally {
+        removeSubAgentSession(session);
+        try {
+            subscriberState.unsubscribe();
+        } catch (_e) { /* ignore */ }
+        try {
+            session.dispose();
+        } catch (_e) { /* ignore */ }
+    }
 }
 
 /**

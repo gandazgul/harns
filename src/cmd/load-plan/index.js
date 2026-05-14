@@ -64,7 +64,7 @@ function restoreRouterFlow(uiAPI, deps = {}) {
     const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
 
     resetTuiState(undefined, uiAPI, undefined);
-    setActiveAgent("Router", createDirectAgentHandler("router"));
+    setActiveAgent("Router", createDirectAgentHandler("router"), undefined, undefined, "router");
     uiAPI.appendSystemMessage("Switched back to Router (triage flow).", false, "Harns");
 }
 
@@ -374,7 +374,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             false,
                             "Harns",
                         );
-                        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
                         const repairOutcome = await runPlanningAgent({
                             agentName,
                             initialRequest: [
@@ -410,7 +410,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     // architect → slicer flow regenerates them against any revisions.
                     await stripTasksFromPlanFile(plan);
 
-                    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
 
                     const reviewResult = await submitPlanForReview({
                         cwd: CWD,
@@ -432,7 +432,13 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             : await askPostApproval(plan.planName, uiAPI);
                         if (action === "proceed") {
                             await executePlan(plan.planName, plan.attrs, uiAPI);
-                            setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI);
+                            setActiveAgent(
+                                "Operator",
+                                createDirectAgentHandler("operator"),
+                                uiAPI,
+                                undefined,
+                                "operator",
+                            );
                         } else {
                             uiAPI.appendSystemMessage(
                                 `Plan saved. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
@@ -459,7 +465,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             uiAPI,
                             outcome.tasks,
                         );
-                        setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI);
+                        setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
                     } else if (
                         outcome.outcome === "canceled" || outcome.outcome === "no_call" ||
                         outcome.outcome === "feedback" || outcome.outcome === "repair_required"
@@ -477,7 +483,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
 
         // Not approved — kick off the planning agent. plan_written handles review/save/execute.
         uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
-        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
 
         const outcome = await runPlanningAgent({
             agentName,
@@ -493,7 +499,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 uiAPI,
                 outcome.tasks,
             );
-            setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI);
+            setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
         } else if (
             outcome.outcome === "canceled" || outcome.outcome === "no_call" ||
             outcome.outcome === "feedback" || outcome.outcome === "repair_required"

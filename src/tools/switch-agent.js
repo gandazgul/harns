@@ -72,7 +72,7 @@ export async function executeSwitchAgent(params, uiAPI, context, triggerFn = noO
     }
 
     const handler = createDirectAgentHandler(target);
-    setActiveAgent(match.displayName, handler, uiAPI, match.model);
+    setActiveAgent(match.displayName, handler, uiAPI, match.model, match.name);
     uiAPI.appendSystemMessage(`Agent hand-off: Switching to ${match.displayName}. Reason: ${reason}`);
 
     // Immediately trigger the new agent with the reason

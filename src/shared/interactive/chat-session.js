@@ -6,11 +6,11 @@
 
 import { CombinedAutocompleteProvider, Container, Editor, Spacer, Text } from "@earendil-works/pi-tui";
 import { initTUI } from "../ui/tui.js";
-import { applyPersistedTheme, getEditorTheme, initHarnsTheme, theme } from "../ui/theme.js";
+import { applyPersistedTheme, getEditorTheme, initHarnsTheme, onThemeChange, theme } from "../ui/theme.js";
 import { HNS_VERSION } from "../version.js";
 import { createUiApi } from "../ui/api.js";
 import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
-import { listPromptTemplates, steerRootSession } from "../session/session.js";
+import { ensureRootAgentSession, listPromptTemplates, steerRootSession } from "../session/session.js";
 import { ensureMnemosyneBinary } from "../runtime-preflight.js";
 import { commandRegistry } from "../../cmd/registry.js";
 import { COMMAND_NAMES } from "../../constants.js";
@@ -27,6 +27,8 @@ import {
     getActiveModelState,
     getActiveOnMessage,
     getActiveUiAPIState,
+    getPendingRootSwap,
+    getRootAgentName,
     getRootAgentSession,
     getRootSessionManager,
     getThinkingLevel,
@@ -34,6 +36,7 @@ import {
     setActiveModelState,
     setActiveOnMessage,
     setActiveUiAPI,
+    setPendingRootSwap,
     setRootSessionManager,
     setThinkingLevel,
 } from "../session/session-state.js";
@@ -54,12 +57,14 @@ export let CHAT_BUILTIN_SLASH_NAMES = new Set();
 
 /**
  * Update the active agent and its message handler dynamically.
- * @param {string} agentName
+ * @param {string} agentName  Display name shown in the UI ("Engineer", "Router", …).
  * @param {import('../session/types.js').AgentMessageHandler} handler
  * @param {import('../ui/types.js').UiAPI} [uiAPI]
  * @param {string} [agentModel]
+ * @param {string} [agentInternalName]  Internal name used for AgentSession construction ("engineer", "router", …).
+ *   When provided and different from the current root, queues a root rebuild at the next turn boundary.
  */
-export function setActiveAgent(agentName, handler, uiAPI, agentModel) {
+export function setActiveAgent(agentName, handler, uiAPI, agentModel, agentInternalName) {
     if (getActiveAgentName() !== agentName) {
         clearUserModelOverride();
         if (uiAPI) {
@@ -77,9 +82,49 @@ export function setActiveAgent(agentName, handler, uiAPI, agentModel) {
         }
     }
     setActiveOnMessage(handler);
+
+    // Record a pending root rebuild whenever we know the internal agent name and it differs
+    // from the current root. The actual rebuild happens at a turn boundary via
+    // applyPendingRootSwap() — it is unsafe to dispose the root mid-prompt.
+    if (agentInternalName && agentInternalName !== getRootAgentName()) {
+        setPendingRootSwap({
+            agentName: agentInternalName,
+            displayName: agentName,
+            model: agentModel,
+        });
+    }
+
     if (uiAPI) {
         setActiveUiAPI(uiAPI);
         uiAPI.requestRender();
+    }
+}
+
+/**
+ * If a pending root swap is queued, dispose the current root and build a new one
+ * for the target agent. Safe to call when the root is idle (between user turns).
+ *
+ * @param {import('../ui/types.js').UiAPI} uiAPI
+ * @returns {Promise<void>}
+ */
+export async function applyPendingRootSwap(uiAPI) {
+    const pending = getPendingRootSwap();
+    if (!pending) return;
+    if (pending.agentName === getRootAgentName()) {
+        setPendingRootSwap(null);
+        return;
+    }
+    setPendingRootSwap(null);
+    try {
+        await ensureRootAgentSession({
+            agentName: pending.agentName,
+            modelOverride: pending.model,
+            uiAPI,
+            sessionManager: getRootSessionManager() || undefined,
+        });
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        uiAPI.appendSystemMessage(`Failed to switch root agent to "${pending.agentName}": ${msg}`);
     }
 }
 
@@ -160,7 +205,7 @@ export function resolveTemplateModel(templateModel, modelRegistry) {
  * Starts the interactive TUI loop.
  * @param {string | null} initialUserRequest
  * @param {import('../session/types.js').AgentMessageHandler | null} onMessage - Handler for user submissions
- * @param {{ sessionStartMode?: "new" | "continue" }} [options]
+ * @param {{ sessionStartMode?: "new" | "continue", initialAgentName?: string, initialAgentDisplayName?: string, initialAgentModel?: string }} [options]
  */
 export async function startInteractiveSession(initialUserRequest, onMessage, options = {}) {
     CHAT_BUILTIN_SLASH_NAMES = new Set(
@@ -174,6 +219,13 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     initSettings();
     const sessionStartedAt = rootSessionManager.getHeader()?.timestamp || new Date().toISOString();
     setActiveOnMessage(onMessage);
+
+    // Track which agent the initial root will be built for. Callers (e.g. `hns agent <name>`)
+    // can override via options.initialAgentName.
+    const initialAgentInternalName = options.initialAgentName || "router";
+    const initialAgentDisplayName = options.initialAgentDisplayName ||
+        (initialAgentInternalName === "router" ? "Router" : initialAgentInternalName);
+    setActiveAgentName(initialAgentDisplayName);
     await ensureMnemosyneBinary();
     initHarnsTheme();
     await applyPersistedTheme();
@@ -367,6 +419,22 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // Expose a UI API for agents to append to the message list
     const uiAPI = createUiApi(tui, messageList, runningTasksComponent);
 
+    // ── Eagerly build the root AgentSession for the initial agent ──
+    // The root persists across turns of the same agent so /compact and other long-lived
+    // session operations have something to act on. setActiveAgent rebuilds the root on
+    // an agent switch (applied at turn boundaries via applyPendingRootSwap).
+    try {
+        await ensureRootAgentSession({
+            agentName: initialAgentInternalName,
+            modelOverride: options.initialAgentModel,
+            uiAPI,
+            sessionManager: rootSessionManager,
+        });
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        uiAPI.appendSystemMessage(`Failed to initialize root agent "${initialAgentInternalName}": ${msg}`);
+    }
+
     // ── Init auto-offer: conditionally offer /init on first TUI visit ──
     if (!initDone) {
         const alreadyOffered = await isInitOfferedFn();
@@ -427,8 +495,8 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // Ensure modal prompts (select/text) always return focus to the editor once settled.
     const basePromptSelect = uiAPI.promptSelect?.bind(uiAPI);
     if (basePromptSelect) {
-        uiAPI.promptSelect = async (title, options) => {
-            const result = await basePromptSelect(title, options);
+        uiAPI.promptSelect = async (title, options, hooks) => {
+            const result = await basePromptSelect(title, options, hooks);
             tui.setFocus(editor);
             tui.requestRender();
             return result;
@@ -444,6 +512,14 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
             return result;
         };
     }
+
+    // Repaint everything when the theme swaps (live preview for /theme, plus any
+    // future theme-change source). Invalidate drops cached layout in Text/Markdown
+    // and re-bakes themed strings in PromptSelectBlock / PromptTextBlock.
+    onThemeChange(() => {
+        tui.invalidate();
+        tui.requestRender();
+    });
 
     // ─── Unified Active-Operation Cancellation State ──────────────────
 
@@ -623,7 +699,9 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 );
             }
         } finally {
-            // forceResetUI(); handled by queue
+            // Drain any pending root swap recorded during the turn (e.g. from switch_agent
+            // tool calls or workflow handoffs via setActiveAgent).
+            await applyPendingRootSwap(uiAPI);
         }
     }
 

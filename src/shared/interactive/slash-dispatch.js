@@ -27,7 +27,7 @@ import { getRootSessionManager } from "../session/session-state.js";
  * @property {Map<string, { name: string, argumentHint?: string, description?: string, model?: string, source?: string }>} promptTemplateByName
  * @property {string} chatPromptAgentName
  * @property {(templateModel: string) => ({ ok: true, provider: string, id: string } | { ok: false })} resolveTemplateModel
- * @property {(agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string) => void} setActiveAgent
+ * @property {(agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string, agentInternalName?: string) => void} setActiveAgent
  * @property {import('./generation-guard.js').GenerationGuard} generationGuard
  * @property {(cancel: (() => void) | null) => void} registerOperationCancel
  */
@@ -86,6 +86,7 @@ async function dispatchBuiltin(ctx, command, args, commandRegistry, thisGen) {
             sessionStartedAt,
             tui,
             originalHandleInput,
+            registerOperationCancel,
         });
     } catch (err) {
         if (generationGuard.isCurrent(thisGen)) {
@@ -140,6 +141,7 @@ async function dispatchTemplate(ctx, template, thisGen) {
         createDirectAgentHandler(chatPromptAgentName),
         uiAPI,
         templateModelValue,
+        chatPromptAgentName,
     );
 
     try {
