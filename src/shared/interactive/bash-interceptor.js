@@ -3,18 +3,18 @@
  *
  * Handles `!command` and `!!command` user input.
  *
- * - `!cmd`  pipes stdout/stderr into a tool block, persists the command and
- *           result on the root session, and is cancellable via Esc (the
- *           caller registers the spawned process so the keybinding handler
- *           can kill it).
- * - `!!cmd` hands the terminal over to the child (stop TUI, run inheriting
- *           stdio, then re-init the TUI). Not persisted, not cancellable.
+ * Both variants run the command and stream stdout/stderr into a tool block in
+ * the TUI. The difference is context: `!cmd` persists the command and result
+ * onto the root session so the model sees it on resume; `!!cmd` is ephemeral
+ * (block only, never written to the session).
+ *
+ * When invoked while another operation is already running (`concurrent=true`)
+ * the bash run never bumps the generation guard and never writes to the
+ * session — both would race with the in-flight model.
  *
  * The caller owns: the generation guard, the `activeBashProc` slot, and the
  * root session manager. We never reach into globals from here.
  */
-
-import { initTUI, stopTUI } from "../ui/tui.js";
 
 /**
  * @typedef {Object} BashContext
@@ -25,6 +25,7 @@ import { initTUI, stopTUI } from "../ui/tui.js";
  * @property {() => (import('../session/types.js').SessionManagerLike | null)} getSessionManager
  * @property {import('./generation-guard.js').GenerationGuard} generationGuard
  * @property {(proc: { kill?: () => void } | null) => void} registerBashProc
+ * @property {boolean} [concurrent] - True when another operation is in flight; skips gen-guard bump and session persistence.
  */
 
 /**
@@ -37,62 +38,29 @@ export async function handleBashCommand(ctx) {
     const { userRequest } = ctx;
     if (!userRequest.startsWith("!")) return false;
 
-    const isExcluded = userRequest.startsWith("!!");
-    const command = isExcluded ? userRequest.slice(2).trim() : userRequest.slice(1).trim();
+    const isEphemeral = userRequest.startsWith("!!");
+    const command = isEphemeral ? userRequest.slice(2).trim() : userRequest.slice(1).trim();
 
     // `!` with no command: swallow the prefix but do nothing.
     if (!command) return true;
 
-    if (isExcluded) {
-        await runInheritStdio(ctx, command);
-        return true;
-    }
-
-    await runPipedCommand(ctx, command, userRequest);
+    const persistToSession = !isEphemeral && !ctx.concurrent;
+    await runPipedCommand(ctx, command, userRequest, persistToSession);
     return true;
 }
 
 /**
- * `!!cmd` — hand the terminal to the child process.
- *
- * @param {BashContext} ctx
- * @param {string} command
- */
-async function runInheritStdio(ctx, command) {
-    const { uiAPI, tui, editor } = ctx;
-    try {
-        stopTUI();
-        const cmd = new Deno.Command("sh", {
-            args: ["-c", command],
-            stdin: "inherit",
-            stdout: "inherit",
-            stderr: "inherit",
-        });
-        await cmd.output();
-        initTUI();
-        tui.requestRender();
-    } catch (_e) {
-        // Ignore error
-    } finally {
-        if (uiAPI.setBusy) uiAPI.setBusy(false);
-        if (uiAPI.enableInput) uiAPI.enableInput();
-        tui.setFocus(editor);
-        tui.requestRender();
-    }
-}
-
-/**
- * `!cmd` — capture output into a tool block; cancellable.
+ * Run a shell command and stream its output into a TUI tool block.
  *
  * @param {BashContext} ctx
  * @param {string} command
  * @param {string} userRequest - Original input including the `!` prefix (used for transcript).
+ * @param {boolean} persistToSession - When true, write the user line, tool_use, and tool_result onto the root session.
  */
-async function runPipedCommand(ctx, command, userRequest) {
-    const { uiAPI, getSessionManager, generationGuard, registerBashProc } = ctx;
+async function runPipedCommand(ctx, command, userRequest, persistToSession) {
+    const { uiAPI, tui, getSessionManager, generationGuard, registerBashProc, concurrent } = ctx;
 
-    // Persist the user's `!cmd` line to the session so resume shows it.
-    if (uiAPI.appendUserMessage) {
+    if (persistToSession && uiAPI.appendUserMessage) {
         try {
             const msg = {
                 role: "user",
@@ -105,7 +73,11 @@ async function runPipedCommand(ctx, command, userRequest) {
         }
     }
 
-    const thisGen = generationGuard.bump();
+    // Skip gen-guard bump while another operation owns the current generation;
+    // bumping would invalidate that operation's late UI updates.
+    const thisGen = concurrent ? -1 : generationGuard.bump();
+    const genIsCurrent = () => concurrent ? true : generationGuard.isCurrent(thisGen);
+
     const activeToolId = `bash-${Date.now()}`;
     uiAPI.addToolInvoked?.({
         id: activeToolId,
@@ -154,6 +126,9 @@ async function runPipedCommand(ctx, command, userRequest) {
                             const chunk = new TextDecoder().decode(value);
                             toolBlock?.appendOutput(chunk);
                             outputBuffer += chunk;
+                            // Text.setText only invalidates the cache; force a redraw
+                            // so the user sees output as it streams.
+                            tui.requestRender();
                         }
                     }
                 } finally {
@@ -184,7 +159,7 @@ async function runPipedCommand(ctx, command, userRequest) {
                 toolBlock.endExecution(true, Date.now() - startTime);
             }
             uiAPI.appendSystemMessage("Bash command canceled.", false, "Harns");
-        } else if (generationGuard.isCurrent(thisGen)) {
+        } else if (genIsCurrent()) {
             const durationMs = Date.now() - startTime;
             toolBlock?.endExecution(code !== 0, durationMs);
             uiAPI.addToolResult?.({
@@ -194,34 +169,36 @@ async function runPipedCommand(ctx, command, userRequest) {
                 isError: code !== 0,
                 durationMs,
             });
-            try {
-                const cmdMsg = {
-                    role: "assistant",
-                    content: [{
-                        type: "tool_use",
-                        id: activeToolId,
-                        name: "bash",
-                        input: { command },
-                    }],
-                };
-                getSessionManager()?.addMessage?.(cmdMsg);
+            if (persistToSession) {
+                try {
+                    const cmdMsg = {
+                        role: "assistant",
+                        content: [{
+                            type: "tool_use",
+                            id: activeToolId,
+                            name: "bash",
+                            input: { command },
+                        }],
+                    };
+                    getSessionManager()?.addMessage?.(cmdMsg);
 
-                const resultMsg = {
-                    role: "user",
-                    content: [{
-                        type: "tool_result",
-                        tool_use_id: activeToolId,
-                        is_error: code !== 0,
-                        content: outputBuffer,
-                    }],
-                };
-                getSessionManager()?.addMessage?.(resultMsg);
-            } catch (_e) {
-                // ignore session add failure
+                    const resultMsg = {
+                        role: "user",
+                        content: [{
+                            type: "tool_result",
+                            tool_use_id: activeToolId,
+                            is_error: code !== 0,
+                            content: outputBuffer,
+                        }],
+                    };
+                    getSessionManager()?.addMessage?.(resultMsg);
+                } catch (_e) {
+                    // ignore session add failure
+                }
             }
         }
     } catch (err) {
-        if (generationGuard.isCurrent(thisGen)) {
+        if (genIsCurrent()) {
             uiAPI.appendSystemMessage(
                 `Error executing bash command: ${err instanceof Error ? err.message : String(err)}`,
             );

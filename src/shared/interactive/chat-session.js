@@ -9,7 +9,7 @@ import { initTUI } from "../ui/tui.js";
 import { applyPersistedTheme, getEditorTheme, initHarnsTheme, theme } from "../ui/theme.js";
 import { HNS_VERSION } from "../version.js";
 import { createUiApi } from "../ui/api.js";
-import { SpinnerBlock } from "../ui/blocks.js";
+import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
 import { listPromptTemplates, steerRootSession } from "../session/session.js";
 import { ensureMnemosyneBinary } from "../runtime-preflight.js";
 import { commandRegistry } from "../../cmd/registry.js";
@@ -525,9 +525,30 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     }
 
     // Handle Editor events
-    /** @type {Array<{text: string, images: import('../session/types.js').ImageAttachment[]}>} */
+    /** @type {Array<{text: string, images: import('../session/types.js').ImageAttachment[], block?: SystemMessageBlock, spacer?: Spacer}>} */
     const submissionQueue = [];
     let isProcessingSubmission = false;
+
+    /** Pop the most recent queued submission and restore it into the editor.
+     *  Returns true if a queued message was dequeued. */
+    function dequeueLastSubmission() {
+        if (submissionQueue.length === 0) return false;
+        const item = submissionQueue.pop();
+        if (!item) return false;
+        if (item.block) messageList.removeChild(item.block);
+        if (item.spacer) messageList.removeChild(item.spacer);
+        editor.setText(item.text);
+        if (item.images && item.images.length > 0) {
+            for (const img of item.images) {
+                pastedImages.push(img);
+                previewImages.addChild(
+                    new Text(theme.fg("dim", `[Attached image: ${img.mimeType}]`)),
+                );
+            }
+        }
+        tui.requestRender();
+        return true;
+    }
 
     async function processSubmissions() {
         if (isProcessingSubmission) return;
@@ -554,20 +575,6 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         if (!userRequest) return;
 
         editor.addToHistory?.(userRequest);
-
-        // Bash command interception (`!cmd` and `!!cmd`)
-        const handledBash = await handleBashCommand({
-            userRequest,
-            uiAPI,
-            tui,
-            editor,
-            getSessionManager: getRootSessionManager,
-            generationGuard,
-            registerBashProc: (proc) => {
-                activeBashProc = proc;
-            },
-        });
-        if (handledBash) return;
 
         // Slash commands (`/builtin` or `/template`)
         const handledSlash = await handleSlashCommand({
@@ -631,13 +638,37 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         previewImages.clear();
         editor.setText("");
 
+        // Bash interception (`!cmd` / `!!cmd`) runs ahead of the steering and
+        // queueing paths so a stray `!` typed during a model turn is executed
+        // locally instead of being sent as steering text.
+        if (userRequest.startsWith("!")) {
+            handleBashCommand({
+                userRequest,
+                uiAPI,
+                tui,
+                editor,
+                getSessionManager: getRootSessionManager,
+                generationGuard,
+                registerBashProc: (proc) => {
+                    activeBashProc = proc;
+                },
+                concurrent: isProcessingSubmission,
+            }).catch(() => {/* swallow — UI already surfaces errors */});
+            return;
+        }
+
         if (isProcessingSubmission) {
             steerRootSession(userRequest, images).then((steered) => {
                 if (steered) {
                     uiAPI.appendSystemMessage(userRequest, false, "Steering:");
                 } else {
-                    submissionQueue.push({ text: userRequest, images });
-                    uiAPI.appendSystemMessage(userRequest, false, "Queued message:");
+                    // Add the visual block manually (bypassing appendSystemMessage's coalescing)
+                    // so we can remove this exact block if the user dequeues with up-arrow.
+                    const block = new SystemMessageBlock(userRequest, false, "Queued message:");
+                    const spacer = new Spacer(1);
+                    messageList.addChild(block);
+                    messageList.addChild(spacer);
+                    submissionQueue.push({ text: userRequest, images, block, spacer });
                 }
                 tui.requestRender();
             });
@@ -704,6 +735,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         generationGuard,
         cancelActiveOperation,
         dismissActivePrompt,
+        dequeueLastSubmission,
         forceResetUI,
         markCtrlCPendingExit,
         isCtrlCPendingExit: () => ctrlCPendingExit,
