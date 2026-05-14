@@ -63,27 +63,23 @@ function applyBg(bgCode, line) {
     return bgCode + line + "\x1b[49m";
 }
 
-/** @type {Map<string, string>} */
-const bgCodeCache = new Map();
-
 /**
  * Get the raw ANSI background open code for a ThemeBg token.
  * Uses the upstream theme.bg() to render a single space, then extracts
  * the ANSI background open code from the result.
+ *
+ * Not cached: theme can swap at runtime, and the regex extraction is cheap
+ * (single small string). Caching would require a clear hook on every swap.
+ *
  * @param {string} bgTokenName - a ThemeBg token (e.g. "userMessageBg")
  * @returns {string}
  */
 function getBgCode(bgTokenName) {
-    const cached = bgCodeCache.get(bgTokenName);
-    if (cached !== undefined) return cached;
-    // Render a single space with the bg to extract the open code
     // @ts-ignore: bgTokenName is always a valid ThemeBg but TS can't verify dynamic strings
     const rendered = theme.bg(bgTokenName, " ");
     // deno-lint-ignore no-control-regex
     const match = rendered.match(/^(\x1b\[(?:48;2;\d+;\d+;\d+|48;5;\d+)m)/);
-    const code = match ? match[1] : "";
-    bgCodeCache.set(bgTokenName, code);
-    return code;
+    return match ? match[1] : "";
 }
 
 /**
@@ -105,8 +101,6 @@ export class StyledBlock {
         this.paddingX = paddingX;
         this.paddingY = paddingY;
         this.child = child;
-        /** @type {string} */
-        this._bgCode = getBgCode(bgToken);
     }
 
     invalidate() {
@@ -135,7 +129,7 @@ export class StyledBlock {
 
         const padY = Array.from({ length: this.paddingY }, () => emptyLine);
 
-        const bgCode = this._bgCode;
+        const bgCode = getBgCode(this.bgToken);
         const allLines = [...padY, ...lines, ...padY];
         return allLines.map((line) => applyBg(bgCode, line));
     }
@@ -476,9 +470,13 @@ export class PromptSelectBlock {
     constructor(promptTitle, items, hint = "") {
         this.container = new Container();
 
+        // Raw prompt + hint, re-baked into Text on invalidate so theme swaps recolor live.
+        this.promptTitle = promptTitle;
+        this.hintText = hint || "Type to search, arrows to navigate, Enter to select, Esc to cancel";
+
         // Header
-        const headerText = theme.fg("text", theme.bold(promptTitle));
-        this.header = new StyledBlock("selectedBg", 2, 1, new Text(headerText, 0, 0));
+        this._headerText = new Text(theme.fg("text", theme.bold(this.promptTitle)), 0, 0);
+        this.header = new StyledBlock("selectedBg", 2, 1, this._headerText);
         this.container.addChild(this.header);
 
         // Search input
@@ -492,8 +490,8 @@ export class PromptSelectBlock {
         this.container.addChild(this.bodyBlock);
 
         // Footer with hint
-        const hintText = hint || "Type to search, arrows to navigate, Enter to select, Esc to cancel";
-        this.footer = new StyledBlock("selectedBg", 2, 1, new Text(theme.fg("dim", hintText), 0, 0));
+        this._footerText = new Text(theme.fg("dim", this.hintText), 0, 0);
+        this.footer = new StyledBlock("selectedBg", 2, 1, this._footerText);
         this.container.addChild(this.footer);
 
         this.settled = false;
@@ -560,6 +558,11 @@ export class PromptSelectBlock {
     }
 
     invalidate() {
+        // Re-bake header/hint with current theme so theme swaps recolor live.
+        if (!this.settled) {
+            this._headerText.setText(theme.fg("text", theme.bold(this.promptTitle)));
+            this._footerText.setText(theme.fg("dim", this.hintText));
+        }
         this.container.invalidate();
     }
 
@@ -581,9 +584,12 @@ export class PromptTextBlock {
     constructor(promptTitle, hint = "") {
         this.container = new Container();
 
+        this.promptTitle = promptTitle;
+        this.hintText = hint || "Enter text and press Enter, Esc to cancel";
+
         // Header
-        const headerText = theme.fg("text", theme.bold(promptTitle));
-        this.header = new StyledBlock("selectedBg", 2, 1, new Text(headerText, 0, 0));
+        this._headerText = new Text(theme.fg("text", theme.bold(this.promptTitle)), 0, 0);
+        this.header = new StyledBlock("selectedBg", 2, 1, this._headerText);
         this.container.addChild(this.header);
 
         // Body with Input
@@ -592,8 +598,8 @@ export class PromptTextBlock {
         this.container.addChild(this.bodyBlock);
 
         // Footer with hint
-        const hintText = hint || "Enter text and press Enter, Esc to cancel";
-        this.footer = new StyledBlock("selectedBg", 2, 1, new Text(theme.fg("dim", hintText), 0, 0));
+        this._footerText = new Text(theme.fg("dim", this.hintText), 0, 0);
+        this.footer = new StyledBlock("selectedBg", 2, 1, this._footerText);
         this.container.addChild(this.footer);
 
         this.settled = false;
@@ -630,6 +636,10 @@ export class PromptTextBlock {
     }
 
     invalidate() {
+        if (!this.settled) {
+            this._headerText.setText(theme.fg("text", theme.bold(this.promptTitle)));
+            this._footerText.setText(theme.fg("dim", this.hintText));
+        }
         this.container.invalidate();
     }
 

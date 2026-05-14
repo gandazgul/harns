@@ -21,6 +21,7 @@ import { runInitCommand } from "./init/index.js";
 import { runThemeCommand } from "./theme/index.js";
 import { runInstallCommand } from "./install/index.js";
 import { runRemoveCommand } from "./remove/index.js";
+import { runCompactCommand } from "./compact/index.js";
 
 /** @param {...string} parts */
 const bin = (...parts) => [CLI_BIN, ...parts].join(" ");
@@ -38,6 +39,7 @@ const bin = (...parts) => [CLI_BIN, ...parts].join(" ");
  * @property {import('../shared/ui/types.js').TuiAPI} [tui]
  * @property {(data: string) => void | Promise<void>} [originalHandleInput]
  * @property {"new" | "continue"} [sessionStartMode]
+ * @property {(cancel: (() => void) | null) => void} [registerOperationCancel]  Set by the slash dispatcher; lets a long-running command install its own Esc handler.
  * @property {Record<string, unknown>} [__testDeps]
  */
 
@@ -352,6 +354,23 @@ export const commandRegistry = {
         execute: runRemoveCommand,
         isSlash: false,
         isCli: true,
+    },
+    [COMMAND_NAMES.COMPACT]: {
+        name: COMMAND_NAMES.COMPACT,
+        displayName: "Compact",
+        description: "Compact the session context",
+        summary: "Manually compact the session context to free up tokens.",
+        usage: [
+            "/compact",
+            '/compact "focus on summarizing the architecture decisions"',
+        ],
+        notes: [
+            "Slash command only (interactive session).",
+            "Optionally pass custom instructions to guide the summarization.",
+        ],
+        execute: runCompactCommand,
+        isSlash: true,
+        isCli: false,
     },
 };
 

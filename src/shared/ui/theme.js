@@ -155,9 +155,32 @@ const EMBEDDED_THEME = createThemeFromJson(CATPPUCCIN_MOCHA_JSON);
 /** @type {Map<string, ThemeInstance>} */
 const registeredThemes = new Map();
 
+/** @type {Set<() => void>} */
+const themeChangeListeners = new Set();
+
+/**
+ * Subscribe to theme changes. Returns an unsubscribe function.
+ * Fires on every successful theme swap (setTheme / setThemeInstance) and
+ * on the initial install via initHarnsTheme.
+ * @param {() => void} cb
+ * @returns {() => void}
+ */
+export function onThemeChange(cb) {
+    themeChangeListeners.add(cb);
+    return () => themeChangeListeners.delete(cb);
+}
+
 /** @param {ThemeInstance} t */
 function setGlobalTheme(t) {
     /** @type {any} */ (globalThis)[THEME_KEY] = t;
+    for (const cb of themeChangeListeners) {
+        try {
+            cb();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.warn(`Theme change listener threw: ${msg}`);
+        }
+    }
 }
 
 /** @param {ThemeInstance[]} themes */

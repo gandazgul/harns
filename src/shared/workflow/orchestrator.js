@@ -21,7 +21,8 @@ import { CWD } from "../../constants.js";
 import { ensurePlansDir } from "../../plan-store.js";
 import { setActiveAgent } from "../interactive/chat-session.js";
 import { createDirectAgentHandler } from "../session/direct-agent.js";
-import { runAgentSession } from "../session/session.js";
+import { runAgentSession, runRootTurn } from "../session/session.js";
+import { getRootAgentName } from "../session/session-state.js";
 import { getCustomSetting, setCustomSetting } from "../settings.js";
 import { createSilentUiApi } from "../ui/api.js";
 import { executePlan, extractAssistantOutput, runPlanningAgent } from "./workflow.js";
@@ -169,7 +170,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
 
     if (triage.classification === "QUICK_FIX") {
         uiAPI.appendSystemMessage("=== Phase B: Operator (Execute) ===");
-        setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI);
+        setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
 
         await runAgentSession({
             agentName: "operator",
@@ -199,7 +200,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
 
         uiAPI.appendSystemMessage(phaseLabel);
         uiAPI.appendSystemMessage(`=== Phase B: ${displayName} ===`);
-        setActiveAgent(displayName, createDirectAgentHandler(agentName), uiAPI);
+        setActiveAgent(displayName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
 
         await ensurePlansDir(CWD);
 
@@ -253,7 +254,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                     uiAPI.appendSystemMessage("✅ Build and tests passed!");
                 } else {
                     uiAPI.appendSystemMessage("❌ Build failed. Dispatching Operator to fix syntax/types...");
-                    setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI);
+                    setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
                     await runAgentSession({
                         agentName: "operator",
                         userRequest:
@@ -303,7 +304,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                 // This will exit the while loop cleanly!
             } else {
                 uiAPI.appendSystemMessage("❌ Review failed. Sending feedback back to Engineer...");
-                setActiveAgent("Engineer", createDirectAgentHandler("engineer"), uiAPI);
+                setActiveAgent("Engineer", createDirectAgentHandler("engineer"), uiAPI, undefined, "engineer");
                 await runAgentSession({
                     agentName: "engineer",
                     userRequest:
@@ -326,7 +327,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             );
         }
 
-        setActiveAgent("Engineer", createDirectAgentHandler("engineer"), uiAPI);
+        setActiveAgent("Engineer", createDirectAgentHandler("engineer"), uiAPI, undefined, "engineer");
     }
 }
 
@@ -341,13 +342,19 @@ export function createRouterOrchestratorHandler() {
     return async (userRequest, images, uiAPI, sessionManager) => {
         if (!uiAPI) throw new Error("router orchestrator handler: uiAPI is required");
 
-        const messages = await runAgentSession({
-            agentName: "router",
-            userRequest,
-            images,
-            uiAPI,
-            sessionManager,
-        });
+        // Use the live root AgentSession when the router is already established as root
+        // (the normal startup case). Fallback to transient for tests/edge cases where the
+        // root was not pre-built.
+        const useRoot = getRootAgentName() === "router";
+        const messages = useRoot
+            ? await runRootTurn({ agentName: "router", userRequest, images, uiAPI })
+            : await runAgentSession({
+                agentName: "router",
+                userRequest,
+                images,
+                uiAPI,
+                sessionManager,
+            });
 
         const triage = readLatestTriageOutcome(messages);
         if (!triage) return;

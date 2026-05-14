@@ -3,6 +3,13 @@
  * Single source of truth for interactive session state.
  */
 
+/**
+ * @typedef {Object} PendingRootSwap
+ * @property {string} agentName  Internal agent name (lowercase, matches agent definition filename).
+ * @property {string} displayName  Display name as shown in the UI.
+ * @property {string} [model]  Optional explicit model in provider/id format.
+ */
+
 /** @type {{
  * activeAgentName: string,
  * activeModel: string,
@@ -13,6 +20,9 @@
  * rootSessionManager: import('./session/types.js').SessionManagerLike | null,
  * activeUiAPI: import('./ui/types.js').UiAPI | null,
  * rootAgentSession: import('@earendil-works/pi-coding-agent').AgentSession | null,
+ * rootAgentName: string | null,
+ * subAgentSessions: Set<import('@earendil-works/pi-coding-agent').AgentSession>,
+ * pendingRootSwap: PendingRootSwap | null,
  * }} */
 const state = {
     activeAgentName: "Router",
@@ -22,7 +32,10 @@ const state = {
     activeThinkingLevel: "off",
     activeOnMessage: null,
     rootSessionManager: null, // conversation history / persistence (pi SessionManager)
-    rootAgentSession: null, // live session handle used for steering / abort (pi AgentSession)
+    rootAgentSession: null, // long-lived AgentSession for the user-facing agent (pi AgentSession)
+    rootAgentName: null, // internal name of the agent the rootAgentSession was built for
+    subAgentSessions: new Set(), // transient AgentSessions (workflow sub-agents, switch_agent triggers)
+    pendingRootSwap: null, // recorded when setActiveAgent is called during an in-flight turn
     activeUiAPI: null,
 };
 
@@ -93,6 +106,38 @@ export function setRootAgentSession(session) {
 
 export function getRootAgentSession() {
     return state.rootAgentSession;
+}
+
+/** @param {string | null} agentName */
+export function setRootAgentName(agentName) {
+    state.rootAgentName = agentName;
+}
+
+export function getRootAgentName() {
+    return state.rootAgentName;
+}
+
+/** @param {import('@earendil-works/pi-coding-agent').AgentSession} session */
+export function addSubAgentSession(session) {
+    state.subAgentSessions.add(session);
+}
+
+/** @param {import('@earendil-works/pi-coding-agent').AgentSession} session */
+export function removeSubAgentSession(session) {
+    state.subAgentSessions.delete(session);
+}
+
+export function getSubAgentSessions() {
+    return state.subAgentSessions;
+}
+
+/** @param {PendingRootSwap | null} swap */
+export function setPendingRootSwap(swap) {
+    state.pendingRootSwap = swap;
+}
+
+export function getPendingRootSwap() {
+    return state.pendingRootSwap;
 }
 
 /**

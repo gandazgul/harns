@@ -45,39 +45,39 @@ export async function renderBootBanner({
     blockedPromptTemplates,
     chatPromptAgentName,
 }) {
-    const peachStyle = { headingColor: "mdHeading" };
+    const headerStyle = { headingColor: "mdHeading" };
 
     if (invokablePromptTemplates.length > 0) {
         const names = invokablePromptTemplates.map((template) => `/${template.name}`).join(", ");
         uiAPI.appendSystemMessage(
             `${names} (slash commands execute via ${chatPromptAgentName})`,
             false,
-            `Loaded prompt templates (${invokablePromptTemplates.length}):`,
-            peachStyle,
+            `Loaded Prompt Templates (${invokablePromptTemplates.length}):`,
+            headerStyle,
         );
     } else {
-        uiAPI.appendSystemMessage("none", false, "Loaded prompt templates:", peachStyle);
+        uiAPI.appendSystemMessage("none", false, "Loaded Prompt Templates:", headerStyle);
     }
 
     const skills = await listSkills();
     if (skills && skills.length > 0) {
         const skillNames = skills.map((s) => s.name).join(", ");
-        uiAPI.appendSystemMessage(skillNames, false, `Loaded skills (${skills.length}):`, peachStyle);
+        uiAPI.appendSystemMessage(skillNames, false, `Loaded Skills (${skills.length}):`, headerStyle);
     } else {
-        uiAPI.appendSystemMessage("none", false, "Loaded skills:", peachStyle);
+        uiAPI.appendSystemMessage("none", false, "Loaded Skills:", headerStyle);
     }
 
     // Report the active theme
     const { getSettingsManager } = await import("../settings.js");
     const activeTheme = getSettingsManager().getTheme() || "catppuccin-mocha";
-    uiAPI.appendSystemMessage(activeTheme, false, "Loaded Theme:", peachStyle);
+    uiAPI.appendSystemMessage(activeTheme, false, "Loaded Theme:", headerStyle);
 
     const agentMdFiles = await listLoadedAgentMdFiles();
     if (agentMdFiles.length > 0) {
         const lines = agentMdFiles
             .map((file) => `- ${toUserFacingAgentMdPath(file)}`)
             .join("\n");
-        uiAPI.appendSystemMessage(`\n${lines}`, false, "Loaded Context:", peachStyle);
+        uiAPI.appendSystemMessage(`\n${lines}`, false, "Loaded Context:", headerStyle);
     }
 
     for (const blocked of blockedPromptTemplates) {
