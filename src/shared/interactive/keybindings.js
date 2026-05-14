@@ -32,6 +32,7 @@ import { theme } from "../ui/theme.js";
  * @property {import('./generation-guard.js').GenerationGuard} generationGuard
  * @property {() => boolean} cancelActiveOperation
  * @property {() => void} dismissActivePrompt
+ * @property {() => boolean} dequeueLastSubmission
  * @property {() => void} forceResetUI
  * @property {() => void} markCtrlCPendingExit
  * @property {() => boolean} isCtrlCPendingExit
@@ -57,6 +58,7 @@ export function installKeybindings(ctx) {
         generationGuard,
         cancelActiveOperation,
         dismissActivePrompt,
+        dequeueLastSubmission,
         forceResetUI,
         markCtrlCPendingExit,
         isCtrlCPendingExit,
@@ -164,6 +166,18 @@ export function installKeybindings(ctx) {
             cycleThinkingLevel();
             tui.requestRender();
             return;
+        }
+
+        // Up arrow on empty editor with a queued message: dequeue it back into the
+        // editor for editing or deletion. Otherwise fall through to the editor's
+        // built-in history navigation.
+        if (
+            matchesKey(data, Key.up) &&
+            // @ts-ignore: private pi-tui internals used intentionally
+            editor.isEditorEmpty() &&
+            submissionQueue.length > 0
+        ) {
+            if (dequeueLastSubmission()) return;
         }
 
         originalHandleInput(data);
