@@ -320,14 +320,17 @@ export async function listLoadedAgentMdFiles() {
 }
 
 /**
- * Stop all currently active agent sessions — root (if alive) plus any transient sub-agents.
+ * Stop all currently active agent sessions — root (only while streaming) plus
+ * any transient sub-agents. The root AgentSession lives for the entire chat,
+ * so its mere existence does NOT mean a run is in flight; gate on isStreaming
+ * to avoid reporting "Agent run canceled" when the user presses Esc at idle.
  *
  * @returns {boolean} true when at least one active session was aborted
  */
 export function abortActiveSession() {
     let aborted = false;
     const root = getRootAgentSession();
-    if (root) {
+    if (root && root.isStreaming) {
         try {
             root.abort();
         } catch (_e) { /* ignore */ }
@@ -1208,6 +1211,47 @@ export async function reloadRootAgentSession(uiAPI) {
     }
 
     return true;
+}
+
+/**
+ * Expand a /skill:{name} command into an XML <skill> block.
+ * Modeled after Pi's _expandSkillCommand() in agent-session.ts.
+ *
+ * @param {string} skillName
+ * @param {string} [additionalInstructions]
+ * @returns {Promise<string>} Formatted skill block string
+ */
+export async function expandSkillCommand(skillName, additionalInstructions) {
+    const skills = await listSkills();
+    const skill = skills.find((s) => s.name === skillName);
+    if (!skill) {
+        throw new Error(`Unknown skill: ${skillName}`);
+    }
+
+    try {
+        const raw = await Deno.readTextFile(skill.path);
+        let body = raw;
+
+        // Strip YAML frontmatter if present
+        if (hasFrontMatter(raw)) {
+            body = extractYaml(raw).body;
+        }
+        body = body.trim();
+
+        // Build the XML block (matches Pi's format exactly)
+        const skillBlock = `<skill name="${skill.name}" location="${skill.path}">\nReferences are relative to ${
+            skill.path.replace(/\/SKILL\.md$/, "")
+        }.\n\n${body}\n</skill>`;
+
+        // Append user instructions after the skill block
+        if (additionalInstructions) {
+            return `${skillBlock}\n\n${additionalInstructions}`;
+        }
+        return skillBlock;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to read skill "${skill.name}": ${message}`);
+    }
 }
 
 /**

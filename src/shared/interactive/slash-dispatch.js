@@ -10,9 +10,17 @@
  * a template-declared model.
  */
 
-import { abortActiveSession, runAgentSession } from "../session/session.js";
+import { abortActiveSession, expandSkillCommand, runAgentSession } from "../session/session.js";
 import { createDirectAgentHandler } from "../session/direct-agent.js";
 import { getRootSessionManager } from "../session/session-state.js";
+
+/**
+ * @typedef {Object} SkillMeta
+ * @property {string} name
+ * @property {string} description
+ * @property {string} path
+ * @property {"local" | "home" | "bundled"} source
+ */
 
 /**
  * @typedef {Object} SlashContext
@@ -25,6 +33,7 @@ import { getRootSessionManager } from "../session/session-state.js";
  * @property {(data: string) => void} originalHandleInput
  * @property {Set<string>} builtinNames
  * @property {Map<string, { name: string, argumentHint?: string, description?: string, model?: string, source?: string }>} promptTemplateByName
+ * @property {SkillMeta[]} skills
  * @property {string} chatPromptAgentName
  * @property {(templateModel: string) => ({ ok: true, provider: string, id: string } | { ok: false })} resolveTemplateModel
  * @property {(agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string) => void} setActiveAgent
@@ -59,6 +68,17 @@ export async function handleSlashCommand(ctx) {
     if (template) {
         await dispatchTemplate(ctx, template, thisGen);
         return true;
+    }
+
+    // Skill commands (/skill:{name})
+    if (command.startsWith("skill:")) {
+        const skillName = command.slice(6);
+        const skill = ctx.skills.find((s) => s.name === skillName);
+        if (skill) {
+            await dispatchSkill(ctx, skill, args.join(" "), thisGen);
+            return true;
+        }
+        // Skill name doesn't match any known skill — fall through to unknown command
     }
 
     ctx.uiAPI.appendSystemMessage(`Unknown command: /${command}`);
@@ -111,6 +131,44 @@ async function dispatchBuiltin(ctx, command, args, commandRegistry, thisGen) {
         // This keeps the footer in lock-step with the live session: the
         // user sees the new agent name only after its session is built.
         await applyPendingRootSwap(uiAPI);
+    }
+}
+
+/**
+ * @param {SlashContext} ctx
+ * @param {SkillMeta} skill
+ * @param {string} additionalInstructions
+ * @param {number} thisGen
+ */
+async function dispatchSkill(ctx, skill, additionalInstructions, thisGen) {
+    const {
+        uiAPI,
+        savedImages,
+        chatPromptAgentName,
+        generationGuard,
+    } = ctx;
+
+    try {
+        const expandedText = await expandSkillCommand(skill.name, additionalInstructions || undefined);
+
+        uiAPI.appendUserMessage?.(expandedText);
+        savedImages.forEach((img) => {
+            if (uiAPI.appendImage) uiAPI.appendImage(img.base64, img.mimeType);
+        });
+
+        await runAgentSession({
+            agentName: chatPromptAgentName,
+            userRequest: expandedText,
+            images: savedImages,
+            uiAPI,
+            sessionManager: getRootSessionManager() || undefined,
+        });
+    } catch (err) {
+        if (generationGuard.isCurrent(thisGen)) {
+            uiAPI.appendSystemMessage(
+                `Error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
     }
 }
 
