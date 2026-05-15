@@ -200,6 +200,7 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
  * @param {string} opts.planPath - Absolute path to the plan markdown file.
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
  * @param {UiAPI} opts.uiAPI
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
  * @param {{
  *   runSlicerAgent?: typeof runSlicerAgent,
  *   readTextFile?: (path: string) => Promise<string>,
@@ -207,7 +208,7 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
  * }} [opts.__deps] - Test-only injection point.
  * @returns {Promise<{ ok: true, slicerInvoked: boolean } | { ok: false, error: string, stage: "slicer" | "validation" }>}
  */
-export async function ensureSlicerTasks({ planName, planPath, triageMeta, uiAPI, __deps }) {
+export async function ensureSlicerTasks({ planName, planPath, triageMeta, uiAPI, sessionManager, __deps }) {
     if (!uiAPI) throw new Error("ensureSlicerTasks: uiAPI is required");
     const slicer = __deps?.runSlicerAgent || runSlicerAgent;
     const readTextFile = __deps?.readTextFile || Deno.readTextFile.bind(Deno);
@@ -222,7 +223,7 @@ export async function ensureSlicerTasks({ planName, planPath, triageMeta, uiAPI,
         // Tasks missing or unparseable — slicer must run.
     }
 
-    const slicerResult = await slicer({ planName, triageMeta, uiAPI });
+    const slicerResult = await slicer({ planName, triageMeta, uiAPI, sessionManager });
     if (!slicerResult.ok) {
         return { ok: false, error: slicerResult.error || "slicer failed", stage: "slicer" };
     }
@@ -387,6 +388,7 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                         localActiveTasks = runningTasks.length;
                         if (uiAPI.setRunningTasks) uiAPI.setRunningTasks(runningTasks);
                     },
+                    sessionManager,
                 );
 
                 if (spinnerInterval) clearInterval(spinnerInterval);
@@ -410,6 +412,7 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                                 localActiveTasks = runningTasks.length;
                                 if (uiAPI.setRunningTasks) uiAPI.setRunningTasks(runningTasks);
                             },
+                            sessionManager,
                         );
                         if (spinnerInterval) clearInterval(spinnerInterval);
                         if (finalResult.failedTasks.length > 0) {
@@ -445,12 +448,22 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
 }
 
 /**
+ * Execute project tasks in parallel against in-memory sub-sessions. Each task
+ * runs on a transient SessionManager.inMemory() (intentional — keeps the root
+ * session focused and avoids interleaved tool calls from many concurrent
+ * agents). When a task finishes, we append a single custom_message entry to
+ * the root session manager summarizing what it did, so the rootSession remains
+ * a single continuous thread that includes a record of every sub-task.
+ *
  * @param {string} planName
  * @param {string} planBody
  * @param {Array<{ task: number, assignee: string, dependencies: string, description: string }>} tasks
  * @param {UiAPI} uiAPI
  * @param {number[]} [seedFailedTasks]
  * @param {(runningTasks: Array<{task: number, assignee: string, description: string}>) => void} [onRunningTasksChange]
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
+ *   Root session manager; receives a custom_message per finished task. Tasks
+ *   themselves still run in-memory.
  */
 async function executeProjectTasks(
     planName,
@@ -459,6 +472,7 @@ async function executeProjectTasks(
     uiAPI,
     seedFailedTasks = [],
     onRunningTasksChange,
+    sessionManager,
 ) {
     /** @type {Map<number, import('./types.js').TaskExecutionResult>} */
     const results = new Map();
@@ -549,6 +563,20 @@ async function executeProjectTasks(
                 );
                 block.appendText(outputText || "_no output received_");
                 results.set(task.task, { status: "success", messages: sessionMessages });
+
+                // Append a single record of the task's final assistant output to the root
+                // session, so /resume can replay a complete picture of what each parallel
+                // sub-agent did. The transient in-memory session itself is discarded.
+                if (sessionManager?.appendCustomMessageEntry) {
+                    const display = `Task ${task.task} (${getAgentDisplayName(agentName)}) — ${task.description}\n\n` +
+                        (outputText || "(no output)");
+                    sessionManager.appendCustomMessageEntry(
+                        "task_result",
+                        display,
+                        true,
+                        { taskId: task.task, agentName, status: "success", output: outputText || "" },
+                    );
+                }
             } catch (e) {
                 const error = e instanceof Error ? e : new Error(String(e));
                 uiAPI.appendSystemMessage(
@@ -558,6 +586,15 @@ async function executeProjectTasks(
                 );
                 results.set(task.task, { status: "failed", error: error.message });
                 failed.add(task.task);
+
+                if (sessionManager?.appendCustomMessageEntry) {
+                    sessionManager.appendCustomMessageEntry(
+                        "task_result",
+                        `Task ${task.task} (${getAgentDisplayName(agentName)}) FAILED: ${error.message}`,
+                        true,
+                        { taskId: task.task, agentName, status: "failed", error: error.message },
+                    );
+                }
             } finally {
                 running.delete(task.task);
                 if (onRunningTasksChange) {
