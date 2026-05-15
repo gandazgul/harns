@@ -55,7 +55,7 @@ import {
 } from "./session-state.js";
 import { directoryExists, fileExists } from "../helpers.js";
 import { loadAgentDef, resolveAgentDefsDir as _resolveAgentDefsDir, resolveSessionToolNames } from "./agents.js";
-import { getSettingsDir } from "../settings.js";
+import { getSettingsDir, getSettingsManager } from "../settings.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
@@ -552,7 +552,7 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride]
  *
- * @returns {Promise<{ session: import('@earendil-works/pi-coding-agent').AgentSession, agentDef: import('./types.js').AgentDefinition, finalSystemPrompt: string }>}
+ * @returns {Promise<{ session: import('@earendil-works/pi-coding-agent').AgentSession, agentDef: import('./types.js').AgentDefinition, promptState: { text: string }, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[] }>}
  */
 export async function buildAgentSession({
     agentName,
@@ -616,11 +616,12 @@ export async function buildAgentSession({
 
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools);
+    const promptState = { text: finalSystemPrompt };
 
     const loader = new DefaultResourceLoader({
         cwd: CWD,
         agentDir: getSettingsDir("global"),
-        systemPromptOverride: () => finalSystemPrompt,
+        systemPromptOverride: () => promptState.text,
         extensionFactories: [mnemosyneExtension, cymbalExtension],
         additionalPromptTemplatePaths: getPromptTemplatePaths(),
         noPromptTemplates: true,
@@ -655,7 +656,7 @@ export async function buildAgentSession({
     // Ensure extension lifecycle hooks (e.g. session_start) are activated for this agent invocation.
     await session.bindExtensions({});
 
-    return { session, agentDef, finalSystemPrompt };
+    return { session, agentDef, promptState, tools, finalCustomTools };
 }
 
 /**
@@ -1007,7 +1008,7 @@ async function runPrompt({
     return session.agent.state.messages;
 }
 
-/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, finalSystemPrompt: string, subscriberState: SubscriberState, agentName: string }>} */
+/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, promptState: { text: string }, subscriberState: SubscriberState, agentName: string, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[] }>} */
 const rootSessionMetadata = new WeakMap();
 
 /**
@@ -1039,12 +1040,12 @@ export async function ensureRootAgentSession(opts) {
         setRootAgentName(null);
     }
 
-    const { session, agentDef, finalSystemPrompt } = await buildAgentSession(opts);
+    const { session, agentDef, promptState, tools, finalCustomTools } = await buildAgentSession(opts);
     const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI);
 
     setRootAgentSession(session);
     setRootAgentName(opts.agentName);
-    rootSessionMetadata.set(session, { agentDef, finalSystemPrompt, subscriberState, agentName: opts.agentName });
+    rootSessionMetadata.set(session, { agentDef, promptState, subscriberState, agentName: opts.agentName, tools, finalCustomTools });
 
     return session;
 }
@@ -1083,7 +1084,7 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
         agentDef: meta.agentDef,
         agentName,
         userRequest,
-        finalSystemPrompt: meta.finalSystemPrompt,
+        finalSystemPrompt: meta.promptState.text,
         images,
         uiAPI,
         subscriberState: meta.subscriberState,
@@ -1110,7 +1111,7 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */
 export async function runAgentSession(opts) {
-    const { session, agentDef, finalSystemPrompt } = await buildAgentSession(opts);
+    const { session, agentDef, promptState } = await buildAgentSession(opts);
     const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI);
     addSubAgentSession(session);
 
@@ -1120,7 +1121,7 @@ export async function runAgentSession(opts) {
             agentDef,
             agentName: opts.agentName,
             userRequest: opts.userRequest,
-            finalSystemPrompt,
+            finalSystemPrompt: promptState.text,
             images: opts.images,
             uiAPI: opts.uiAPI,
             subscriberState,
@@ -1134,6 +1135,64 @@ export async function runAgentSession(opts) {
             session.dispose();
         } catch (_e) { /* ignore */ }
     }
+}
+
+/**
+ * Reloads the active root session without destroying it.
+ * Re-reads settings.json from disk, refreshes the dynamic system prompt,
+ * resource loader, theme, model, and thinking level.
+ *
+ * @param {import('../workflow/workflow.js').UiAPI} [uiAPI]
+ * @returns {Promise<boolean>} True if reloaded successfully, false if no active session
+ */
+export async function reloadRootAgentSession(uiAPI) {
+    const session = getRootAgentSession();
+    if (!session) return false;
+    const meta = rootSessionMetadata.get(session);
+    if (!meta) return false;
+
+    // 0. Re-read settings.json from disk so all getters below see fresh values
+    const settings = getSettingsManager();
+    await settings.reload();
+
+    // 1. Re-run system prompt assembly (HARNS.md, memories, skills)
+    const newSystemPrompt = await assembleFinalSystemPrompt(meta.agentDef, meta.tools, meta.finalCustomTools);
+    meta.promptState.text = newSystemPrompt;
+
+    // 2. Reload the session (prompts, skills, extensions)
+    await session.reload();
+
+    // 3. Apply theme from (freshly reloaded) settings
+    const { discoverAndRegisterThemes, setTheme } = await import("../ui/theme.js");
+    await discoverAndRegisterThemes();
+    const persistedTheme = settings.getTheme();
+    if (persistedTheme) {
+        setTheme(persistedTheme);
+    }
+
+    // 4. Resolve and apply model from settings defaults
+    const modelRegistry = getModelRegistry();
+    if (!isUserModelOverride()) {
+        const defaultProvider = settings.getDefaultProvider();
+        const defaultModelId = settings.getDefaultModel();
+        if (defaultProvider && defaultModelId) {
+            const found = modelRegistry.find(defaultProvider, defaultModelId);
+            if (found && modelRegistry.hasConfiguredAuth(found)) {
+                session.setModel(found);
+                if (uiAPI?.setAgentInfo) {
+                    uiAPI.setAgentInfo(meta.agentDef.displayName, `${found.provider}/${found.id}`);
+                }
+            }
+        }
+    }
+
+    // 5. Apply thinking level from settings
+    const newThinkingLevel = settings.getDefaultThinkingLevel();
+    if (newThinkingLevel !== undefined) {
+        session.setThinkingLevel(newThinkingLevel);
+    }
+
+    return true;
 }
 
 /**

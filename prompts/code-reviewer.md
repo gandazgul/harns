@@ -63,8 +63,7 @@ Step 5: Deduplicate and rank
 - Sort by severity: important → nit → pre_existing
 - Within each severity, sort by file path and line number
 
-Step 6: Return structured JSON output matching the schema. If no issues are found, return an empty findings array with
-zeroed summary.
+Step 6: Return a list grouped by category and sorted acording to your rank.
 
 # Hard constraints
 
@@ -74,27 +73,3 @@ zeroed summary.
 - Prefer silence over false positives — when in doubt, drop the finding
 - Do NOT post any comments to GitHub or GitLab
 - Do NOT use gh pr comment or any commenting tool
-- Your only output is the structured JSON findings
-
-one more related bug, when switch_agent is called by the LLM we need to switch and then also immediately send the
-"reason" as a message to the new agent. Make it clear in the tool description and param description so that the calling
-LLM can format the reason correctly.
-
-```
-  can you call switch_agent and call the architect with the same question? "who are you"                                                                                                                        
-
-✻ Thinking...
-The user wants me to switch to the architect agent and ask it the same question "who are you?". Let me use the switch_agent tool.
-
-  switch_agent                                                                                                                                                                                                  
-
-  Switched to Architect. Reason: User wants to ask the architect agent "who are you?" to hear its identity directly.
-  Took 205.4s
-
-  Switched to Architect (model: ollama/qwen3.6-35b-a3b).
-  Agent hand-off: Switching to Architect. Reason: User wants to ask the architect agent "who are you?" to hear its identity directly.
-
-✻ Thinking...
-
-The user wants me to switch to the architect agent. I attempted to do so with `switch_agent`, but it seems like it didn't work or the result wasn't provided. Let me try again.
-```
