@@ -10,7 +10,7 @@ import { applyPersistedTheme, getEditorTheme, initHarnsTheme, onThemeChange, the
 import { HNS_VERSION } from "../version.js";
 import { createUiApi } from "../ui/api.js";
 import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
-import { ensureRootAgentSession, listPromptTemplates, steerRootSession } from "../session/session.js";
+import { ensureRootAgentSession, listPromptTemplates, listSkills, steerRootSession } from "../session/session.js";
 import { ensureMnemosyneBinary } from "../runtime-preflight.js";
 import { commandRegistry } from "../../cmd/registry.js";
 import { AGENTS, COMMAND_NAMES } from "../../constants.js";
@@ -433,6 +433,9 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // Load prompt-template metadata once per interactive session.
     const promptTemplates = await listPromptTemplates();
 
+    // Load skills metadata once per interactive session.
+    const skills = await listSkills();
+
     // Expose a UI API for agents to append to the message list
     const uiAPI = createUiApi(tui, messageList, runningTasksComponent);
 
@@ -509,6 +512,13 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 argumentHint: template.argumentHint,
                 description: template.description,
             })),
+            // ── Skill commands ──
+            ...skills
+                .filter((skill) => skill.description && skill.description !== "No description provided")
+                .map((skill) => ({
+                    name: `skill:${skill.name}`,
+                    description: skill.description,
+                })),
         ],
         Deno.cwd(),
         "fd", // Since pi 0.20 the agent guarantees that fd is available in PATH or it polyfills it so using 'fd' directly as binary path is safe.
@@ -684,6 +694,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
             originalHandleInput,
             builtinNames: CHAT_BUILTIN_SLASH_NAMES,
             promptTemplateByName,
+            skills,
             chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
             resolveTemplateModel,
             setActiveAgent,
