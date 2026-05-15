@@ -199,11 +199,15 @@ export function createPlanWrittenTool(
             // PROJECT plans: ensure a Tasks section exists, invoking the slicer when missing.
             // Resumed plans that already have a parseable Tasks section skip the slicer.
             if (effectiveMeta.classification === "PROJECT") {
+                // Run the slicer on the root session so its output is part of the single
+                // continuous session file (not a forked / in-memory session).
+                const { getRootSessionManager } = await import("../shared/session/session-state.js");
                 const sliceResult = await ensureSlicerTasks({
                     planName,
                     planPath,
                     triageMeta: effectiveMeta,
                     uiAPI,
+                    sessionManager: getRootSessionManager() || undefined,
                 });
 
                 if (!sliceResult.ok) {

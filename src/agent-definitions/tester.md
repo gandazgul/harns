@@ -1,6 +1,6 @@
 ---
 name: Tester
-model: ollama/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q5_K_XL
+model: openrouter/deepseek/deepseek-v4-flash
 description: "Test-writing agent responsible for creating, running, and updating test suites following existing project conventions."
 tools:
     - read

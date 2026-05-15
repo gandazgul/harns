@@ -1,5 +1,8 @@
 # TODO
 
+- [ ] when using /resume on a long session (we have to define long but probably more than 50% of the small models
+      contexts) offer to compact it before loading it.
+- [ ] optionally, on by default disable with setting, load skills in ~/.agents/skills
 - [ ] more tests
 - [ ] Start implementing the code indexing (cymbal is good for now)
 - [ ] Auto-sleep: trigger memory consolidation automatically at session end when a threshold is crossed (e.g.,
@@ -10,8 +13,8 @@
       execution again.
 - [ ] Plan archiving: move old plans (e.g., completed > N days) into `plans/archive/` so the active plans list stays
       short. Surface archived plans only on explicit request.
-- [ ] Optional plan-review step after `completed`: add an `in_review` state between approved-execution and `completed`
-      so a code-review/plan-review pass can sign off before the plan is closed.
+- [ ] chaneg the plans statuses: draft -> feedback/approved -> in_progress -> in_review -> completed -> archived.
+      Loading the plan changes it back to draft or in_progress.
 - [ ] Look at mastra framework to see if we can incorporate it for better plan management and execution control.
 - [ ] when we want to trully restrict an agent's write/edit access we should invoke bash commands with a user that has
       no write permissions on the codebase. This way even if the agent tries to use bash to modify files, it will be
