@@ -3,8 +3,10 @@
  * Command to browse and resume a recent session.
  */
 
+import { AGENTS } from "../../constants.js";
 import { getHarnsSessionDir } from "../../shared/session/root-session.js";
-import { setRootSessionManager } from "../../shared/session/session-state.js";
+import { getRootAgentName, setRootSessionManager } from "../../shared/session/session-state.js";
+import { ensureRootAgentSession } from "../../shared/session/session.js";
 import { restorePersistedMessagesToUi } from "../../shared/interactive/message-hydration.js";
 
 /**
@@ -61,6 +63,16 @@ export async function runResumeCommand(_argv, options = {}) {
     // Resume the chosen session
     const rootSessionManager = SessionManager.open(chosenPath, sessionDir, cwd);
     setRootSessionManager(rootSessionManager);
+
+    // Rebuild the root AgentSession with the resumed SessionManager so:
+    // 1) The LLM context includes the resumed conversation history
+    // 2) New messages are persisted to the correct session file
+    const currentAgent = getRootAgentName() || AGENTS.ROUTER;
+    await ensureRootAgentSession({
+        agentName: currentAgent,
+        uiAPI,
+        sessionManager: rootSessionManager,
+    });
 
     if (uiAPI.clearMessages) {
         uiAPI.clearMessages();
