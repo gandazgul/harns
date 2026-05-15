@@ -6,7 +6,8 @@
  */
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
-import { CLI_BIN, CWD } from "../../constants.js";
+import { AGENTS, CLI_BIN, CWD } from "../../constants.js";
+import { getAgentDisplayName } from "../../shared/session/agents.js";
 import {
     injectFrontMatter,
     resolvePlan as resolvePlanFn,
@@ -47,7 +48,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  */
 
 /**
- * Restore default Router flow and input readiness after resume command work.
+ * Restore default router flow and input readiness after resume command work.
  *
  * @param {import('../../shared/workflow/workflow.js').UiAPI} uiAPI
  * @param {LoadPlanTestDeps} [deps]
@@ -64,8 +65,12 @@ function restoreRouterFlow(uiAPI, deps = {}) {
     const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
 
     resetTuiState(undefined, uiAPI, undefined);
-    setActiveAgent("Router", createDirectAgentHandler("router"), undefined, undefined, "router");
-    uiAPI.appendSystemMessage("Switched back to Router (triage flow).", false, "Harns");
+    setActiveAgent(AGENTS.ROUTER, createDirectAgentHandler(AGENTS.ROUTER));
+    uiAPI.appendSystemMessage(
+        `Switched back to ${getAgentDisplayName(AGENTS.ROUTER)} (triage flow).`,
+        false,
+        "Harns",
+    );
 }
 
 /**
@@ -302,7 +307,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         );
 
         const triageMeta = plan.attrs;
-        const agentName = triageMeta.classification === "PROJECT" ? "architect" : "planner";
+        const agentName = triageMeta.classification === "PROJECT" ? AGENTS.ARCHITECT : AGENTS.PLANNER;
 
         if (plan.attrs.status === "completed") {
             uiAPI.appendSystemMessage("This plan is already marked as completed.", false, "Harns");
@@ -374,7 +379,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             false,
                             "Harns",
                         );
-                        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
+                        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
                         const repairOutcome = await runPlanningAgent({
                             agentName,
                             initialRequest: [
@@ -410,7 +415,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     // architect → slicer flow regenerates them against any revisions.
                     await stripTasksFromPlanFile(plan);
 
-                    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
+                    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
 
                     const reviewResult = await submitPlanForReview({
                         cwd: CWD,
@@ -432,13 +437,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             : await askPostApproval(plan.planName, uiAPI);
                         if (action === "proceed") {
                             await executePlan(plan.planName, plan.attrs, uiAPI);
-                            setActiveAgent(
-                                "Operator",
-                                createDirectAgentHandler("operator"),
-                                uiAPI,
-                                undefined,
-                                "operator",
-                            );
+                            setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
                         } else {
                             uiAPI.appendSystemMessage(
                                 `Plan saved. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
@@ -465,7 +464,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             uiAPI,
                             outcome.tasks,
                         );
-                        setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
+                        setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
                     } else if (
                         outcome.outcome === "canceled" || outcome.outcome === "no_call" ||
                         outcome.outcome === "feedback" || outcome.outcome === "repair_required"
@@ -483,7 +482,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
 
         // Not approved — kick off the planning agent. plan_written handles review/save/execute.
         uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
-        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
+        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
 
         const outcome = await runPlanningAgent({
             agentName,
@@ -499,7 +498,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 uiAPI,
                 outcome.tasks,
             );
-            setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
+            setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
         } else if (
             outcome.outcome === "canceled" || outcome.outcome === "no_call" ||
             outcome.outcome === "feedback" || outcome.outcome === "repair_required"

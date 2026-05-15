@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { runLoadPlanCommand } from "./index.js";
+import { AGENTS } from "../../constants.js";
 
 function makeUi() {
     /** @type {string[]} */
@@ -475,8 +476,8 @@ Deno.test("runLoadPlanCommand keeps planner active when lifecycle canceled", asy
         }),
     });
 
-    assertEquals(activeAgents.includes("planner"), true);
-    assertEquals(activeAgents.includes("Router"), false);
+    assertEquals(activeAgents.includes(AGENTS.PLANNER), true);
+    assertEquals(activeAgents.includes(AGENTS.ROUTER), false);
 });
 
 Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_written", async () => {
@@ -509,8 +510,8 @@ Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_
         }),
     });
 
-    assertEquals(activeAgents.includes("planner"), true);
-    assertEquals(activeAgents.includes("Router"), false);
+    assertEquals(activeAgents.includes(AGENTS.PLANNER), true);
+    assertEquals(activeAgents.includes(AGENTS.ROUTER), false);
 });
 
 Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan", async () => {
@@ -543,6 +544,6 @@ Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan"
         }),
     });
 
-    assertEquals(restoredAgents.includes("Router"), true);
+    assertEquals(restoredAgents.includes(AGENTS.ROUTER), true);
     assertEquals(messages.some((m) => m.includes("Switched back to Router")), true);
 });

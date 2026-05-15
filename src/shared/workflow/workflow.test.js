@@ -188,7 +188,7 @@ Deno.test("runSlicerAgent reports progress via uiAPI when present", async () => 
         uiAPI,
         __deps: { runAgentSession: () => Promise.resolve([]) },
     });
-    assertEquals(messages.some((m) => m.includes("Running slicer")), true);
+    assertEquals(messages.some((m) => m.includes("Running Slicer")), true);
 });
 
 Deno.test("runSlicerAgent reports failure via uiAPI when present", async () => {

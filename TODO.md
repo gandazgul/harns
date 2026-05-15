@@ -22,11 +22,10 @@
       HARNS.md). Needed because the root AgentSession is built once per agent switch and bakes these in at construction;
       without /reload, mid-session changes to mnemosyne memories / installed skills / HARNS.md are not visible to the
       active agent until the next agent switch.
-- [ ] Add the path to init-state.json in ~/.hns/
 - [ ] default to this theme instead? https://github.com/ifiokjr/oh-pi/blob/main/packages/themes/themes/oh-p-dark.json
 
 bugs
 
+- /resume doesnt hydrate the entire session or the session file is not saving all of it
 - !! is currently sending steering messages instead of executing bash commands.
 - Shift + tab stopped working (thinking level)
-- during initialization the footer still says Router instead of Initializing...

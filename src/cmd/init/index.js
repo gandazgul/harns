@@ -10,7 +10,7 @@
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { dirname, fromFileUrl, join } from "@std/path";
-import { COMMAND_NAMES } from "../../constants.js";
+import { AGENTS, COMMAND_NAMES } from "../../constants.js";
 import { loadAgentDefFromPath as loadAgentDefFromPathFn } from "../../shared/session/agents.js";
 import { runAgentSession as runAgentSessionFn } from "../../shared/session/session.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
@@ -19,7 +19,6 @@ import {
     recordInitDone as recordInitDoneFn,
     recordInitOffered as recordInitOfferedFn,
 } from "./init-state.js";
-import { setActiveAgentName } from "../../shared/session/session-state.js";
 
 export const __dirname = dirname(fromFileUrl(import.meta.url));
 
@@ -89,19 +88,20 @@ export async function runInitCommand(argv, options = {}) {
     }
 
     // ── Load init agent definition directly from bundled path ──────
+    // Pass agentName: AGENTS.INIT so the display-name cache uses the canonical
+    // "init" identifier rather than the file's basename ("init-agent-prompt").
     const initAgentPath = join(__dirname, "init-agent-prompt.md");
-    const agentDef = await loadAgentDefFromPath(initAgentPath);
+    const agentDef = await loadAgentDefFromPath(initAgentPath, { agentName: AGENTS.INIT });
 
     await recordInitOffered();
 
-    // Set the footer to show the init agent's display name.
-    setActiveAgentName(agentDef.displayName);
-
     // Run the init agent session using its own definition (model, tools, system prompt).
     // We use a dedicated "init" agent name so it's distinct from the operator.
+    // The footer is updated by buildAgentSession via uiAPI.setAgentInfo once the
+    // session is built — no manual footer mutation needed here.
     try {
         await runAgentSession({
-            agentName: "init",
+            agentName: AGENTS.INIT,
             userRequest: "Initialize this project for Harns. Follow the instructions in your system prompt.",
             uiAPI: options.uiAPI,
             sessionManager: options.sessionManager,
@@ -116,7 +116,7 @@ export async function runInitCommand(argv, options = {}) {
             );
             const { setActiveAgent } = await import("../../shared/interactive/chat-session.js");
             const { createDirectAgentHandler } = await import("../../shared/session/direct-agent.js");
-            setActiveAgent("Router", createDirectAgentHandler("router"), options.uiAPI);
+            setActiveAgent(AGENTS.ROUTER, createDirectAgentHandler(AGENTS.ROUTER), options.uiAPI);
         } else {
             console.log(`\n[Harns] ✅ Init complete for ${cwd()}.`);
         }

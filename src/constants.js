@@ -61,5 +61,31 @@ export const COMMAND_NAMES = Object.freeze({
     COMPACT: "compact",
 });
 
+/**
+ * Canonical agent identifiers. Each value matches the agent definition's
+ * filename (without the `.md` extension) in `src/agent-definitions/`. The
+ * display name for each agent is the `name:` field inside that file and must
+ * be loaded via `getAgentDisplayName()` from `shared/session/agents.js` —
+ * never hardcoded.
+ *
+ * `INIT` is a special pseudo-agent loaded from `src/cmd/init/init-agent-prompt.md`
+ * by path rather than the agent-definitions directory, so it does not appear
+ * in `/agent` listings.
+ */
+/** @type {Readonly<{ROUTER: string, OPERATOR: string, PLANNER: string, ARCHITECT: string, ENGINEER: string, REVIEWER: string, SLICER: string, TESTER: string, IDEATOR: string, DOC_WRITER: string, INIT: string}>} */
+export const AGENTS = Object.freeze({
+    ROUTER: "router",
+    OPERATOR: "operator",
+    PLANNER: "planner",
+    ARCHITECT: "architect",
+    ENGINEER: "engineer",
+    REVIEWER: "reviewer",
+    SLICER: "slicer",
+    TESTER: "tester",
+    IDEATOR: "ideator",
+    DOC_WRITER: "doc-writer",
+    INIT: "init",
+});
+
 /** Max concurrent agent tasks for PROJECT execution. */
 export const MAX_PARALLEL_TASKS = 4;

@@ -1,4 +1,5 @@
 import { listAvailableAgents } from "../../shared/session/agents.js";
+import { AGENTS } from "../../constants.js";
 
 /**
  * @param {string} argumentPrefix
@@ -6,16 +7,11 @@ import { listAvailableAgents } from "../../shared/session/agents.js";
  */
 export async function getAgentCompletions(argumentPrefix) {
     const agents = await listAvailableAgents();
-    return [
-        {
-            value: "router",
-            label: "router",
-            description: "Reset to default router (triage) flow",
-        },
-        ...agents.map((agent) => ({
+    return agents
+        .map((agent) => ({
             value: agent.name,
             label: agent.name,
-            description: agent.description,
-        })),
-    ].filter((item) => item.value.startsWith(argumentPrefix));
+            description: agent.name === AGENTS.ROUTER ? "Reset to default router (triage) flow" : agent.description,
+        }))
+        .filter((item) => item.value.startsWith(argumentPrefix));
 }
