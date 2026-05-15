@@ -630,6 +630,14 @@ export async function buildAgentSession({
 
     const resolvedModel = resolveModel(modelOverride, agentDef);
 
+    if (!sessionManager && Deno.env.get("DEBUG") === "1") {
+        const debugMsg =
+            `[Harns] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
+        try {
+            Deno.writeTextFileSync(join(Deno.cwd(), "debug.log"), debugMsg + "\n", { append: true });
+        } catch (_e) { /* ignore */ }
+    }
+
     const { session, extensionsResult } = await createAgentSession({
         cwd: CWD,
         tools,
@@ -1045,7 +1053,14 @@ export async function ensureRootAgentSession(opts) {
 
     setRootAgentSession(session);
     setRootAgentName(opts.agentName);
-    rootSessionMetadata.set(session, { agentDef, promptState, subscriberState, agentName: opts.agentName, tools, finalCustomTools });
+    rootSessionMetadata.set(session, {
+        agentDef,
+        promptState,
+        subscriberState,
+        agentName: opts.agentName,
+        tools,
+        finalCustomTools,
+    });
 
     return session;
 }
