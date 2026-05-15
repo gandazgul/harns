@@ -22,6 +22,7 @@ import { runThemeCommand } from "./theme/index.js";
 import { runInstallCommand } from "./install/index.js";
 import { runRemoveCommand } from "./remove/index.js";
 import { runCompactCommand } from "./compact/index.js";
+import { runReloadCommand } from "./reload/index.js";
 
 /** @param {...string} parts */
 const bin = (...parts) => [CLI_BIN, ...parts].join(" ");
@@ -369,6 +370,22 @@ export const commandRegistry = {
             "Optionally pass custom instructions to guide the summarization.",
         ],
         execute: runCompactCommand,
+        isSlash: true,
+        isCli: false,
+    },
+    [COMMAND_NAMES.RELOAD]: {
+        name: COMMAND_NAMES.RELOAD,
+        displayName: "Reload",
+        description: "Reload dynamic config and context",
+        summary: "Reload themes, settings, system prompt, and memories without losing the active session.",
+        usage: [
+            "/reload",
+        ],
+        notes: [
+            "Slash command only (interactive session).",
+            "Refreshes memories, HARNS.md, prompt templates, skills, model settings, and themes.",
+        ],
+        execute: runReloadCommand,
         isSlash: true,
         isCli: false,
     },
