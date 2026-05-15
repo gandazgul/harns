@@ -10,6 +10,8 @@
 
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { AGENTS } from "../constants.js";
+import { getAgentDisplayName } from "../shared/session/agents.js";
 
 const TOOL_PARAMS = Type.Object({
     classification: StringEnum(["QUICK_FIX", "FEATURE", "PROJECT"], {
@@ -52,7 +54,7 @@ export function createTriageReportTool({ uiAPI } = {}) {
             uiAPI?.appendSystemMessage(
                 `Classification: ${classification}, Complexity: ${complexity}. Summary: ${summary}`,
                 false,
-                "Router",
+                getAgentDisplayName(AGENTS.ROUTER),
             );
 
             return {

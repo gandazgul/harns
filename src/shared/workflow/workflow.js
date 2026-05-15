@@ -11,9 +11,10 @@
 
 import { join } from "@std/path";
 import quikdownAst from "quikdown/ast";
-import { CWD, MAX_PARALLEL_TASKS } from "../../constants.js";
+import { AGENTS, CWD, MAX_PARALLEL_TASKS } from "../../constants.js";
 import { loadPlan, updatePlanStatus } from "../../plan-store.js";
 import { runAgentSession } from "../session/session.js";
+import { getAgentDisplayName } from "../session/agents.js";
 import { createSilentUiApi } from "../ui/api.js";
 
 /**
@@ -99,7 +100,7 @@ export function readLatestPlanOutcome(messages) {
  */
 export async function runPlanningAgent({ agentName, initialRequest, triageMeta, uiAPI, sessionManager }) {
     if (!uiAPI) throw new Error("runPlanningAgent: uiAPI is required");
-    uiAPI.appendSystemMessage(`=== Running ${agentName} ===`, false, "Harns");
+    uiAPI.appendSystemMessage(`=== Running ${getAgentDisplayName(agentName)} ===`, false, "Harns");
 
     const messages = await runAgentSession({
         agentName,
@@ -164,11 +165,12 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
     if (!uiAPI) throw new Error("runSlicerAgent: uiAPI is required");
     const session = __deps?.runAgentSession || runAgentSession;
 
-    uiAPI.appendSystemMessage(`=== Running slicer ===`, false, "Harns");
+    const slicerDisplay = getAgentDisplayName(AGENTS.SLICER);
+    uiAPI.appendSystemMessage(`=== Running ${slicerDisplay} ===`, false, "Harns");
 
     try {
         await session({
-            agentName: "slicer",
+            agentName: AGENTS.SLICER,
             userRequest: buildSlicerRequest(planName, triageMeta),
             triageMeta,
             uiAPI,
@@ -177,7 +179,7 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
         return { ok: true };
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        uiAPI.appendSystemMessage(`Slicer failed: ${error}`, true, "Harns");
+        uiAPI.appendSystemMessage(`${slicerDisplay} failed: ${error}`, true, "Harns");
         return { ok: false, error };
     }
 }
@@ -500,9 +502,9 @@ async function executeProjectTasks(
             }
             pending.delete(task.task);
 
-            const agentName = task.assignee || "engineer";
+            const agentName = task.assignee || AGENTS.ENGINEER;
 
-            const taskHeader = `--- Task ${task.task}: ${task.description} (→ ${agentName}) ---`;
+            const taskHeader = `--- Task ${task.task}: ${task.description} (→ ${getAgentDisplayName(agentName)}) ---`;
             uiAPI.appendSystemMessage(taskHeader, false, "Harns");
 
             const taskRequest = [
@@ -542,13 +544,15 @@ async function executeProjectTasks(
                     } catch (_e) { /* ignore */ }
                 }
 
-                const block = uiAPI.appendAgentMessageStart(`${agentName} (Task ${task.task} Output)`);
+                const block = uiAPI.appendAgentMessageStart(
+                    `${getAgentDisplayName(agentName)} (Task ${task.task} Output)`,
+                );
                 block.appendText(outputText || "_no output received_");
                 results.set(task.task, { status: "success", messages: sessionMessages });
             } catch (e) {
                 const error = e instanceof Error ? e : new Error(String(e));
                 uiAPI.appendSystemMessage(
-                    `❌ Task ${task.task} failed (${agentName}): ${error.message}`,
+                    `❌ Task ${task.task} failed (${getAgentDisplayName(agentName)}): ${error.message}`,
                     false,
                     "Harns",
                 );
@@ -661,7 +665,11 @@ export async function askApprovalWithTasks(planName, uiAPI, structuredTasks) {
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
  */
 async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager) {
-    uiAPI.appendSystemMessage("=== Running Engineer ===", false, "Harns");
+    uiAPI.appendSystemMessage(
+        `=== Running ${getAgentDisplayName(AGENTS.ENGINEER)} ===`,
+        false,
+        "Harns",
+    );
 
     const engineerRequest = [
         `## Approved Plan: ${planName}`,
@@ -672,7 +680,7 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager) {
     ].join("\n");
 
     await runAgentSession({
-        agentName: "engineer",
+        agentName: AGENTS.ENGINEER,
         userRequest: engineerRequest,
         uiAPI,
         sessionManager,

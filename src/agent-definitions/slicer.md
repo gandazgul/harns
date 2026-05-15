@@ -1,6 +1,6 @@
 ---
 name: Slicer
-model: ollama/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q5_K_XL
+model: ollama/qwen3.6-35b-a3b
 description: "Task-breakdown agent. Reads a design-only plan written by the architect and appends a vertical-slice Tasks section + per-slice detail blocks. Hidden from /agent and switch_agent — invoked only by plan_written after the user approves the architect's design."
 tools:
     - read

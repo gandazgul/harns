@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
 import { join } from "@std/path";
-import { CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
+import { AGENTS, CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
 import mnemosyneExtension, {
     memoryDeleteToolDef,
     memoryRecallGlobalToolDef,
@@ -38,7 +38,7 @@ import cymbalExtension, {
     codeTraceToolDef,
 } from "../../extensions/cymbal/index.js";
 import { ensureCymbalBinary, ensureMnemosyneBinary } from "../runtime-preflight.js";
-import { executeSwitchAgent, switchAgentTool, triggerAgent } from "../../tools/switch-agent.js";
+import { executeSwitchAgent, switchAgentTool } from "../../tools/switch-agent.js";
 import { createUserInterviewTool } from "../../tools/user-interview.js";
 import { getModelRegistry } from "../models/model-registry.js";
 import { parseProviderModel } from "../models/model-validation.js";
@@ -580,12 +580,10 @@ export async function buildAgentSession({
     if (tools.includes("switch_agent") && !finalCustomTools.find((t) => t.name === "switch_agent")) {
         finalCustomTools.push({
             ...switchAgentTool,
-            execute(_toolCallId, params, _signal, _onUpdate, context) {
+            execute(_toolCallId, params, _signal, _onUpdate, _context) {
                 return executeSwitchAgent(
                     /** @type {{ agentName: string, reason: string }} */ (params),
                     uiAPI,
-                    context,
-                    triggerAgent,
                 );
             },
         });
@@ -937,7 +935,7 @@ async function runPrompt({
 
     const debugEnabled = Deno.env.get("DEBUG") === "1";
     if (debugEnabled) {
-        const startTitle = agentName === "router"
+        const startTitle = agentName === AGENTS.ROUTER
             ? "ROUTER INVOCATION START"
             : `AGENT INVOCATION START: ${agentDef.name} (${agentName})`;
         const logEntry = [
@@ -981,7 +979,7 @@ async function runPrompt({
             const messages = session.agent.state.messages;
             const summary = extractAssistantSummary(messages);
             const invokedToolNames = subscriberState.drainInvokedToolNames();
-            const logEntry = agentName === "router"
+            const logEntry = agentName === AGENTS.ROUTER
                 ? [
                     `Event: ROUTER INVOCATION END`,
                     `Timestamp: ${new Date().toISOString()}`,
@@ -1094,7 +1092,7 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
 
 /**
  * Run a single transient agent invocation: build a fresh AgentSession, run one prompt, dispose.
- * Used for tool-spawned sub-agents (switch_agent.triggerAgent) and workflow sub-phases
+ * Used for workflow sub-phases
  * (orchestrator's planner/architect/engineer/reviewer calls).
  *
  * @param {Object} opts

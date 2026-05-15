@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { runAgentsCommand } from "./index.js";
+import { AGENTS } from "../../constants.js";
 
 Deno.test("runAgentsCommand help path", async () => {
     let helped = "";
@@ -116,7 +117,7 @@ Deno.test("runAgentsCommand CLI valid agent starts session", async () => {
         }),
     );
 
-    assertEquals(active, "Planner");
+    assertEquals(active, AGENTS.PLANNER);
     assertEquals(startedWith, "build thing");
 });
 

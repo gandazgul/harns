@@ -9,7 +9,7 @@ import {
     startInteractiveSession as startInteractiveSessionFn,
 } from "../../shared/interactive/chat-session.js";
 import { listAvailableAgents as listAvailableAgentsFn } from "../../shared/session/agents.js";
-import { COMMAND_NAMES } from "../../constants.js";
+import { AGENTS, COMMAND_NAMES } from "../../constants.js";
 import { createDirectAgentHandler as createDirectAgentHandlerFn } from "../../shared/session/direct-agent.js";
 
 export { getAgentCompletions } from "./getArgumentCompletions.js";
@@ -74,10 +74,9 @@ async function runAgentsCommandCli(agentName, rest, deps = {}) {
     const handler = createDirectAgentHandler(agentName);
     const userRequest = rest.join(" ").trim();
 
-    setActiveAgent(match.displayName, handler, undefined, match.model, match.name);
+    setActiveAgent(match.name, handler, undefined, match.model);
     await startInteractiveSession(userRequest || null, handler, {
         initialAgentName: match.name,
-        initialAgentDisplayName: match.displayName,
         initialAgentModel: match.model,
     });
 }
@@ -116,16 +115,14 @@ async function runAgentsCommandTUI(agentName, _rest, options, deps = {}) {
     // if none was passed let the user choose
     if (!chosenAgent) {
         // No args: show interactive selection
-        const agentOptions = [
-            { value: "router", label: "router", description: "Reset to default router (triage flow)" },
-            ...agents
-                .sort((agentA, agentB) => agentA.name.localeCompare(agentB.name))
-                .map((agent) => ({
-                    value: agent.name,
-                    label: agent.name,
-                    description: agent.description,
-                })),
-        ];
+        const agentOptions = agents
+            .slice()
+            .sort((agentA, agentB) => agentA.name.localeCompare(agentB.name))
+            .map((agent) => ({
+                value: agent.name,
+                label: agent.name,
+                description: agent.name === AGENTS.ROUTER ? "Reset to default router (triage flow)" : agent.description,
+            }));
 
         const selected = await uiAPI.promptSelect("Switch agent:", agentOptions);
         if (!selected) {
@@ -143,7 +140,7 @@ async function runAgentsCommandTUI(agentName, _rest, options, deps = {}) {
 
     const handler = createDirectAgentHandler(match.name);
 
-    setActiveAgent(match.displayName, handler, uiAPI, match.model, match.name);
+    setActiveAgent(match.name, handler, uiAPI, match.model);
     tui.setFocus(/** @type {import('@earendil-works/pi-tui').Component} */ (/** @type {unknown} */ (editor)));
 }
 

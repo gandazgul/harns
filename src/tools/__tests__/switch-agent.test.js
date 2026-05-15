@@ -1,7 +1,9 @@
 import { assertEquals, assertMatch } from "@std/assert";
 import { executeSwitchAgent, switchAgentTool } from "../switch-agent.js";
-import { getActiveModel, setActiveAgent } from "../../shared/interactive/chat-session.js";
+import { setActiveAgent } from "../../shared/interactive/chat-session.js";
 import { loadAgentDef } from "../../shared/session/agents.js";
+import { consumePendingSwitchHandoff, getPendingRootSwap } from "../../shared/session/session-state.js";
+import { AGENTS } from "../../constants.js";
 
 /**
  * @param {{ execute: unknown }} tool
@@ -9,7 +11,7 @@ import { loadAgentDef } from "../../shared/session/agents.js";
  */
 async function executeTool(tool, params) {
     const execute =
-        /** @type {(id: string, params: { agentName: string, reason: string }, signal: AbortSignal, onUpdate: () => void, context: object) => Promise<{ content: Array<{ type: string, text?: string }>, details: unknown }>} */ (tool
+        /** @type {(id: string, params: { agentName: string, reason: string }, signal: AbortSignal, onUpdate: () => void, context: object) => Promise<{ content: Array<{ type: string, text?: string }>, details: unknown, terminate?: boolean }>} */ (tool
             .execute);
     return await execute("tool-call-1", params, new AbortController().signal, () => {}, {});
 }
@@ -17,17 +19,18 @@ async function executeTool(tool, params) {
 Deno.test("switchAgentTool exposes expected metadata", () => {
     assertEquals(switchAgentTool.name, "switch_agent");
     assertEquals(switchAgentTool.label, "Switch Agent");
-    assertMatch(switchAgentTool.description, /Switch the active agent/i);
+    assertMatch(switchAgentTool.description, /hand off the conversation/i);
     assertEquals(typeof switchAgentTool.execute, "function");
     assertEquals(typeof switchAgentTool.parameters, "object");
 });
 
 Deno.test("switchAgentTool returns error when no UI API is active", async () => {
     // Ensure no active UI API
-    setActiveAgent("Router", async () => {}, undefined);
+    setActiveAgent(AGENTS.ROUTER, async () => {}, undefined);
+    consumePendingSwitchHandoff();
 
     const params = {
-        agentName: "engineer",
+        agentName: AGENTS.ENGINEER,
         reason: "Need coding help",
     };
 
@@ -39,7 +42,7 @@ Deno.test("switchAgentTool returns error when no UI API is active", async () => 
     );
 });
 
-Deno.test("switchAgentTool handles router switch with mock UI API", async () => {
+Deno.test("switchAgentTool terminates the calling turn and records a handoff", async () => {
     let systemMessage = "";
     /** @type {import('../../shared/ui/types.js').UiAPI} */
     const mockUiAPI = {
@@ -47,31 +50,39 @@ Deno.test("switchAgentTool handles router switch with mock UI API", async () => 
             systemMessage = msg;
         },
         requestRender: () => {},
-        // Minimal properties to satisfy setActiveAgent if it checks for them
         appendAgentMessageStart: () => ({ appendText: () => {} }),
         promptSelect: () => Promise.resolve(null),
         promptText: () => Promise.resolve(null),
         showModelSelector: () => {},
     };
 
-    // Set mock UI API
-    setActiveAgent("Router", async () => {}, mockUiAPI);
+    setActiveAgent(AGENTS.PLANNER, async () => {}, mockUiAPI);
+    consumePendingSwitchHandoff();
 
-    const params = {
-        agentName: "router",
-        reason: "Back to start",
-    };
+    const reason = "The user wants you to review the architecture of the auth module.";
+    const result = await executeSwitchAgent(
+        { agentName: AGENTS.ROUTER, reason },
+        mockUiAPI,
+    );
 
-    const result = await executeTool(switchAgentTool, params);
-
+    // Terminates the calling agent's turn.
+    assertEquals(result.terminate, true);
+    // Tool result text addresses the calling agent (turn-ending).
     assertMatch(
         /** @type {{ type: "text", text: string }} */ (result.content[0]).text,
-        /Switched to Router\. Reason: Back to start/i,
+        /handing off to Router/i,
     );
-    assertMatch(systemMessage, /Agent hand-off: Switching to router/i);
+    // The reason is preserved on the result details for inspection.
+    assertEquals(/** @type {{ agentName: string, reason: string }} */ (result.details).reason, reason);
+    assertMatch(systemMessage, /Agent hand-off: Switching to Router/i);
+
+    // The chat-session loop will read this handoff and feed `reason` to the new agent.
+    const handoff = consumePendingSwitchHandoff();
+    assertEquals(handoff?.agentName, AGENTS.ROUTER);
+    assertEquals(handoff?.reason, reason);
 });
 
-Deno.test("switchAgentTool updates active model when switching to agent with declared model", async () => {
+Deno.test("switchAgentTool queues the target agent's model on the pending root swap", async () => {
     /** @type {import('../../shared/ui/types.js').UiAPI} */
     const mockUiAPI = {
         appendSystemMessage: () => {},
@@ -82,60 +93,23 @@ Deno.test("switchAgentTool updates active model when switching to agent with dec
         showModelSelector: () => {},
     };
 
-    setActiveAgent("Router", async () => {}, mockUiAPI);
+    setActiveAgent(AGENTS.PLANNER, async () => {}, mockUiAPI);
+    consumePendingSwitchHandoff();
 
     const params = {
-        agentName: "operator",
-        reason: "Need to execute a task",
+        agentName: AGENTS.OPERATOR,
+        reason: "Run the failing tests and report which assertion broke.",
     };
 
     await executeTool(switchAgentTool, params);
 
-    const operatorDef = await loadAgentDef("operator");
-    assertEquals(getActiveModel(), operatorDef.model);
-});
-
-Deno.test("executeSwitchAgent succeeds when given a direct uiAPI without global state", async () => {
-    let systemMessage = "";
-    /** @type {string | null} */
-    let triggeredAgent = null;
-    /** @type {string | null} */
-    let triggeredReason = null;
-    /** @type {import('../../shared/ui/types.js').UiAPI} */
-    const mockUiAPI = {
-        appendSystemMessage: (/** @type {string} */ msg) => {
-            systemMessage = msg;
-        },
-        requestRender: () => {},
-        appendAgentMessageStart: () => ({ appendText: () => {} }),
-        promptSelect: () => Promise.resolve(null),
-        promptText: () => Promise.resolve(null),
-        showModelSelector: () => {},
-    };
-
-    // Ensure global state is NOT set
-    setActiveAgent("Router", async () => {}, undefined);
-
-    const params = {
-        agentName: "router",
-        reason: "Back to start",
-    };
-
-    const result = await executeSwitchAgent(
-        params,
-        mockUiAPI,
-        undefined,
-        (target, reason) => {
-            triggeredAgent = target;
-            triggeredReason = reason;
-            return Promise.resolve();
-        },
-    );
-
-    assertMatch(/** @type {{ type: "text", text: string }} */ (result.content[0]).text, /Switched to Router/i);
-    assertMatch(systemMessage, /Agent hand-off: Switching to router/i);
-    assertEquals(triggeredAgent, "router");
-    assertEquals(triggeredReason, "Back to start");
+    // The footer/model state changes only when the root session is actually
+    // rebuilt by applyPendingRootSwap. Until then, the swap (with the target
+    // model) sits in the pending queue.
+    const operatorDef = await loadAgentDef(AGENTS.OPERATOR);
+    const pending = getPendingRootSwap();
+    assertEquals(pending?.agentName, AGENTS.OPERATOR);
+    assertEquals(pending?.model, operatorDef.model);
 });
 
 Deno.test("executeSwitchAgent returns unknown-agent error with available list", async () => {
@@ -152,7 +126,6 @@ Deno.test("executeSwitchAgent returns unknown-agent error with available list", 
     const result = await executeSwitchAgent(
         { agentName: "not-real-agent", reason: "test" },
         mockUiAPI,
-        undefined,
     );
 
     assertMatch(

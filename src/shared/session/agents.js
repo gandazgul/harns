@@ -5,7 +5,7 @@
 
 import { basename, dirname, fromFileUrl, join } from "@std/path";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
-import { AGENT_DEFS_DIR, CWD, HOME_DIR } from "../../constants.js";
+import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR } from "../../constants.js";
 import { directoryExists, fileExists } from "../helpers.js";
 import { PROTECTED_TOOL_NAMES } from "../../tools/registry.js";
 
@@ -17,25 +17,25 @@ export const __dirname = dirname(fromFileUrl(import.meta.url));
 // TODO: insert these reminders after the user request when calling agents. This will remind smaller models or models without a system prompt field of their core role and make them <hopefully> pay attention.
 // @ts-ignore: pending implementation
 const _AGENT_REMINDERS = {
-    router:
+    [AGENTS.ROUTER]:
         "\n\n[CRITICAL REMINDER: You are the Router. You must evaluate the request and immediately call the `triage_report` tool. Do not converse with the user or write code.]",
-    operator:
+    [AGENTS.OPERATOR]:
         "\n\n[CRITICAL REMINDER: You are the Operator. Your job is to execute this QUICK_FIX directly. Modify the code, verify your changes using the project's test command, and keep your text output brief.]",
-    planner:
+    [AGENTS.PLANNER]:
         "\n\n[CRITICAL REMINDER: You are the Planner. Write a standard Markdown plan in the `plans/` directory. Once the file is saved, you MUST end your turn by calling the `plan_written` tool.]",
-    architect:
+    [AGENTS.ARCHITECT]:
         "\n\n[CRITICAL REMINDER: You are the Architect. You must either ask EXACTLY ONE clarification question, OR write a strict PROJECT plan with a DAG task table. Do not write implementation code. Call `plan_written` when done.]",
-    engineer:
+    [AGENTS.ENGINEER]:
         "\n\n[CRITICAL REMINDER: You are the Engineer. Use the Zero-Trust Protocol: verify all exports and APIs with your AST tools before using them. After writing the code, you MUST run the verification command to prove it compiles before finishing.]",
-    reviewer:
+    [AGENTS.REVIEWER]:
         "\n\n[CRITICAL REMINDER: You are the Semantic Reviewer. Compare the git diff against the plan. Output exactly the word 'APPROVED' if all requirements are met, otherwise output ONLY a bulleted list of missing requirements.]",
-    init:
+    [AGENTS.INIT]:
         "\n\n[CRITICAL REMINDER: You are the Init Agent. Do NOT modify source code. Your only job is to explore, write the `CONTEXT.md` file, store core memories, and save the CI command to settings.]",
-    slicer:
+    [AGENTS.SLICER]:
         "\n\n[CRITICAL REMINDER: You are the Slicer. Read the plan and use the edit tool to insert the Tasks and Slice Details sections. Ensure all tasks are vertical slices (tracer bullets). End your turn immediately after editing.]",
-    doc_writer:
+    [AGENTS.DOC_WRITER]:
         "\n\n[CRITICAL REMINDER: You are the Doc Writer. You are STRICTLY LIMITED to writing and editing `.md` files. Do not modify implementation code or write tests. Execute only your specific assigned task, ensure accuracy against the codebase, and then halt.]",
-    tester:
+    [AGENTS.TESTER]:
         "\n\n[CRITICAL REMINDER: You are the Tester. Execute ONLY your assigned task. You MUST run the tests using `bash` to prove they pass—narrations are not allowed. If the feature implementation is fundamentally broken, DO NOT rewrite it; report the exact failure and halt. Use the Zero-Trust Protocol for all imports.]",
 };
 
@@ -79,6 +79,74 @@ export async function resolveAgentDefsDir() {
             ...(HOME_AGENT_DEFS_DIR ? [`Tried home: ${HOME_AGENT_DEFS_DIR}`] : []),
             `Tried bundled: ${AGENT_DEFS_DIR}`,
         ].join(" "),
+    );
+}
+
+/**
+ * Sync cache of display names keyed by internal agent name (filename without .md).
+ * Populated as a side-effect of every `loadAgentDef*` call so callers that need a
+ * display name without awaiting (e.g. `setActiveAgent`) can resolve one cheaply.
+ *
+ * @type {Map<string, string>}
+ */
+const displayNameCache = new Map();
+
+/**
+ * Synchronously read an agent file's frontmatter `name:` field. Used by
+ * `getAgentDisplayName` when the cache is cold. The frontmatter is the only
+ * source of truth — we never synthesize a display name from the internal name.
+ *
+ * @param {string} internalName
+ * @returns {string | null}
+ */
+function readDisplayNameFromFrontMatterSync(internalName) {
+    const candidatePaths = getAgentDefDirsByPriority().map((dir) => join(dir, `${internalName}.md`));
+
+    for (const filePath of candidatePaths) {
+        let raw;
+        try {
+            raw = Deno.readTextFileSync(filePath);
+        } catch {
+            continue;
+        }
+        if (!hasFrontMatter(raw)) continue;
+        const { attrs } = extractYaml(raw);
+        const name = /** @type {{ name?: unknown }} */ (attrs).name;
+        if (typeof name === "string" && name.trim()) {
+            return name.trim();
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Resolve an agent's display name from its definition's frontmatter `name:`
+ * field. The cache is populated by `loadAgentDef*`; on miss, the file is read
+ * synchronously so the frontmatter remains the single source of truth.
+ *
+ * Throws when the agent definition cannot be located or has no `name:` field —
+ * silently inventing a display name would hide misconfiguration.
+ *
+ * @param {string} internalName
+ * @returns {string}
+ */
+export function getAgentDisplayName(internalName) {
+    if (!internalName) {
+        throw new Error("getAgentDisplayName: internalName is required");
+    }
+    const cached = displayNameCache.get(internalName);
+    if (cached) return cached;
+
+    const fromFile = readDisplayNameFromFrontMatterSync(internalName);
+    if (fromFile) {
+        displayNameCache.set(internalName, fromFile);
+        return fromFile;
+    }
+
+    throw new Error(
+        `getAgentDisplayName: no agent definition with a frontmatter "name:" field was found for "${internalName}". ` +
+            `Searched: ${getAgentDefDirsByPriority().map((dir) => join(dir, `${internalName}.md`)).join(", ")}.`,
     );
 }
 
@@ -257,6 +325,8 @@ async function loadAgentDefFromPaths(agentName, filePaths) {
         if (!tools.includes(toolName)) tools.push(toolName);
     }
 
+    displayNameCache.set(agentName, displayName);
+
     return {
         name: agentName,
         displayName,
@@ -288,8 +358,11 @@ export function loadAgentDef(agentName) {
  * agent-defs directories and should not be discoverable via /agent listings.
  *
  * @param {string} filePath - Absolute path to the agent .md file
+ * @param {{ agentName?: string }} [options] - Override the internal name used as the cache key
+ *   (defaults to the file's basename without `.md`).
  * @returns {Promise<import('./types.js').AgentDefinition>}
  */
-export function loadAgentDefFromPath(filePath) {
-    return loadAgentDefFromPaths(basename(filePath, ".md"), [filePath]);
+export function loadAgentDefFromPath(filePath, options) {
+    const agentName = options?.agentName || basename(filePath, ".md");
+    return loadAgentDefFromPaths(agentName, [filePath]);
 }

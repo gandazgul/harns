@@ -13,7 +13,8 @@ import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
 import { ensureRootAgentSession, listPromptTemplates, steerRootSession } from "../session/session.js";
 import { ensureMnemosyneBinary } from "../runtime-preflight.js";
 import { commandRegistry } from "../../cmd/registry.js";
-import { COMMAND_NAMES } from "../../constants.js";
+import { AGENTS, COMMAND_NAMES } from "../../constants.js";
+import { getAgentDisplayName, listAvailableAgents } from "../session/agents.js";
 import { getModelRegistry } from "../models/model-registry.js";
 import { getSettingsManager, initSettings } from "../settings.js";
 import {
@@ -23,6 +24,7 @@ import {
 } from "../../cmd/init/init-state.js";
 import {
     clearUserModelOverride,
+    consumePendingSwitchHandoff,
     getActiveAgentName,
     getActiveModelState,
     getActiveOnMessage,
@@ -32,7 +34,6 @@ import {
     getRootAgentSession,
     getRootSessionManager,
     getThinkingLevel,
-    setActiveAgentName,
     setActiveModelState,
     setActiveOnMessage,
     setActiveUiAPI,
@@ -50,59 +51,66 @@ import { handleBashCommand } from "./bash-interceptor.js";
 import { handleSlashCommand } from "./slash-dispatch.js";
 import { installKeybindings } from "./keybindings.js";
 
-const CHAT_PROMPT_AGENT_NAME = "operator";
+const CHAT_PROMPT_AGENT_NAME = AGENTS.OPERATOR;
 
 /** @type {Set<string>} */
 export let CHAT_BUILTIN_SLASH_NAMES = new Set();
 
 /**
- * Update the active agent and its message handler dynamically.
- * @param {string} agentName  Display name shown in the UI ("Engineer", "Router", …).
+ * Update the active agent and its message handler.
+ *
+ * Footer state (agent display name + model) is NOT changed here — it is
+ * updated only when the root session is actually rebuilt for the new agent,
+ * via `buildAgentSession` → `uiAPI.setAgentInfo`. This guarantees the footer
+ * reflects the agent that's truly handling turns and never claims a switch
+ * that has not yet taken effect.
+ *
+ * Callers must pass the internal agent name from the `AGENTS` constant; the
+ * display name is read from the agent definition's frontmatter when needed.
+ *
+ * @param {string} agentName  Internal agent name (filename of the agent
+ *   definition without `.md`, e.g. `AGENTS.ROUTER` → `"router"`).
  * @param {import('../session/types.js').AgentMessageHandler} handler
  * @param {import('../ui/types.js').UiAPI} [uiAPI]
  * @param {string} [agentModel]
- * @param {string} [agentInternalName]  Internal name used for AgentSession construction ("engineer", "router", …).
- *   When provided and different from the current root, queues a root rebuild at the next turn boundary.
  */
-export function setActiveAgent(agentName, handler, uiAPI, agentModel, agentInternalName) {
-    if (getActiveAgentName() !== agentName) {
-        clearUserModelOverride();
-        if (uiAPI) {
-            const modelText = agentModel ? ` (model: ${agentModel})` : "";
-            uiAPI.appendSystemMessage(`Switched to ${agentName}${modelText}.`);
-        }
-    }
-    setActiveAgentName(agentName);
-    if (agentModel) {
-        const slashIndex = agentModel.indexOf("/");
-        if (slashIndex > 0) {
-            setActiveModelState(agentModel, agentModel.slice(0, slashIndex), false);
-        } else {
-            setActiveModelState(agentModel, "", false);
-        }
-    }
+export function setActiveAgent(agentName, handler, uiAPI, agentModel) {
     setActiveOnMessage(handler);
-
-    // Record a pending root rebuild whenever we know the internal agent name and it differs
-    // from the current root. The actual rebuild happens at a turn boundary via
-    // applyPendingRootSwap() — it is unsafe to dispose the root mid-prompt.
-    if (agentInternalName && agentInternalName !== getRootAgentName()) {
-        setPendingRootSwap({
-            agentName: agentInternalName,
-            displayName: agentName,
-            model: agentModel,
-        });
-    }
 
     if (uiAPI) {
         setActiveUiAPI(uiAPI);
-        uiAPI.requestRender();
     }
+
+    // If the active root is already this agent, no swap is needed and the
+    // footer already matches reality.
+    if (agentName === getRootAgentName()) {
+        uiAPI?.requestRender();
+        return;
+    }
+
+    // Queue a root rebuild. The actual swap (and the corresponding footer
+    // update + "Switched to X" message) is applied at the next turn boundary
+    // by applyPendingRootSwap() — it is unsafe to dispose the root mid-prompt,
+    // and updating the footer earlier would let the UI claim a switch that
+    // has not yet taken effect.
+    setPendingRootSwap({
+        agentName,
+        displayName: getAgentDisplayName(agentName),
+        model: agentModel,
+    });
+
+    uiAPI?.requestRender();
 }
 
 /**
- * If a pending root swap is queued, dispose the current root and build a new one
- * for the target agent. Safe to call when the root is idle (between user turns).
+ * If a pending root swap is queued, dispose the current root and build a new
+ * one for the target agent. Safe to call when the root is idle (between user
+ * turns).
+ *
+ * The footer (active agent name + model) is updated as a side-effect of
+ * `buildAgentSession` calling `uiAPI.setAgentInfo`, so it changes exactly when
+ * the new root is in place — never before. The user-facing "Switched to X"
+ * notice is emitted here only after the rebuild succeeds, for the same reason.
  *
  * @param {import('../ui/types.js').UiAPI} uiAPI
  * @returns {Promise<void>}
@@ -116,12 +124,16 @@ export async function applyPendingRootSwap(uiAPI) {
     }
     setPendingRootSwap(null);
     try {
+        clearUserModelOverride();
         await ensureRootAgentSession({
             agentName: pending.agentName,
             modelOverride: pending.model,
             uiAPI,
             sessionManager: getRootSessionManager() || undefined,
         });
+        const modelText = pending.model ? ` (model: ${pending.model})` : "";
+        uiAPI.appendSystemMessage(`Switched to ${pending.displayName}${modelText}.`);
+        uiAPI.requestRender();
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         uiAPI.appendSystemMessage(`Failed to switch root agent to "${pending.agentName}": ${msg}`);
@@ -205,7 +217,7 @@ export function resolveTemplateModel(templateModel, modelRegistry) {
  * Starts the interactive TUI loop.
  * @param {string | null} initialUserRequest
  * @param {import('../session/types.js').AgentMessageHandler | null} onMessage - Handler for user submissions
- * @param {{ sessionStartMode?: "new" | "continue", initialAgentName?: string, initialAgentDisplayName?: string, initialAgentModel?: string }} [options]
+ * @param {{ sessionStartMode?: "new" | "continue", initialAgentName?: string, initialAgentModel?: string }} [options]
  */
 export async function startInteractiveSession(initialUserRequest, onMessage, options = {}) {
     CHAT_BUILTIN_SLASH_NAMES = new Set(
@@ -220,12 +232,17 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     const sessionStartedAt = rootSessionManager.getHeader()?.timestamp || new Date().toISOString();
     setActiveOnMessage(onMessage);
 
+    // Pre-warm the display-name cache so any sync getAgentDisplayName call
+    // before the root session is built can resolve from cache instead of
+    // re-reading the frontmatter file. (The footer itself is not set here —
+    // ensureRootAgentSession below will populate it via setAgentInfo once the
+    // session actually exists, so the UI never shows an agent name that has
+    // no live session behind it.)
+    await listAvailableAgents();
+
     // Track which agent the initial root will be built for. Callers (e.g. `hns agent <name>`)
     // can override via options.initialAgentName.
-    const initialAgentInternalName = options.initialAgentName || "router";
-    const initialAgentDisplayName = options.initialAgentDisplayName ||
-        (initialAgentInternalName === "router" ? "Router" : initialAgentInternalName);
-    setActiveAgentName(initialAgentDisplayName);
+    const initialAgentInternalName = options.initialAgentName || AGENTS.ROUTER;
     await ensureMnemosyneBinary();
     initHarnsTheme();
     await applyPersistedTheme();
@@ -419,6 +436,12 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // Expose a UI API for agents to append to the message list
     const uiAPI = createUiApi(tui, messageList, runningTasksComponent);
 
+    // Install chat-session-specific UiAPI methods (setAgentInfo, enableInput,
+    // showModelSelector, …) BEFORE building the first root session — buildAgentSession
+    // calls uiAPI.setAgentInfo() to seed the footer with the agent's display name
+    // and model, and that setter only exists once the overrides are installed.
+    installUiApiOverrides({ uiAPI, tui, editor, container, messageList, setActiveModel });
+
     // ── Eagerly build the root AgentSession for the initial agent ──
     // The root persists across turns of the same agent so /compact and other long-lived
     // session operations have something to act on. setActiveAgent rebuilds the root on
@@ -564,8 +587,6 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         return false;
     }
 
-    installUiApiOverrides({ uiAPI, tui, editor, container, messageList, setActiveModel });
-
     // @ts-ignore: TS doesn't know about pi-tui Editor internals
     editor.onFocus = () => {
         try {
@@ -666,6 +687,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
             chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
             resolveTemplateModel,
             setActiveAgent,
+            applyPendingRootSwap,
             generationGuard,
             registerOperationCancel: (cancel) => {
                 activeOperationCancel = cancel;
@@ -676,21 +698,52 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         // Generation gating
         const thisGen = generationGuard.bump();
 
-        const images = savedImages;
+        let currentRequest = userRequest;
+        let currentImages = savedImages;
+        let isHandoff = false;
+        // Safety cap on chained switch_agent handoffs in a single user submission.
+        let handoffsLeft = 4;
 
-        uiAPI.appendUserMessage?.(userRequest);
-        images.forEach((/** @type {import('../session/types.js').ImageAttachment} */ img) => {
+        uiAPI.appendUserMessage?.(currentRequest);
+        currentImages.forEach((/** @type {import('../session/types.js').ImageAttachment} */ img) => {
             if (uiAPI.appendImage) uiAPI.appendImage(img.base64, img.mimeType);
         });
 
         try {
-            const activeOnMessage = getActiveOnMessage();
-            const rootSessionManager = getRootSessionManager();
-            if (activeOnMessage && rootSessionManager) {
+            while (true) {
+                // Apply any root swap queued before this turn (e.g. by a slash
+                // `/agent engineer` between turns, or by a switch_agent tool call
+                // in the previous iteration). Without this, the first turn after a
+                // switch would hit a transient fallback that still uses the previous
+                // agent's session history.
+                await applyPendingRootSwap(uiAPI);
+                const activeOnMessage = getActiveOnMessage();
+                const rootSessionManager = getRootSessionManager();
+                if (!activeOnMessage || !rootSessionManager) {
+                    uiAPI.appendSystemMessage("Error: No active agent handler or session manager.");
+                    break;
+                }
                 setActiveUiAPI(uiAPI);
-                await activeOnMessage(userRequest, images, uiAPI, rootSessionManager);
-            } else {
-                uiAPI.appendSystemMessage("Error: No active agent handler or session manager.");
+                if (isHandoff) {
+                    uiAPI.appendSystemMessage(currentRequest, false, "Handoff:");
+                }
+                await activeOnMessage(currentRequest, currentImages, uiAPI, rootSessionManager);
+
+                // If the agent called switch_agent, its turn was terminated and the
+                // tool recorded a handoff. Continue the loop: the next iteration
+                // applies the queued root swap and feeds `reason` as the new agent's
+                // first user message — making the chain visible and uninterrupted.
+                const handoff = consumePendingSwitchHandoff();
+                if (!handoff) break;
+                if (handoffsLeft-- <= 0) {
+                    uiAPI.appendSystemMessage(
+                        "switch_agent handoff limit reached — refusing further chained switches in this turn.",
+                    );
+                    break;
+                }
+                currentRequest = handoff.reason;
+                currentImages = [];
+                isHandoff = true;
             }
         } catch (err) {
             if (generationStillCurrent(thisGen)) {
@@ -699,8 +752,8 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 );
             }
         } finally {
-            // Drain any pending root swap recorded during the turn (e.g. from switch_agent
-            // tool calls or workflow handoffs via setActiveAgent).
+            // Drain any pending root swap recorded during the last turn (covers the
+            // case where the agent queued a swap but didn't call switch_agent).
             await applyPendingRootSwap(uiAPI);
         }
     }

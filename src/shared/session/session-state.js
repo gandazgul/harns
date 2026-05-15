@@ -10,6 +10,13 @@
  * @property {string} [model]  Optional explicit model in provider/id format.
  */
 
+/**
+ * @typedef {Object} PendingSwitchHandoff
+ * @property {string} agentName  Internal agent name of the target agent.
+ * @property {string} reason  Message the calling agent crafted to seed the
+ *   next agent's first turn. Sent as a user message after the root swap.
+ */
+
 /** @type {{
  * activeAgentName: string,
  * activeModel: string,
@@ -23,9 +30,12 @@
  * rootAgentName: string | null,
  * subAgentSessions: Set<import('@earendil-works/pi-coding-agent').AgentSession>,
  * pendingRootSwap: PendingRootSwap | null,
+ * pendingSwitchHandoff: PendingSwitchHandoff | null,
  * }} */
 const state = {
-    activeAgentName: "Router",
+    // Initial placeholder; overwritten by startInteractiveSession() once the
+    // agent definitions have been loaded and the real display name is known.
+    activeAgentName: "",
     activeModel: "",
     activeModelProvider: "",
     userModelOverride: false,
@@ -36,6 +46,7 @@ const state = {
     rootAgentName: null, // internal name of the agent the rootAgentSession was built for
     subAgentSessions: new Set(), // transient AgentSessions (workflow sub-agents, switch_agent triggers)
     pendingRootSwap: null, // recorded when setActiveAgent is called during an in-flight turn
+    pendingSwitchHandoff: null, // recorded by switch_agent to seed the next agent's first turn
     activeUiAPI: null,
 };
 
@@ -138,6 +149,24 @@ export function setPendingRootSwap(swap) {
 
 export function getPendingRootSwap() {
     return state.pendingRootSwap;
+}
+
+/** @param {PendingSwitchHandoff | null} handoff */
+export function setPendingSwitchHandoff(handoff) {
+    state.pendingSwitchHandoff = handoff;
+}
+
+/**
+ * Read and clear the pending switch_agent handoff (if any). Used by the
+ * chat-session loop to feed the new agent's first turn after a switch_agent
+ * tool call halts the previous agent.
+ *
+ * @returns {PendingSwitchHandoff | null}
+ */
+export function consumePendingSwitchHandoff() {
+    const handoff = state.pendingSwitchHandoff;
+    state.pendingSwitchHandoff = null;
+    return handoff;
 }
 
 /**

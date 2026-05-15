@@ -17,11 +17,12 @@
  */
 
 import { join } from "@std/path";
-import { CWD } from "../../constants.js";
+import { AGENTS, CWD } from "../../constants.js";
 import { ensurePlansDir } from "../../plan-store.js";
 import { setActiveAgent } from "../interactive/chat-session.js";
 import { createDirectAgentHandler } from "../session/direct-agent.js";
 import { runAgentSession, runRootTurn } from "../session/session.js";
+import { getAgentDisplayName } from "../session/agents.js";
 import { getRootAgentName } from "../session/session-state.js";
 import { getCustomSetting, setCustomSetting } from "../settings.js";
 import { createSilentUiApi } from "../ui/api.js";
@@ -169,38 +170,39 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
     const decoratedRequest = ["## User Request", userRequest, "", triageBlock].join("\n");
 
     if (triage.classification === "QUICK_FIX") {
-        uiAPI.appendSystemMessage("=== Phase B: Operator (Execute) ===");
-        setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
+        const operatorDisplay = getAgentDisplayName(AGENTS.OPERATOR);
+        uiAPI.appendSystemMessage(`=== Phase B: ${operatorDisplay} (Execute) ===`);
+        setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
 
         await runAgentSession({
-            agentName: "operator",
+            agentName: AGENTS.OPERATOR,
             userRequest: decoratedRequest,
             images,
             uiAPI,
             sessionManager,
         });
 
-        uiAPI.appendSystemMessage("✅ Operator execution complete.");
+        uiAPI.appendSystemMessage(`✅ ${operatorDisplay} execution complete.`);
         sessionManager?.appendCustomMessageEntry?.(
             "system",
-            "Quick fix executed by operator.",
+            `Quick fix executed by ${operatorDisplay}.`,
             true,
-            `Quick fix executed by operator. Summary:\n${triage.summary}`,
+            `Quick fix executed by ${operatorDisplay}. Summary:\n${triage.summary}`,
         );
         return;
     }
 
     if (triage.classification === "FEATURE" || triage.classification === "PROJECT") {
         const isFeature = triage.classification === "FEATURE";
-        const agentName = isFeature ? "planner" : "architect";
-        const displayName = isFeature ? "Planner" : "Architect";
+        const agentName = isFeature ? AGENTS.PLANNER : AGENTS.ARCHITECT;
+        const displayName = getAgentDisplayName(agentName);
         const phaseLabel = isFeature
-            ? "FEATURE detected. Handing off to Planner..."
-            : "PROJECT detected. Handing off to Architect for targeted deep exploration + planning...";
+            ? `FEATURE detected. Handing off to ${displayName}...`
+            : `PROJECT detected. Handing off to ${displayName} for targeted deep exploration + planning...`;
 
         uiAPI.appendSystemMessage(phaseLabel);
         uiAPI.appendSystemMessage(`=== Phase B: ${displayName} ===`);
-        setActiveAgent(displayName, createDirectAgentHandler(agentName), uiAPI, undefined, agentName);
+        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
 
         await ensurePlansDir(CWD);
 
@@ -253,10 +255,12 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                     buildPasses = true;
                     uiAPI.appendSystemMessage("✅ Build and tests passed!");
                 } else {
-                    uiAPI.appendSystemMessage("❌ Build failed. Dispatching Operator to fix syntax/types...");
-                    setActiveAgent("Operator", createDirectAgentHandler("operator"), uiAPI, undefined, "operator");
+                    uiAPI.appendSystemMessage(
+                        `❌ Build failed. Dispatching ${getAgentDisplayName(AGENTS.OPERATOR)} to fix syntax/types...`,
+                    );
+                    setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
                     await runAgentSession({
-                        agentName: "operator",
+                        agentName: AGENTS.OPERATOR,
                         userRequest:
                             `The project failed CI validation. Fix the following build errors:\n\n${ciResult.output}`,
                         uiAPI,
@@ -288,9 +292,8 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             const reviewPrompt =
                 `Compare the current implementation diff against the original plan. If the code fully satisfies the plan, reply ONLY with the word 'APPROVED'. Otherwise, list the missing semantic requirements.\n\n### Original Plan\n${planContent}\n\n### Git Diff\n${diffText}`;
 
-            // Ensure you use the specialized 'reviewer' agent here
             const sessionMessages = await runAgentSession({
-                agentName: "reviewer",
+                agentName: AGENTS.REVIEWER,
                 userRequest: reviewPrompt,
                 uiAPI: createSilentUiApi(),
                 sessionManager,
@@ -303,10 +306,12 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                 executionComplete = true;
                 // This will exit the while loop cleanly!
             } else {
-                uiAPI.appendSystemMessage("❌ Review failed. Sending feedback back to Engineer...");
-                setActiveAgent("Engineer", createDirectAgentHandler("engineer"), uiAPI, undefined, "engineer");
+                uiAPI.appendSystemMessage(
+                    `❌ Review failed. Sending feedback back to ${getAgentDisplayName(AGENTS.ENGINEER)}...`,
+                );
+                setActiveAgent(AGENTS.ENGINEER, createDirectAgentHandler(AGENTS.ENGINEER), uiAPI);
                 await runAgentSession({
-                    agentName: "engineer",
+                    agentName: AGENTS.ENGINEER,
                     userRequest:
                         `The code reviewer found issues with your implementation. Please fix them. Do not break existing tests.\n\nReviewer Feedback:\n${reviewResponse}`,
                     uiAPI,
@@ -327,7 +332,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             );
         }
 
-        setActiveAgent("Engineer", createDirectAgentHandler("engineer"), uiAPI, undefined, "engineer");
+        setActiveAgent(AGENTS.ENGINEER, createDirectAgentHandler(AGENTS.ENGINEER), uiAPI);
     }
 }
 
@@ -345,11 +350,11 @@ export function createRouterOrchestratorHandler() {
         // Use the live root AgentSession when the router is already established as root
         // (the normal startup case). Fallback to transient for tests/edge cases where the
         // root was not pre-built.
-        const useRoot = getRootAgentName() === "router";
+        const useRoot = getRootAgentName() === AGENTS.ROUTER;
         const messages = useRoot
-            ? await runRootTurn({ agentName: "router", userRequest, images, uiAPI })
+            ? await runRootTurn({ agentName: AGENTS.ROUTER, userRequest, images, uiAPI })
             : await runAgentSession({
-                agentName: "router",
+                agentName: AGENTS.ROUTER,
                 userRequest,
                 images,
                 uiAPI,

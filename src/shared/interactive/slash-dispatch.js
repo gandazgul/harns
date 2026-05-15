@@ -27,7 +27,8 @@ import { getRootSessionManager } from "../session/session-state.js";
  * @property {Map<string, { name: string, argumentHint?: string, description?: string, model?: string, source?: string }>} promptTemplateByName
  * @property {string} chatPromptAgentName
  * @property {(templateModel: string) => ({ ok: true, provider: string, id: string } | { ok: false })} resolveTemplateModel
- * @property {(agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string, agentInternalName?: string) => void} setActiveAgent
+ * @property {(agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string) => void} setActiveAgent
+ * @property {(uiAPI: import('../ui/types.js').UiAPI) => Promise<void>} applyPendingRootSwap
  * @property {import('./generation-guard.js').GenerationGuard} generationGuard
  * @property {(cancel: (() => void) | null) => void} registerOperationCancel
  */
@@ -72,7 +73,16 @@ export async function handleSlashCommand(ctx) {
  * @param {number} thisGen
  */
 async function dispatchBuiltin(ctx, command, args, commandRegistry, thisGen) {
-    const { uiAPI, editor, tui, sessionStartedAt, originalHandleInput, generationGuard, registerOperationCancel } = ctx;
+    const {
+        uiAPI,
+        editor,
+        tui,
+        sessionStartedAt,
+        originalHandleInput,
+        generationGuard,
+        registerOperationCancel,
+        applyPendingRootSwap,
+    } = ctx;
 
     registerOperationCancel(() => {
         abortActiveSession();
@@ -96,6 +106,11 @@ async function dispatchBuiltin(ctx, command, args, commandRegistry, thisGen) {
         }
     } finally {
         registerOperationCancel(null);
+        // Slash commands run between turns, so any swap they queued (e.g.
+        // `/agent architect` → setActiveAgent) can be applied immediately.
+        // This keeps the footer in lock-step with the live session: the
+        // user sees the new agent name only after its session is built.
+        await applyPendingRootSwap(uiAPI);
     }
 }
 
@@ -141,7 +156,6 @@ async function dispatchTemplate(ctx, template, thisGen) {
         createDirectAgentHandler(chatPromptAgentName),
         uiAPI,
         templateModelValue,
-        chatPromptAgentName,
     );
 
     try {

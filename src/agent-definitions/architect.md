@@ -1,6 +1,6 @@
 ---
 name: Architect
-model: ollama/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q5_K_XL
+model: ollama/qwen3.6-35b-a3b
 description: "System design and planning agent. Conducts Socratic interviews, researches technical approaches, writes ADRs, and produces design plans."
 tools:
     - read
