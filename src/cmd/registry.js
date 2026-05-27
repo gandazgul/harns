@@ -316,15 +316,14 @@ export const commandRegistry = {
         summary: "Switch the active visual theme.",
         usage: [
             "/theme",
-            `${bin("theme <name>")}`,
-            `${bin("theme --list")}`,
         ],
         notes: [
+            "Slash command only (interactive session).",
             "Inside the TUI, /theme opens an interactive picker with live previews.",
         ],
         execute: runThemeCommand,
         isSlash: true,
-        isCli: true,
+        isCli: false,
     },
     [COMMAND_NAMES.INSTALL]: {
         name: COMMAND_NAMES.INSTALL,
