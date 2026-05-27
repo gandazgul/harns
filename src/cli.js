@@ -16,7 +16,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { COMMAND_NAMES } from "./constants.js";
-import { commandRegistry } from "./cmd/registry.js";
+import { commandRegistry, getCliCommandDefinitions } from "./cmd/registry.js";
 import { printGlobalHelp } from "./cmd/help/index.js";
 import { stopTUI } from "./shared/ui/tui.js";
 
@@ -49,12 +49,49 @@ async function main() {
 
     const parsed = parseArgs(args, {
         stopEarly: true,
-        boolean: ["help", "continue"],
-        alias: { h: "help", c: "continue" },
+        string: ["agent", "agents", "load-plan", "install", "remove"],
+        boolean: ["help", "continue", "plans", "sleep", "init", "initialize", "router"],
+        alias: { h: "help", c: "continue", a: "agent" },
     });
 
     const normalizedArgs = stripLeadingGlobalFlags(args);
     const [firstPositional] = parsed._.map(String);
+
+    /**
+     * @param {unknown} val
+     * @returns {boolean}
+     */
+    const isFlagPassed = (val) => val === true || typeof val === "string";
+    for (const command of getCliCommandDefinitions()) {
+        // Skip the default router command from flag matching because it is the fallback
+        if (command.name === COMMAND_NAMES.ROUTER) {
+            continue;
+        }
+
+        let matchedKey = null;
+        if (isFlagPassed(parsed[command.name])) {
+            matchedKey = command.name;
+        } else if (command.aliases) {
+            for (const alias of command.aliases) {
+                if (isFlagPassed(parsed[alias])) {
+                    matchedKey = alias;
+                    break;
+                }
+            }
+        }
+
+        if (matchedKey !== null) {
+            const flagValue = parsed[matchedKey];
+            const commandArgs = typeof flagValue === "string" && flagValue
+                ? [flagValue, ...parsed._.map(String)]
+                : [...parsed._.map(String)];
+
+            await commandRegistry[command.name].execute(commandArgs, {
+                sessionStartMode: parsed.continue ? "continue" : "new",
+            });
+            return;
+        }
+    }
 
     // Explicit command dispatch: `cli.js <command> ...`
     if (commandRegistry[firstPositional]) {
