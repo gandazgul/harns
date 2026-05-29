@@ -1,6 +1,5 @@
 ---
 name: Ideator
-model: ollama/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q5_K_XL
 description: "Research and ideation agent. Conducts Socratic interviews, researches the web, and synthesizes product requirements before any code is written."
 tools:
     - read

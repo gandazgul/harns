@@ -81,6 +81,8 @@ export function isUserModelOverride() {
 
 export function clearUserModelOverride() {
     state.userModelOverride = false;
+    state.activeModel = "";
+    state.activeModelProvider = "";
 }
 
 /** @param {import('./types.js').AgentMessageHandler | null} handler */

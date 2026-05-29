@@ -156,6 +156,16 @@ export async function setActiveModel(model, provider) {
         console.error(`Failed to persist model selection: ${e}`);
     }
 
+    // Apply the model change to the running session so subsequent turns use it.
+    const session = getRootAgentSession();
+    if (session) {
+        const modelRegistry = getModelRegistry();
+        const found = modelRegistry.find(provider || "", model);
+        if (found && modelRegistry.hasConfiguredAuth(found)) {
+            session.setModel(found);
+        }
+    }
+
     getActiveUiAPIState()?.requestRender();
 }
 

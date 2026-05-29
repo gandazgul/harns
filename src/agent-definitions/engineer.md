@@ -1,6 +1,5 @@
 ---
 name: Engineer
-model: ollama/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q5_K_XL
 description: "Code execution agent that implements approved plans and individual tasks while adhering strictly to DAG scope."
 tools:
     - read

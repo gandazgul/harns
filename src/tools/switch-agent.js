@@ -65,7 +65,7 @@ export async function executeSwitchAgent(params, uiAPI) {
     }
 
     const handler = createDirectAgentHandler(target);
-    setActiveAgent(match.name, handler, uiAPI, match.model);
+    setActiveAgent(match.name, handler, uiAPI, match.model || undefined);
     setPendingSwitchHandoff({ agentName: match.name, reason });
 
     uiAPI.appendSystemMessage(`Agent hand-off: Switching to ${match.displayName}. Reason: ${reason}`);
