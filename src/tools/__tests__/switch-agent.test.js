@@ -106,7 +106,7 @@ Deno.test("switchAgentTool queues the target agent's model on the pending root s
     const operatorDef = await loadAgentDef(AGENTS.OPERATOR);
     const pending = getPendingRootSwap();
     assertEquals(pending?.agentName, AGENTS.OPERATOR);
-    assertEquals(pending?.model, operatorDef.model);
+    assertEquals(pending?.model, operatorDef.model || undefined);
 });
 
 Deno.test("executeSwitchAgent returns unknown-agent error with available list", async () => {

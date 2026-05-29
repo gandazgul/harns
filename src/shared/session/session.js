@@ -398,8 +398,11 @@ function resolveModel(modelOverride, agentDef) {
     const candidateModels = [];
     if (modelOverride) candidateModels.push(modelOverride);
 
+    // Only use the active model if the user explicitly selected it via /model.
+    // After agent switches, clearUserModelOverride() clears the flag but the
+    // activeModel may still hold the previous agent's model — we must skip it.
     const activeModelState = getActiveModelState();
-    if (activeModelState.model) {
+    if (activeModelState.model && isUserModelOverride()) {
         candidateModels.push(
             activeModelState.provider
                 ? `${activeModelState.provider}/${activeModelState.model}`
@@ -409,6 +412,14 @@ function resolveModel(modelOverride, agentDef) {
 
     if (agentDef.model) {
         candidateModels.push(agentDef.model);
+    }
+
+    // Fallback: User default model from settings
+    const settingsManager = getSettingsManager();
+    const defaultModelId = settingsManager.getDefaultModel();
+    const defaultProvider = settingsManager.getDefaultProvider();
+    if (defaultModelId) {
+        candidateModels.push(defaultProvider ? `${defaultProvider}/${defaultModelId}` : defaultModelId);
     }
 
     for (const candidate of candidateModels) {
@@ -624,13 +635,20 @@ export async function buildAgentSession({
 
     // Update the agent info in the UI footer.
     if (uiAPI?.setAgentInfo) {
-        // If the user has an active /model override, don't clobber it — only update the agent name.
-        if (isUserModelOverride()) {
-            uiAPI.setAgentInfo(agentDef.displayName);
-        } else {
-            const agentModelForUi = modelOverride || agentDef.model;
-            uiAPI.setAgentInfo(agentDef.displayName, agentModelForUi);
-        }
+        // Priority: agentDef.model (agent's model field) > Default Settings.
+        // The active model state is NOT used here — it may be stale from a
+        // previous agent. It is only considered by resolveModel() when the
+        // user explicitly selected it via /model (guarded by isUserModelOverride).
+        const settingsManager = getSettingsManager();
+        const defaultModelId = settingsManager.getDefaultModel();
+        const defaultProvider = settingsManager.getDefaultProvider();
+        const defaultSettingModel = defaultModelId
+            ? (defaultProvider ? `${defaultProvider}/${defaultModelId}` : defaultModelId)
+            : null;
+
+        const finalModelForUi = agentDef.model || defaultSettingModel || undefined;
+
+        uiAPI.setAgentInfo(agentDef.displayName, finalModelForUi);
     }
 
     // Resolve system prompt placeholders
