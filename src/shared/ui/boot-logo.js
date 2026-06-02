@@ -51,7 +51,7 @@ const dotOn = [
     "▓▓▓▓▓▓▓▓▓▓        ▓▓▓▓▓▓▓▓▓▓          ▓▓▓▓▓▓▓▓▓▓",
 ];
 
-/** @type {number} */
+/** @type {ReturnType<typeof setInterval>} */
 let blinkInterval;
 /** @type {Text[]} */
 const dot = [];

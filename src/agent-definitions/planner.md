@@ -1,5 +1,6 @@
 ---
 name: Planner
+model: opencode/gpt-5.3-codex
 description: "Feature planning agent that produces iterative, focused plans for single features. Inspired by Plannotator's planning approach."
 tools:
     - read
