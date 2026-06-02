@@ -10,6 +10,7 @@
  */
 
 import { join } from "@std/path";
+// @ts-ignore — quikdown/ast .d.ts uses export= but ESM runtime has default export
 import quikdownAst from "quikdown/ast";
 import { AGENTS, CWD, MAX_PARALLEL_TASKS } from "../../constants.js";
 import { loadPlan, updatePlanStatus } from "../../plan-store.js";

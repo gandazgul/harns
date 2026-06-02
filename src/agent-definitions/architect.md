@@ -1,5 +1,6 @@
 ---
 name: Architect
+model: opencode/gpt-5.3-codex
 description: "System design and planning agent. Conducts Socratic interviews, researches technical approaches, writes ADRs, and produces design plans."
 tools:
     - read
