@@ -25,6 +25,8 @@ Generate a changelog and publish a new release for this repository.
 - Run `git tag --sort=-v:refname | head -n 5` to look at recent tags.
 - If the project uses SemVer (e.g., `v1.2.3`), analyze the git log since the last tag. Bump the version according to
   Semantic Versioning rules (Major for breaking, Minor for features, Patch for fixes).
+- If the version is SemVer but starts with a 0, then the minor bumps are for major breaking changes and the patch bumps
+  are for everything else (features and patches).
 - If the project uses CalVer (e.g., `vYYYY.M.D.N`), generate the next sequential date-based tag for today.
 - If there are no tags, check `package.json` or `deno.json` for a version string. If still completely ambiguous, use
   `user_interview` to ask the user which format to use.
