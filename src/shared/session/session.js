@@ -55,8 +55,7 @@ import {
 } from "./session-state.js";
 import { directoryExists, fileExists } from "../helpers.js";
 import { loadAgentDef, resolveAgentDefsDir as _resolveAgentDefsDir, resolveSessionToolNames } from "./agents.js";
-import { getSettingsDir, getSettingsManager } from "../settings.js";
-import { getCustomSetting } from "../settings.js";
+import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsManager } from "../settings.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
@@ -428,16 +427,55 @@ export async function steerRootSession(text, images) {
 }
 
 /**
+ * Get the configured model override for an agent from merged (global + project) settings.
+ *
+ * Resolution order:
+ * 1. If `activeModelPreset` is set and names a preset in `modelPresets`,
+ *    and that preset has an `agents.<agentName>.model` entry, use that.
+ * 2. Otherwise, fall back to `agents.<agentName>.model` from base config.
+ *
+ * @param {string} agentName
+ * @returns {string | undefined}
+ */
+function getConfiguredAgentModel(agentName) {
+    const agents = /** @type {Record<string, { model?: string }> | undefined} */ (
+        getMergedCustomSetting("agents")
+    );
+    if (!agents) return undefined;
+
+    // Check active preset first
+    const activeModelPreset = /** @type {string | undefined} */ (
+        getMergedCustomSetting("activeModelPreset")
+    );
+    if (activeModelPreset) {
+        const modelPresets =
+            /** @type {Record<string, { agents?: Record<string, { model?: string }> }> | undefined} */ (
+                getMergedCustomSetting("modelPresets")
+            );
+        const preset = modelPresets?.[activeModelPreset];
+        const presetModel = preset?.agents?.[agentName]?.model;
+        if (presetModel) return presetModel;
+    }
+
+    // Fall back to base agents config
+    return agents[agentName]?.model;
+}
+
+/**
  * Resolve the model to use for an agent invocation, based on the following priority:
  * 1) Explicit model override passed to `runAgentSession`
  * 2) Active model state (e.g. from a previous /model switch)
+ * 3) Configured per-agent model from settings (agents / modelPresets)
+ * 4) Agent definition model from frontmatter
+ * 5) Default model from settings
  *
  * @param {string | undefined} modelOverride
  * @param {import('./types.js').AgentDefinition} agentDef
+ * @param {string} [agentName] - Used to look up settings-based model override.
  *
  * @returns {any | null}
  */
-function resolveModel(modelOverride, agentDef) {
+function resolveModel(modelOverride, agentDef, agentName) {
     let resolvedModel = null;
     const modelRegistry = getModelRegistry();
 
@@ -455,6 +493,14 @@ function resolveModel(modelOverride, agentDef) {
                 ? `${activeModelState.provider}/${activeModelState.model}`
                 : activeModelState.model,
         );
+    }
+
+    // Config-driven per-agent model override (agents.<name>.model or active preset)
+    if (agentName) {
+        const configuredModel = getConfiguredAgentModel(agentName);
+        if (configuredModel) {
+            candidateModels.push(configuredModel);
+        }
     }
 
     if (agentDef.model) {
@@ -686,10 +732,11 @@ export async function buildAgentSession({
 
     // Update the agent info in the UI footer.
     if (uiAPI?.setAgentInfo) {
-        // Priority: agentDef.model (agent's model field) > Default Settings.
+        // Priority: configured per-agent model > agentDef.model > Default Settings.
         // The active model state is NOT used here — it may be stale from a
         // previous agent. It is only considered by resolveModel() when the
         // user explicitly selected it via /model (guarded by isUserModelOverride).
+        const configuredModel = getConfiguredAgentModel(agentName);
         const settingsManager = getSettingsManager();
         const defaultModelId = settingsManager.getDefaultModel();
         const defaultProvider = settingsManager.getDefaultProvider();
@@ -697,7 +744,7 @@ export async function buildAgentSession({
             ? (defaultProvider ? `${defaultProvider}/${defaultModelId}` : defaultModelId)
             : null;
 
-        const finalModelForUi = agentDef.model || defaultSettingModel || undefined;
+        const finalModelForUi = configuredModel || agentDef.model || defaultSettingModel || undefined;
 
         uiAPI.setAgentInfo(agentDef.displayName, finalModelForUi);
     }
@@ -716,7 +763,7 @@ export async function buildAgentSession({
     });
     await loader.reload();
 
-    const resolvedModel = resolveModel(modelOverride, agentDef);
+    const resolvedModel = resolveModel(modelOverride, agentDef, agentName);
 
     if (!sessionManager && Deno.env.get("DEBUG") === "1") {
         const debugMsg =
@@ -1273,17 +1320,34 @@ export async function reloadRootAgentSession(uiAPI) {
         setTheme(persistedTheme);
     }
 
-    // 4. Resolve and apply model from settings defaults
+    // 4. Resolve and apply model from settings
     const modelRegistry = getModelRegistry();
     if (!isUserModelOverride()) {
-        const defaultProvider = settings.getDefaultProvider();
-        const defaultModelId = settings.getDefaultModel();
-        if (defaultProvider && defaultModelId) {
-            const found = modelRegistry.find(defaultProvider, defaultModelId);
-            if (found && modelRegistry.hasConfiguredAuth(found)) {
-                session.setModel(found);
-                if (uiAPI?.setAgentInfo) {
-                    uiAPI.setAgentInfo(meta.agentDef.displayName, `${found.provider}/${found.id}`);
+        // 4a. Try per-agent configured model override (agents.<name>.model or active preset)
+        const rootName = getRootAgentName() || "";
+        const configuredModelStr = getConfiguredAgentModel(rootName);
+        if (configuredModelStr) {
+            const parsed = parseProviderModel(configuredModelStr);
+            if (parsed.ok) {
+                const found = modelRegistry.find(parsed.provider, parsed.id);
+                if (found && modelRegistry.hasConfiguredAuth(found)) {
+                    session.setModel(found);
+                    if (uiAPI?.setAgentInfo) {
+                        uiAPI.setAgentInfo(meta.agentDef.displayName, `${found.provider}/${found.id}`);
+                    }
+                }
+            }
+        } else {
+            // 4b. Fallback: default model from settings
+            const defaultProvider = settings.getDefaultProvider();
+            const defaultModelId = settings.getDefaultModel();
+            if (defaultProvider && defaultModelId) {
+                const found = modelRegistry.find(defaultProvider, defaultModelId);
+                if (found && modelRegistry.hasConfiguredAuth(found)) {
+                    session.setModel(found);
+                    if (uiAPI?.setAgentInfo) {
+                        uiAPI.setAgentInfo(meta.agentDef.displayName, `${found.provider}/${found.id}`);
+                    }
                 }
             }
         }

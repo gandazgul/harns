@@ -3,12 +3,13 @@ classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "LLMs are attempting to read bundled agent definition files (e.g., `src/agent-definitions/plan-formats/planner-plan-format.md`) using relative paths that only exist in the Harns source tree, but not in the project they are currently working on. When Harns is compiled into a binary, these files are embedded. We need to implement a mechanism similar to `extractBundledSkills` that extracts these bundled agent definitions and related assets to a cache directory in `~/.hns/`, and then provide the LLM with the correct absolute paths to these cached files in the system prompt."
 affectedPaths:
-  - "src/shared/session/session.js"
+    - "src/shared/session/session.js"
 createdAt: "2026-06-02T15:54:37Z"
 updatedAt: "2026-06-02T15:54:46.061Z"
 status: "completed"
 origin: "internal"
 ---
+
 # Fix bundled agent-definition path references for compiled binary runs
 
 ## Context

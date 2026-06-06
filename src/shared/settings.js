@@ -1,5 +1,6 @@
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "@std/path";
+import { parse as parseJsonc } from "@std/jsonc";
 import lockfile from "proper-lockfile";
 
 /**
@@ -54,19 +55,22 @@ class HarnsSettingsStorage {
     }
 
     /**
-     * Logic for reading settings with fallback.
+     * Read settings file content, stripping JSONC comments/trailing commas
+     * so callers (Pi's SettingsManager, custom setters) receive valid JSON.
      * @param {"global" | "project"} scope
      * @returns {string | undefined}
      */
     #readSettings(scope) {
         const path = this.#resolvePath(scope);
         try {
-            return Deno.readTextFileSync(path);
+            const raw = Deno.readTextFileSync(path);
+            return stripJsoncComments(raw);
         } catch (_e) {
             if (scope === "global") {
                 try {
                     const fallbackPath = this.#getGlobalFallbackPath();
-                    return Deno.readTextFileSync(fallbackPath);
+                    const raw = Deno.readTextFileSync(fallbackPath);
+                    return stripJsoncComments(raw);
                 } catch (_e2) {
                     return undefined;
                 }
@@ -182,7 +186,26 @@ export function getSettingsManager() {
 }
 
 /**
+ * Strip JSONC comments/trailing commas from a raw string, producing valid JSON.
+ * Uses @std/jsonc parse then re-serializes for callers that expect clean JSON.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+function stripJsoncComments(raw) {
+    try {
+        const parsed = parseJsonc(raw);
+        return JSON.stringify(parsed);
+    } catch {
+        // If JSONC parse fails, return original — let the caller's JSON.parse
+        // throw with the real error message.
+        return raw;
+    }
+}
+
+/**
  * Safely reads a custom key from the underlying JSON file, bypassing SettingsManager types.
+ * Content is parsed as JSONC (comments/trailing commas tolerated).
  * @param {string} key
  * @param {"global" | "project"} scope
  * @returns {any}
@@ -195,7 +218,7 @@ export function getCustomSetting(key, scope = "project") {
     storageInstance.withLock(scope, (content) => {
         if (content) {
             try {
-                const parsed = JSON.parse(content);
+                const parsed = /** @type {Record<string, any>} */ (parseJsonc(content));
                 result = parsed[key];
             } catch (_e) { /* ignore */ }
         }
@@ -209,6 +232,9 @@ export function getCustomSetting(key, scope = "project") {
 /**
  * Safely writes a custom key to the underlying JSON file, bypassing SettingsManager types,
  * and forces the SettingsManager to sync its in-memory state.
+ *
+ * Output is always normalized JSON (no comments).
+ *
  * @param {string} key
  * @param {any} value
  * @param {"global" | "project"} scope
@@ -221,7 +247,7 @@ export async function setCustomSetting(key, value, scope = "project") {
         let parsed = /** @type {Record<string, any>} */ ({});
         if (content) {
             try {
-                parsed = /** @type {Record<string, any>} */ (JSON.parse(content));
+                parsed = /** @type {Record<string, any>} */ (parseJsonc(content));
             } catch (_e) { /* ignore */ }
         }
         parsed[key] = value;
@@ -232,4 +258,36 @@ export async function setCustomSetting(key, value, scope = "project") {
     // Force Pi's manager to reload from disk so it doesn't accidentally
     // overwrite our custom key during its next flush() operation.
     await getSettingsManager().reload();
+}
+
+/**
+ * Merged custom key lookup: reads a key from both global and project scopes
+ * and returns the value with project scope taking precedence.
+ *
+ * For object-valued keys (e.g. `agents`, `modelPresets`), the result is a
+ * deep merge where project values override global values at the top level.
+ * For scalar keys, project value wins if present.
+ *
+ * @param {string} key
+ * @returns {any} Merged value from global + project scopes, or undefined if neither has it.
+ */
+export function getMergedCustomSetting(key) {
+    if (!storageInstance) initSettings();
+
+    const globalVal = getCustomSetting(key, "global");
+    const projectVal = getCustomSetting(key, "project");
+
+    if (globalVal === undefined && projectVal === undefined) return undefined;
+    if (globalVal === undefined) return projectVal;
+    if (projectVal === undefined) return globalVal;
+
+    // Both present: merge if both are plain objects, otherwise project wins.
+    if (
+        typeof globalVal === "object" && globalVal !== null && !Array.isArray(globalVal) &&
+        typeof projectVal === "object" && projectVal !== null && !Array.isArray(projectVal)
+    ) {
+        return { ...globalVal, ...projectVal };
+    }
+
+    return projectVal;
 }
