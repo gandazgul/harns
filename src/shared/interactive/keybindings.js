@@ -38,6 +38,7 @@ import { theme } from "../ui/theme.js";
  * @property {() => boolean} isCtrlCPendingExit
  * @property {() => void} [toggleStartupHelp]
  * @property {() => void} cycleThinkingLevel
+ * @property {() => void} [clearPendingSteeringMessages]  Callback to clear pending steering messages on cancel
  */
 
 /**
@@ -64,11 +65,13 @@ export function installKeybindings(ctx) {
         isCtrlCPendingExit,
         toggleStartupHelp,
         cycleThinkingLevel,
+        clearPendingSteeringMessages,
     } = ctx;
 
     function cancelEverything() {
         generationGuard.invalidateAll();
         submissionQueue.length = 0;
+        clearPendingSteeringMessages?.();
         dismissActivePrompt();
         const opCanceled = cancelActiveOperation();
         const sessionAborted = abortActiveSession();

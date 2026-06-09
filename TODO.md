@@ -1,5 +1,10 @@
 # TODO
 
+- [ ] add details to other tool calls
+  - ls add the directory
+  - code_* add the parameters as it makes sense like read for example
+  - memory_store - the body of the memory
+
 - [ ] write should automatically return the file or a 1000 line chunk if write fails.
 - [ ] Add this tool multi_replace_file_content
 - [ ] when using /resume on a long session (we have to define long but probably more than 50% of the small models
@@ -23,6 +28,13 @@
       blocked by the OS permissions. We can create a separate user (e.g., "harns_operator") with read-only access to the
       codebase and run all bash commands from that user context. This adds an extra layer of security and ensures that
       agents cannot bypass their tool restrictions.
+- [x] Inconsistent post-flow agent state. QUICK_FIX leaves the agent on Operator, while FEATURE/PROJECT leaves it on
+      Engineer. (Working as intended; benefits from the new UI stack automatically).
+- [x] Unused `_AGENT_REMINDERS` in `agents.js`. Fixed by injecting them at the end of `opts.userRequest` in
+      `runAgentSession`.
+- [x] Agent workflow loop halts on user questions instead of waiting for a completed signal. Fixed by introducing the
+      `task_completed` tool and decoupling the validation loop.
+
 - [ ] /reload command to refresh dynamic system-prompt content on the live root AgentSession (memories, skills list,
       HARNS.md). Needed because the root AgentSession is built once per agent switch and bakes these in at construction;
       without /reload, mid-session changes to mnemosyne memories / installed skills / HARNS.md are not visible to the
