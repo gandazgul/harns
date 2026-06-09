@@ -16,7 +16,7 @@
     "npm:@earendil-works/pi-ai@0.74": "0.74.2_zod@4.4.3",
     "npm:@earendil-works/pi-coding-agent@0.74": "0.74.2_zod@4.4.3",
     "npm:@earendil-works/pi-tui@0.74": "0.74.2",
-    "npm:@gandazgul/plannotator-pi-extension-compiled@~0.19.17": "0.19.17_@mariozechner+pi-agent-core@0.73.1__zod@4.4.3_@mariozechner+pi-ai@0.73.1__zod@4.4.3_@mariozechner+pi-coding-agent@0.73.1__zod@4.4.3_@mariozechner+pi-tui@0.73.1_zod@4.4.3",
+    "npm:@gandazgul/plannotator-pi-extension-compiled@~0.19.27": "0.19.27_@mariozechner+pi-agent-core@0.73.1_@mariozechner+pi-ai@0.73.1_@mariozechner+pi-coding-agent@0.73.1_@mariozechner+pi-tui@0.73.1",
     "npm:@sinclair/typebox@~0.34.41": "0.34.49",
     "npm:chalk@^5.4.1": "5.6.2",
     "npm:proper-lockfile@3": "3.2.0",
@@ -411,8 +411,8 @@
         "koffi"
       ]
     },
-    "@gandazgul/plannotator-pi-extension-compiled@0.19.17_@mariozechner+pi-agent-core@0.73.1__zod@4.4.3_@mariozechner+pi-ai@0.73.1__zod@4.4.3_@mariozechner+pi-coding-agent@0.73.1__zod@4.4.3_@mariozechner+pi-tui@0.73.1_zod@4.4.3": {
-      "integrity": "sha512-VTMQpRpnPpNwTxwNK5QptDU9zYF3JwppveV24qSaq4+oHnnrFH94lBOglkYU1WukpT4BcQYezBjMXtQfkJGWBw==",
+    "@gandazgul/plannotator-pi-extension-compiled@0.19.27_@mariozechner+pi-agent-core@0.73.1_@mariozechner+pi-ai@0.73.1_@mariozechner+pi-coding-agent@0.73.1_@mariozechner+pi-tui@0.73.1": {
+      "integrity": "sha512-c255vGwHC4/WXHTESpLftXXY91ieofe3YVLPiB+02qx67SSxQM2BD+Pl4YnJuhw+HdsaH9OZ2VAeLvomQ38Kxw==",
       "dependencies": [
         "@joplin/turndown-plugin-gfm",
         "@mariozechner/pi-agent-core",
@@ -499,7 +499,7 @@
         "@mariozechner/clipboard-win32-x64-msvc"
       ]
     },
-    "@mariozechner/pi-agent-core@0.73.1_zod@4.4.3": {
+    "@mariozechner/pi-agent-core@0.73.1": {
       "integrity": "sha512-Y/KVOhuKSgRQgYBlwmRtO2gPkUcoavOSqGF9bpQIINvNZvc19k6Z1H3bFDTce3Vp5ApMmTsfLH3+tNvOg75fAQ==",
       "dependencies": [
         "@mariozechner/pi-ai",
@@ -507,7 +507,7 @@
       ],
       "deprecated": true
     },
-    "@mariozechner/pi-ai@0.73.1_zod@4.4.3": {
+    "@mariozechner/pi-ai@0.73.1": {
       "integrity": "sha512-Jh4lXawZYuC83HzSIYuVum9NBqJD49i4JOt3H96cGW/924cwJMOyUs1Mv/e4QPzTXnzrqMoGviNQnvGgSu1LSg==",
       "dependencies": [
         "@anthropic-ai/sdk",
@@ -525,7 +525,7 @@
       "deprecated": true,
       "bin": true
     },
-    "@mariozechner/pi-coding-agent@0.73.1_zod@4.4.3": {
+    "@mariozechner/pi-coding-agent@0.73.1": {
       "integrity": "sha512-gXQh3SaZmWTfVMc4Ao5+LGbVeKvzyO7tolok0nLsZgq9nGjZx/EEU3NM8C+qUnB4Nvs2rswG5qOVgLzQkq0fHQ==",
       "dependencies": [
         "@mariozechner/pi-agent-core",
@@ -1455,7 +1455,7 @@
       "npm:@earendil-works/pi-ai@0.74",
       "npm:@earendil-works/pi-coding-agent@0.74",
       "npm:@earendil-works/pi-tui@0.74",
-      "npm:@gandazgul/plannotator-pi-extension-compiled@~0.19.17",
+      "npm:@gandazgul/plannotator-pi-extension-compiled@~0.19.27",
       "npm:@sinclair/typebox@~0.34.41",
       "npm:chalk@^5.4.1",
       "npm:proper-lockfile@3",
