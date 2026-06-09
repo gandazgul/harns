@@ -50,3 +50,6 @@ Generate a changelog and publish a new release for this repository.
   - For GitLab: use the `glab release create` command.
 
 If a required CLI tool is missing, halt and inform the user.
+
+Note: no need to store memories for releases generally, only if there's a significant breaking change that would be
+useful to recall later.

@@ -87,6 +87,29 @@ export function readLatestPlanOutcome(messages) {
 }
 
 /**
+ * Read the latest task_completed tool result's outcome from a message stream.
+ *
+ * @param {import('@earendil-works/pi-agent-core').AgentMessage[]} messages
+ * @returns {boolean}
+ */
+export function readLatestTaskCompletedOutcome(messages) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (
+            msg && "role" in msg && msg.role === "toolResult" &&
+            "toolName" in msg && msg.toolName === "task_completed"
+        ) {
+            // @ts-ignore details set by tool implementation
+            const details = msg.details || {};
+            if (details.outcome === "task_completed") {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * Run a planning agent (planner/architect) once and return the lifecycle outcome
  * captured by plan_written. Does NOT execute the plan — call `executePlan`
  * afterwards if the outcome is `approved_execute`.
@@ -700,9 +723,9 @@ export async function askApprovalWithTasks(planName, uiAPI, structuredTasks) {
  * @param {string} planName
  * @param {string} planBody
  * @param {UiAPI} uiAPI
- * @param {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [_sessionManager]
  */
-async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager) {
+async function runEngineerWithPlan(planName, planBody, uiAPI, _sessionManager) {
     uiAPI.appendSystemMessage(
         `=== Running ${getAgentDisplayName(AGENTS.ENGINEER)} ===`,
         false,
@@ -717,10 +740,18 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager) {
         planBody,
     ].join("\n");
 
-    await runAgentSession({
+    const { setActiveExecutionWorkflow } = await import("../session/session-state.js");
+    setActiveExecutionWorkflow({ planName, triageMeta: {} });
+
+    const { setActiveAgent, applyPendingRootSwap } = await import("../interactive/chat-session.js");
+    const { createDirectAgentHandler } = await import("../session/direct-agent.js");
+    setActiveAgent(AGENTS.ENGINEER, createDirectAgentHandler(AGENTS.ENGINEER), uiAPI);
+    await applyPendingRootSwap(uiAPI);
+
+    const { runRootTurn } = await import("../session/session.js");
+    await runRootTurn({
         agentName: AGENTS.ENGINEER,
         userRequest: engineerRequest,
         uiAPI,
-        sessionManager,
     });
 }

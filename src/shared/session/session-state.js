@@ -38,6 +38,7 @@
  * subAgentSessions: Set<import('@earendil-works/pi-coding-agent').AgentSession>,
  * pendingRootSwap: PendingRootSwap | null,
  * pendingSwitchHandoff: PendingSwitchHandoff | null,
+ * activeExecutionWorkflow: { planName: string, triageMeta: any } | null,
  * }} */
 const state = {
     // Initial placeholder; overwritten by startInteractiveSession() once the
@@ -55,6 +56,7 @@ const state = {
     pendingRootSwap: null, // recorded when setActiveAgent is called during an in-flight turn
     pendingSwitchHandoff: null, // recorded by switch_agent to seed the next agent's first turn
     activeUiAPI: null,
+    activeExecutionWorkflow: null, // tracks the current workflow context (plan execution or quick-fix)
 };
 
 /**
@@ -221,4 +223,17 @@ export function getThinkingLevel() {
  */
 export function setThinkingLevel(level) {
     state.activeThinkingLevel = level;
+}
+
+export function getActiveExecutionWorkflow() {
+    return state.activeExecutionWorkflow;
+}
+
+/** @param {{ planName: string, triageMeta: any } | null} workflow */
+export function setActiveExecutionWorkflow(workflow) {
+    state.activeExecutionWorkflow = workflow;
+}
+
+export function clearActiveExecutionWorkflow() {
+    state.activeExecutionWorkflow = null;
 }

@@ -16,7 +16,7 @@
  * iterates without rebuilding LLM context.
  */
 
-import { join } from "@std/path";
+import { join as _join } from "@std/path";
 import { AGENTS, CWD } from "../../constants.js";
 import { ensurePlansDir } from "../../plan-store.js";
 import { setActiveAgent } from "../interactive/chat-session.js";
@@ -178,23 +178,21 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         const operatorDisplay = getAgentDisplayName(AGENTS.OPERATOR);
         uiAPI.appendSystemMessage(`=== Phase B: ${operatorDisplay} (Execute) ===`);
 
-        await runAgentSession({
+        const { setActiveExecutionWorkflow } = await import("../session/session-state.js");
+        setActiveExecutionWorkflow({ planName: "quick-fix", triageMeta: triage });
+
+        const { setActiveAgent, applyPendingRootSwap } = await import("../interactive/chat-session.js");
+        const { createDirectAgentHandler } = await import("../session/direct-agent.js");
+        setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
+        await applyPendingRootSwap(uiAPI);
+
+        const { runRootTurn } = await import("../session/session.js");
+        await runRootTurn({
             agentName: AGENTS.OPERATOR,
             userRequest: decoratedRequest,
             images,
             uiAPI,
-            sessionManager,
         });
-        consumePendingSwitchHandoff(); // drain any switch requests so they don't leak
-
-        uiAPI.appendSystemMessage(`✅ ${operatorDisplay} execution complete.`);
-        sessionManager?.appendCustomMessageEntry?.(
-            "system",
-            `Quick fix executed by ${operatorDisplay}.`,
-            true,
-            `Quick fix executed by ${operatorDisplay}. Summary:\n${triage.summary}`,
-        );
-        setActiveAgent(AGENTS.OPERATOR, createDirectAgentHandler(AGENTS.OPERATOR), uiAPI);
         return;
     }
 
@@ -212,6 +210,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         const { getConfiguredAgentModel } = await import("../session/session.js");
         pushAgentInfo(displayName, getConfiguredAgentModel(agentName));
 
+        let shouldPop = true;
         try {
             await ensurePlansDir(CWD);
 
@@ -224,7 +223,11 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             });
             consumePendingSwitchHandoff(); // Drain any switch requests from planner
 
-            if (outcome.outcome !== "approved_execute" || !outcome.planName) return;
+            if (outcome.outcome !== "approved_execute" || !outcome.planName) {
+                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                shouldPop = false;
+                return;
+            }
 
             await executePlan(
                 outcome.planName,
@@ -233,25 +236,13 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                 outcome.tasks,
                 sessionManager,
             );
-            consumePendingSwitchHandoff(); // Drain any switch requests from execution sub-agents
-
-            let planContent = "";
-            try {
-                planContent = await Deno.readTextFile(join(CWD, "plans", `${outcome.planName}.md`));
-            } catch {
-                // Ignore in tests or if the file doesn't exist
-            }
-
-            await runValidationLoop({
-                planName: outcome.planName,
-                planContent,
-                triageMeta: outcome.triageMeta || triage,
-                uiAPI,
-                sessionManager,
-            });
         } finally {
-            popAgentInfo();
+            if (shouldPop) {
+                popAgentInfo();
+            }
         }
+        // executePlan sets the active agent to ENGINEER, but if shouldPop is false, we already did it.
+        // We ensure the fallback is right.
         setActiveAgent(AGENTS.ENGINEER, createDirectAgentHandler(AGENTS.ENGINEER), uiAPI);
     }
 }

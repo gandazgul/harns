@@ -9,8 +9,14 @@ import { runAgentSession as runAgentSessionFn, runRootTurn as runRootTurnFn } fr
 import {
     executePlan as executePlanFn,
     readLatestPlanOutcome as readLatestPlanOutcomeFn,
+    readLatestTaskCompletedOutcome as readLatestTaskCompletedOutcomeFn,
 } from "../workflow/workflow.js";
-import { consumePendingSwitchHandoff, getRootAgentName } from "./session-state.js";
+import {
+    clearActiveExecutionWorkflow,
+    consumePendingSwitchHandoff,
+    getActiveExecutionWorkflow,
+    getRootAgentName,
+} from "./session-state.js";
 import { runValidationLoop } from "../workflow/orchestrator.js";
 import { join } from "@std/path";
 import { CWD } from "../../constants.js";
@@ -33,6 +39,7 @@ import { CWD } from "../../constants.js";
  *   runAgentSession?: typeof runAgentSessionFn,
  *   runRootTurn?: typeof runRootTurnFn,
  *   readLatestPlanOutcome?: typeof readLatestPlanOutcomeFn,
+ *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcomeFn,
  *   executePlan?: typeof executePlanFn,
  *   runValidationLoop?: typeof runValidationLoop,
  * }} [__deps] - Test-only injection point.
@@ -42,6 +49,7 @@ export function createDirectAgentHandler(agentName, __deps) {
     const runAgentSession = __deps?.runAgentSession || runAgentSessionFn;
     const runRootTurn = __deps?.runRootTurn || runRootTurnFn;
     const readLatestPlanOutcome = __deps?.readLatestPlanOutcome || readLatestPlanOutcomeFn;
+    const readLatestTaskCompletedOutcome = __deps?.readLatestTaskCompletedOutcome || readLatestTaskCompletedOutcomeFn;
     const executePlan = __deps?.executePlan || executePlanFn;
     const runValidationLoopImpl = __deps?.runValidationLoop || runValidationLoop;
 
@@ -89,6 +97,33 @@ export function createDirectAgentHandler(agentName, __deps) {
                 uiAPI,
                 sessionManager,
             });
+            return;
+        }
+
+        // If the agent declared they finished an assigned workflow task
+        const taskCompleted = readLatestTaskCompletedOutcome(messages);
+        if (taskCompleted) {
+            const workflow = getActiveExecutionWorkflow();
+            if (workflow) {
+                clearActiveExecutionWorkflow();
+
+                let planContent = "";
+                if (workflow.planName && workflow.planName !== "quick-fix") {
+                    try {
+                        planContent = await Deno.readTextFile(join(CWD, "plans", `${workflow.planName}.md`));
+                    } catch {
+                        // Ignore
+                    }
+                }
+
+                await runValidationLoopImpl({
+                    planName: workflow.planName,
+                    planContent,
+                    triageMeta: workflow.triageMeta,
+                    uiAPI,
+                    sessionManager,
+                });
+            }
         }
     };
 }

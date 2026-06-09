@@ -58,6 +58,57 @@ const CHAT_PROMPT_AGENT_NAME = AGENTS.OPERATOR;
 export let CHAT_BUILTIN_SLASH_NAMES = new Set();
 
 /**
+ * @type {Map<string, { text: string, images: import('../session/types.js').ImageAttachment[], systemBlock: SystemMessageBlock, spacer: Spacer }>}
+ * Tracks steering messages that have been queued on the agent but not yet consumed by the LLM.
+ * Keyed by message text (consistent with AgentSession._steeringMessages matching by text).
+ */
+const pendingSteeringMessages = new Map();
+
+/** @type {(() => void) | null} */
+let pendingSteeringUnsub = null;
+
+// References needed by setupSteeringConsumedListener, stored at module level
+// so applyPendingRootSwap can re-subscribe after session rebuild.
+/** @type {import('@earendil-works/pi-tui').Container} */
+let _messageList;
+/** @type {import('@earendil-works/pi-tui').TUI} */
+let _tui;
+/** @type {import('../ui/types.js').UiAPI} */
+let _uiAPI;
+
+/**
+ * Subscribe to the current root session's queue_update events.
+ * When a tracked steering message is consumed by the LLM (no longer in event.steering),
+ * transition from "Steering:" system block to proper UserPromptBlock.
+ */
+function setupSteeringConsumedListener() {
+    if (pendingSteeringUnsub) {
+        pendingSteeringUnsub();
+        pendingSteeringUnsub = null;
+    }
+    const session = getRootAgentSession();
+    if (!session) return;
+    pendingSteeringUnsub = session.subscribe((event) => {
+        if (event.type !== "queue_update") return;
+        if (!_messageList || !_uiAPI || !_tui) return;
+        const activeSteering = new Set(event.steering);
+        for (const [text, entry] of pendingSteeringMessages) {
+            if (activeSteering.has(text)) continue;
+            _messageList.removeChild(entry.systemBlock);
+            _messageList.removeChild(entry.spacer);
+            _uiAPI.appendUserMessage?.(text);
+            if (entry.images.length > 0) {
+                for (const img of entry.images) {
+                    _uiAPI.appendImage?.(img.base64, img.mimeType);
+                }
+            }
+            pendingSteeringMessages.delete(text);
+            _tui.requestRender();
+        }
+    });
+}
+
+/**
  * Update the active agent and its message handler.
  *
  * Footer state (agent display name + model) is NOT changed here — it is
@@ -132,6 +183,8 @@ export async function applyPendingRootSwap(uiAPI) {
             uiAPI,
             sessionManager: getRootSessionManager() || undefined,
         });
+        // Subscribe to the new session's queue_update events
+        setupSteeringConsumedListener();
         const modelText = pending.model ? ` (model: ${pending.model})` : "";
         uiAPI.appendSystemMessage(`Switched to ${pending.displayName}${modelText}.`);
         uiAPI.requestRender();
@@ -456,6 +509,11 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
 
     // Expose a UI API for agents to append to the message list
     const uiAPI = createUiApi(tui, messageList, runningTasksComponent);
+    // Store module-level refs so setupSteeringConsumedListener (called from
+    // module-level functions like applyPendingRootSwap) has access.
+    _messageList = messageList;
+    _tui = tui;
+    _uiAPI = uiAPI;
 
     // Install chat-session-specific UiAPI methods (setAgentInfo, enableInput,
     // showModelSelector, …) BEFORE building the first root session — buildAgentSession
@@ -478,6 +536,12 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         const msg = err instanceof Error ? err.message : String(err);
         uiAPI.appendSystemMessage(`Failed to initialize root agent "${initialAgentInternalName}": ${msg}`);
     }
+
+    // ── Steering message consumption tracker ──
+    // Subscribe to queue_update events so we can transition "Steering:" blocks
+    // to proper user messages when the LLM consumes them.
+    // Subscribe for the initial root session
+    setupSteeringConsumedListener();
 
     // ── Init auto-offer: conditionally offer /init on first TUI visit ──
     if (!initDone) {
@@ -832,7 +896,18 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
 
             steerRootSession(userRequest, images).then((steered) => {
                 if (steered) {
-                    uiAPI.appendSystemMessage(userRequest, false, "Steering:");
+                    // Phase 1: Show "Steering:" system block immediately
+                    const block = new SystemMessageBlock(userRequest, false, "Steering:");
+                    const spacer = new Spacer(1);
+                    messageList.addChild(block);
+                    messageList.addChild(spacer);
+                    // Track for phase 2 transition when consumed by LLM
+                    pendingSteeringMessages.set(userRequest, {
+                        text: userRequest,
+                        images: [...images],
+                        systemBlock: block,
+                        spacer,
+                    });
                 } else {
                     // Add the visual block manually (bypassing appendSystemMessage's coalescing)
                     // so we can remove this exact block if the user dequeues with up-arrow.
@@ -842,6 +917,15 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                     messageList.addChild(spacer);
                     submissionQueue.push({ text: userRequest, images, block, spacer });
                 }
+                tui.requestRender();
+            }).catch((_err) => {
+                // On error (e.g. extension command rejected by session.steer()),
+                // fall back to queuing for next submission
+                const block = new SystemMessageBlock(userRequest, false, "Queued message (steer failed):");
+                const spacer = new Spacer(1);
+                messageList.addChild(block);
+                messageList.addChild(spacer);
+                submissionQueue.push({ text: userRequest, images, block, spacer });
                 tui.requestRender();
             });
             return;
@@ -913,6 +997,20 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         isCtrlCPendingExit: () => ctrlCPendingExit,
         toggleStartupHelp: () => setHelpExpanded(!helpExpanded),
         cycleThinkingLevel,
+        clearPendingSteeringMessages: () => {
+            pendingSteeringMessages.clear();
+            if (pendingSteeringUnsub) {
+                pendingSteeringUnsub();
+                pendingSteeringUnsub = null;
+            }
+            // Also flush any stale steering messages from the agent's queue
+            const session = getRootAgentSession();
+            if (session) {
+                try {
+                    session.clearQueue();
+                } catch (_e) { /* ignore */ }
+            }
+        },
     });
 
     await renderBootBanner({

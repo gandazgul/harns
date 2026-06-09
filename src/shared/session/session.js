@@ -406,6 +406,12 @@ export function abortActiveSession() {
         } catch (_e) { /* ignore */ }
         aborted = true;
     }
+    // Clear any stale steering/follow-up messages from the agent's queue
+    if (root) {
+        try {
+            root.clearQueue();
+        } catch (_e) { /* ignore */ }
+    }
     for (const sub of getSubAgentSessions()) {
         try {
             sub.abort();
@@ -426,6 +432,10 @@ export function abortActiveSession() {
 export async function steerRootSession(text, images) {
     const session = getRootAgentSession();
     if (!session) return false;
+    // If the session is not actively streaming, queuing a steering message
+    // on the agent would be lost — the agent loop has already exited.
+    // Return false so the caller queues it for the next submission instead.
+    if (!session.isStreaming) return false;
     /** @type {Array<{type: "image", data: string, mimeType: string}>} */
     const imageContent = images && images.length > 0
         ? images.map((img) => ({ type: /** @type {"image"} */ ("image"), data: img.base64, mimeType: img.mimeType }))
