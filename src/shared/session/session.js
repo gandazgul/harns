@@ -755,6 +755,11 @@ export async function buildAgentSession({
         finalCustomTools.push(createUserInterviewTool(uiAPI));
     }
 
+    if (tools.includes("task_completed") && uiAPI && !finalCustomTools.find((t) => t.name === "task_completed")) {
+        const { createTaskCompletedTool } = await import("../../tools/task-completed.js");
+        finalCustomTools.push(createTaskCompletedTool({ uiAPI, agentName }));
+    }
+
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools);
     const promptState = { text: finalSystemPrompt };
