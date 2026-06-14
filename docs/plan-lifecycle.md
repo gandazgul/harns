@@ -33,6 +33,7 @@ Lifecycle decides the next status and front matter updates.
 | `implementation_finished` | `in_progress`                                                        | `implemented`    | Sets `implementedAt`; Workflow Validation still needs to run.                              |
 | `validation_failed`       | `implemented`                                                        | `implemented`    | Keeps implemented status and sets `failureReason`.                                         |
 | `validation_passed`       | `implemented`                                                        | `verified`       | Sets `verifiedAt` and clears stale failure detail.                                         |
+| `recovery_continue`       | `in_progress`, `failed`                                              | `ready_for_work` | Records that recovery will continue from the current worktree.                             |
 | `recovery_reset`          | `in_progress`, `failed`, `implemented`                               | `ready_for_work` | Records that recovery restored the execution baseline tree before retrying.                |
 | `review_reopened`         | `ready_for_work`, `in_progress`, `failed`, `implemented`, `verified` | `feedback`       | The user chose to revise the Plan instead of continuing execution.                         |
 
@@ -44,6 +45,14 @@ For FEATURE Plans, the gate does not call an LLM. It promotes `approved` to `rea
 
 For PROJECT Plans, the gate ensures a parseable Tasks table exists. If Tasks are missing, it runs Slicer. If Slicer
 fails or produces invalid Tasks, the Plan stays `approved` and records no executable status.
+
+## Workflow Validation
+
+Workflow Validation promotes `implemented` to `verified` only after local verification and semantic review pass.
+
+For FEATURE and PROJECT Plans, the workflow diff must contain implementation changes. An empty scoped diff, or a diff
+that only changes Plan documents under `plans/`, is a validation failure. QUICK_FIX workflows may still auto-complete
+when the scoped diff is empty because they are operational and are not saved as executable Plans.
 
 ## Front Matter Fields
 
@@ -86,5 +95,6 @@ execution baseline tree, or re-open for review.
 - `approved` is durable but not executable.
 - `failed` only occurs after work started from `ready_for_work`.
 - `implemented` means implementation finished, even if validation later fails.
+- FEATURE and PROJECT validation cannot pass with an empty or Plan-document-only workflow diff.
 - `verified` is the terminal success status.
 - Workflow code should record Plan Events instead of directly mutating Plan Status.

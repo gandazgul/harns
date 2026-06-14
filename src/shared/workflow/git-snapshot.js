@@ -32,6 +32,18 @@ async function runGit(cwd, args, env = {}) {
 }
 
 /**
+ * List file paths contained in a git tree object.
+ *
+ * @param {string} cwd
+ * @param {string} tree
+ * @returns {Promise<string[]>}
+ */
+async function listTreePaths(cwd, tree) {
+    const output = await runGit(cwd, ["ls-tree", "-r", "-z", "--name-only", tree]);
+    return output.split("\0").filter(Boolean);
+}
+
+/**
  * Capture the current working tree into a git tree object without mutating the
  * repository's real index.
  *
@@ -73,4 +85,38 @@ export async function getWorkflowDiff(cwd, baselineTree) {
 
     const currentTree = await captureWorktreeTree(cwd);
     return await diffTrees(cwd, baselineTree, currentTree);
+}
+
+/**
+ * Restore the repository's real index and worktree to a previously captured
+ * git tree. This is destructive: files that exist in the current worktree tree
+ * but not the target tree are removed before checkout.
+ *
+ * @param {string} cwd
+ * @param {string} targetTree
+ * @returns {Promise<void>}
+ */
+export async function restoreWorktreeTree(cwd, targetTree) {
+    const targetType = (await runGit(cwd, ["cat-file", "-t", targetTree])).trim();
+    if (targetType !== "tree") {
+        throw new Error(`Target ${targetTree} is a ${targetType}, not a git tree.`);
+    }
+
+    const currentTree = await captureWorktreeTree(cwd);
+    const [currentPaths, targetPaths] = await Promise.all([
+        listTreePaths(cwd, currentTree),
+        listTreePaths(cwd, targetTree),
+    ]);
+    const targetPathSet = new Set(targetPaths);
+
+    for (const path of currentPaths) {
+        if (targetPathSet.has(path)) continue;
+        await Deno.remove(join(cwd, path), { recursive: true }).catch((error) => {
+            if (error instanceof Deno.errors.NotFound) return;
+            throw error;
+        });
+    }
+
+    await runGit(cwd, ["read-tree", targetTree]);
+    await runGit(cwd, ["checkout-index", "-a", "-f"]);
 }

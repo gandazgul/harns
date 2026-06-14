@@ -24,7 +24,7 @@ Deno.test("runValidationLoop does not switch active agent unless finalAgentName 
     await runValidationLoop({
         planName: "p",
         planContent: "",
-        triageMeta: { classification: "FEATURE" },
+        triageMeta: { classification: "QUICK_FIX" },
         uiAPI,
         sessionManager: undefined,
         __deps: /** @type {any} */ ({
@@ -50,7 +50,7 @@ Deno.test("runValidationLoop restores requested final agent after validation", a
     await runValidationLoop({
         planName: "p",
         planContent: "",
-        triageMeta: { classification: "FEATURE" },
+        triageMeta: { classification: "QUICK_FIX" },
         uiAPI,
         sessionManager: undefined,
         finalAgentName: "planner",
@@ -64,6 +64,89 @@ Deno.test("runValidationLoop restores requested final agent after validation", a
     });
 
     assertEquals(switched, ["planner"]);
+});
+
+Deno.test("runValidationLoop fails FEATURE validation when workflow diff is empty", async () => {
+    const uiAPI = makeUi();
+    /** @type {Array<{ event: string, details: { failureReason?: string } }>} */
+    const events = [];
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve(""),
+            runAgentSession: () => {
+                throw new Error("semantic review should not run");
+            },
+            recordPlanEvent: (/** @type {any} */ event) => {
+                events.push(event);
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(events.map((event) => event.event), ["validation_failed"]);
+    assertEquals(events[0].details.failureReason, "No implementation changes detected in workflow diff.");
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) =>
+            m.includes("Workflow halted: No implementation changes detected in workflow diff.")
+        ),
+        true,
+    );
+});
+
+Deno.test("runValidationLoop fails PROJECT validation when workflow diff only changes a plan document", async () => {
+    const uiAPI = makeUi();
+    /** @type {Array<{ event: string, details: { failureReason?: string } }>} */
+    const events = [];
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "PROJECT" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () =>
+                Promise.resolve([
+                    "diff --git a/plans/p.md b/plans/p.md",
+                    "--- a/plans/p.md",
+                    "+++ b/plans/p.md",
+                    "@@ -1,3 +1,3 @@",
+                    "-status: implemented",
+                    "+status: verified",
+                ].join("\n")),
+            runAgentSession: () => {
+                throw new Error("semantic review should not run");
+            },
+            recordPlanEvent: (/** @type {any} */ event) => {
+                events.push(event);
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(events.map((event) => event.event), ["validation_failed"]);
+    assertEquals(
+        events[0].details.failureReason,
+        "No implementation changes detected in workflow diff; only plan document changes were found.",
+    );
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) =>
+            m.includes(
+                "Workflow halted: No implementation changes detected in workflow diff; only plan document changes",
+            )
+        ),
+        true,
+    );
 });
 
 Deno.test("runValidationLoop halts when CI repair does not call task_completed", async () => {

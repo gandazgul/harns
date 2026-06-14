@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { captureWorktreeTree, getWorkflowDiff } from "./git-snapshot.js";
+import { captureWorktreeTree, getWorkflowDiff, restoreWorktreeTree } from "./git-snapshot.js";
 
 /**
  * @param {string} cwd
@@ -66,3 +66,43 @@ Deno.test("workflow snapshots include later tracked edits and preserve the real 
         await Deno.remove(dir, { recursive: true });
     }
 });
+
+Deno.test("restoreWorktreeTree restores baseline content and removes later files", async () => {
+    const dir = await Deno.makeTempDir({ prefix: "harns-snapshot-test-" });
+    try {
+        await git(dir, ["init"]);
+        await Deno.writeTextFile(`${dir}/kept.js`, "baseline\n");
+        await Deno.mkdir(`${dir}/nested`);
+        await Deno.writeTextFile(`${dir}/nested/baseline.js`, "nested baseline\n");
+        const baselineTree = await captureWorktreeTree(dir);
+
+        await Deno.writeTextFile(`${dir}/kept.js`, "changed after baseline\n");
+        await Deno.writeTextFile(`${dir}/added.js`, "added after baseline\n");
+        await Deno.writeTextFile(`${dir}/nested/later.js`, "later nested\n");
+
+        await restoreWorktreeTree(dir, baselineTree);
+
+        assertEquals(await Deno.readTextFile(`${dir}/kept.js`), "baseline\n");
+        assertEquals(await Deno.readTextFile(`${dir}/nested/baseline.js`), "nested baseline\n");
+        await assertRejectsNotFound(`${dir}/added.js`);
+        await assertRejectsNotFound(`${dir}/nested/later.js`);
+
+        const restoredTree = await captureWorktreeTree(dir);
+        assertEquals(restoredTree, baselineTree);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+});
+
+/**
+ * @param {string} path
+ */
+async function assertRejectsNotFound(path) {
+    let notFound = false;
+    try {
+        await Deno.stat(path);
+    } catch (error) {
+        notFound = error instanceof Deno.errors.NotFound;
+    }
+    assertEquals(notFound, true);
+}

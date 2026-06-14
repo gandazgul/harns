@@ -428,6 +428,179 @@ Deno.test("runLoadPlanCommand ready_for_work plan proceed path executes", async 
     assertEquals(executed, true);
 });
 
+Deno.test("runLoadPlanCommand in_progress plan can continue from current worktree", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("continue");
+    let executed = false;
+    /** @type {string | null} */
+    let lifecycleEvent = null;
+
+    await runLoadPlanCommand(["plan-progress"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-progress"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-progress",
+                    path: "plans/plan-progress.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "in_progress",
+                        executionBaselineTree: "baseline-tree",
+                    },
+                }),
+            recordPlanEvent: (/** @type {{ event: string }} */ args) => {
+                lifecycleEvent = args.event;
+                return Promise.resolve(/** @type {any} */ ({}));
+            },
+            executePlan: () => {
+                executed = true;
+                return Promise.resolve(undefined);
+            },
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(lifecycleEvent, "recovery_continue");
+    assertEquals(executed, true);
+});
+
+Deno.test("runLoadPlanCommand failed plan can reset baseline and start over", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("reset", "reset");
+    let restoredTree = "";
+    let executed = false;
+    /** @type {string | null} */
+    let lifecycleEvent = null;
+
+    await runLoadPlanCommand(["plan-failed"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-failed"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-failed",
+                    path: "plans/plan-failed.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "failed",
+                        failureReason: "engineer stopped",
+                        executionBaselineTree: "baseline-tree",
+                    },
+                }),
+            restoreWorktreeTree: (/** @type {string} */ _cwd, /** @type {string} */ tree) => {
+                restoredTree = tree;
+                return Promise.resolve();
+            },
+            recordPlanEvent: (/** @type {{ event: string }} */ args) => {
+                lifecycleEvent = args.event;
+                return Promise.resolve(/** @type {any} */ ({}));
+            },
+            executePlan: () => {
+                executed = true;
+                return Promise.resolve(undefined);
+            },
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(restoredTree, "baseline-tree");
+    assertEquals(lifecycleEvent, "recovery_reset");
+    assertEquals(executed, true);
+});
+
+Deno.test("runLoadPlanCommand in_progress inspect reports failure and baseline diff", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("inspect", "cancel");
+
+    await runLoadPlanCommand(["plan-inspect"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-inspect"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-inspect",
+                    path: "plans/plan-inspect.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "in_progress",
+                        failureReason: "interrupted",
+                        executionBaselineTree: "baseline-tree",
+                    },
+                }),
+            getWorkflowDiff: (/** @type {string} */ _cwd, /** @type {string} */ baselineTree) =>
+                Promise.resolve(`diff for ${baselineTree}`),
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(messages.some((m) => m.includes("Failure reason:\ninterrupted")), true);
+    assertEquals(messages.some((m) => m.includes("diff for baseline-tree")), true);
+});
+
+Deno.test("runLoadPlanCommand implemented plan retries validation", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("validate");
+    let validated = false;
+
+    await runLoadPlanCommand(["plan-implemented"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-implemented"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-implemented",
+                    path: "plans/plan-implemented.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "implemented",
+                        failureReason: "CI failed",
+                        executionBaselineTree: "baseline-tree",
+                    },
+                }),
+            runValidationLoop: () => {
+                validated = true;
+                return Promise.resolve();
+            },
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(validated, true);
+});
+
 Deno.test("runLoadPlanCommand verified plan review path records review_reopened", async () => {
     const { uiAPI, selections } = makeUi();
     selections.push("review");

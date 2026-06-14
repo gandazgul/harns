@@ -14,7 +14,7 @@ import { updatePlanFrontMatter } from "../../plan-store.js";
  */
 
 /**
- * @typedef {"review_feedback"|"review_approved"|"readiness_passed"|"execution_started"|"execution_failed"|"implementation_finished"|"validation_failed"|"validation_passed"|"recovery_reset"|"review_reopened"} PlanEvent
+ * @typedef {"review_feedback"|"review_approved"|"readiness_passed"|"execution_started"|"execution_failed"|"implementation_finished"|"validation_failed"|"validation_passed"|"recovery_continue"|"recovery_reset"|"review_reopened"} PlanEvent
  */
 
 /**
@@ -35,6 +35,7 @@ const ALLOWED_FROM = {
     implementation_finished: ["in_progress"],
     validation_failed: ["implemented"],
     validation_passed: ["implemented"],
+    recovery_continue: ["in_progress", "failed"],
     recovery_reset: ["in_progress", "failed", "implemented"],
     review_reopened: ["ready_for_work", "in_progress", "failed", "implemented", "verified"],
 };
@@ -49,6 +50,7 @@ const EVENT_STATUS = {
     implementation_finished: "implemented",
     validation_failed: "implemented",
     validation_passed: "verified",
+    recovery_continue: "ready_for_work",
     recovery_reset: "ready_for_work",
     review_reopened: "feedback",
 };
@@ -136,6 +138,13 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
     }
 
     if (event === "recovery_reset") {
+        updates.failureReason = null;
+        updates.failedAt = null;
+        updates.implementedAt = null;
+        updates.verifiedAt = null;
+    }
+
+    if (event === "recovery_continue") {
         updates.failureReason = null;
         updates.failedAt = null;
         updates.implementedAt = null;
