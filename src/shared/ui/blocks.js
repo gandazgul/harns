@@ -83,6 +83,20 @@ function getBgCode(bgTokenName) {
 }
 
 /**
+ * Convert tool labels/arguments to one physical terminal line.
+ * Raw newlines in a header are especially dangerous: the TUI receives one
+ * rendered array entry, but the terminal paints multiple lines and escapes the
+ * block background/padding.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeToolHeaderText(text) {
+    // deno-lint-ignore no-control-regex
+    return stripAnsi(text).replace(/[\x00-\x1f\x7f]+/g, " ").trim();
+}
+
+/**
  * A block that applies a background color, horizontal/vertical padding,
  * and stretches each line to the full available width.
  *
@@ -290,8 +304,9 @@ export class ToolExecutionBlock {
         this.bgToken = "toolPendingBg";
 
         // Header text
-        const commandText = argsStr.trim();
-        this.headerText = commandText ? `${toolName} ${commandText}` : toolName;
+        const displayToolName = normalizeToolHeaderText(toolName);
+        const commandText = normalizeToolHeaderText(argsStr);
+        this.headerText = commandText ? `${displayToolName} ${commandText}` : displayToolName;
 
         // Body text component (rendered inside the block)
         this.bodyTextComponent = new Text("", 0, 0);

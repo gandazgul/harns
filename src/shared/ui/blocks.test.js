@@ -197,6 +197,27 @@ Deno.test("ToolExecutionBlock renders with consistent background (with output)",
     assertBlockBackground(lines, w, "ToolExecutionBlock(output)");
 });
 
+Deno.test("ToolExecutionBlock keeps multi-line command headers inside the block", () => {
+    const w = 120;
+    const block = new ToolExecutionBlock(
+        "$",
+        'cd /Users/gandazgul/Documents/web/harns && git commit -m "Consolidate formats\n- Move plan formats"',
+    );
+    block.appendOutput("[main abc123] Consolidate formats\n");
+    block.endExecution(false, 100);
+
+    const lines = block.render(w);
+    assertBlockBackground(lines, w, "ToolExecutionBlock(multiline header)");
+
+    for (let i = 0; i < lines.length; i++) {
+        assertEquals(lines[i].includes("\n"), false, `rendered line ${i} should not contain embedded newlines`);
+        assertEquals(lines[i].includes("\r"), false, `rendered line ${i} should not contain embedded carriage returns`);
+    }
+
+    const plain = lines.map((line) => stripAnsi(line)).join("\n");
+    assertEquals(plain.includes("Consolidate formats - Move plan formats"), true);
+});
+
 Deno.test("ToolExecutionBlock error renders with consistent background", () => {
     const w = 100;
     const block = new ToolExecutionBlock("bash", "bad-command");
