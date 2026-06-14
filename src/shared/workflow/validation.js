@@ -137,6 +137,58 @@ function isApprovedReviewResponse(response) {
 }
 
 /**
+ * @param {string} path
+ * @param {string} planName
+ * @returns {boolean}
+ */
+function isPlanDocumentPath(path, planName) {
+    return path === `plans/${planName}.md` || /^plans\/[^/]+\.md$/.test(path);
+}
+
+/**
+ * @param {string} diffText
+ * @returns {string[]}
+ */
+function extractDiffPaths(diffText) {
+    /** @type {string[]} */
+    const paths = [];
+    const diffHeaderPattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
+    let match;
+
+    while ((match = diffHeaderPattern.exec(diffText)) !== null) {
+        paths.push(match[1], match[2]);
+    }
+
+    return paths;
+}
+
+/**
+ * @param {string} diffText
+ * @param {string} planName
+ * @returns {boolean}
+ */
+function hasImplementationDiff(diffText, planName) {
+    if (!diffText.trim()) {
+        return false;
+    }
+
+    const diffPaths = extractDiffPaths(diffText);
+    if (diffPaths.length === 0) {
+        return true;
+    }
+
+    return diffPaths.some((path) => !isPlanDocumentPath(path, planName));
+}
+
+/**
+ * @param {import('../../tools/plan-written.js').TriageMeta} triageMeta
+ * @returns {boolean}
+ */
+function requiresImplementationDiff(triageMeta) {
+    return triageMeta?.classification === "FEATURE" || triageMeta?.classification === "PROJECT";
+}
+
+/**
  * Unified validation loop. Runs local verification and semantic code review.
  *
  * @param {Object} args
@@ -233,6 +285,13 @@ export async function runValidationLoop({
         uiAPI?.appendSystemMessage?.("Running Semantic Code Review...");
 
         const diffText = await getDiffText(baselineTree);
+
+        if (requiresImplementationDiff(triageMeta) && !hasImplementationDiff(diffText, planName)) {
+            haltReason = diffText.trim()
+                ? "No implementation changes detected in workflow diff; only plan document changes were found."
+                : "No implementation changes detected in workflow diff.";
+            break;
+        }
 
         if (!diffText.trim()) {
             uiAPI?.appendSystemMessage?.("No changes detected in diff. Assuming approved.");

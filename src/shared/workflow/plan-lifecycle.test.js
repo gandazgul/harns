@@ -31,6 +31,16 @@ Deno.test("buildPlanEventUpdates keeps implemented status when validation fails"
     assertEquals(updates.failureReason, "CI failed");
 });
 
+Deno.test("buildPlanEventUpdates records continue recovery as ready_for_work", () => {
+    const updates = buildPlanEventUpdates("recovery_continue", "failed", {
+        now: () => new Date("2026-01-02T03:04:05.000Z"),
+    });
+
+    assertEquals(updates.status, "ready_for_work");
+    assertEquals(updates.failureReason, null);
+    assertEquals(updates.failedAt, null);
+});
+
 Deno.test("buildPlanEventUpdates only allows documented transitions", () => {
     assertThrows(
         () => buildPlanEventUpdates("execution_started", "approved"),

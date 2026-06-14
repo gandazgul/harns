@@ -16,6 +16,10 @@ import {
     runPlanningAgent as runPlanningAgentFn,
 } from "../../shared/workflow/workflow.js";
 import { isExecutablePlanStatus, recordPlanEvent as recordPlanEventFn } from "../../shared/workflow/plan-lifecycle.js";
+import {
+    getWorkflowDiff as getWorkflowDiffFn,
+    restoreWorktreeTree as restoreWorktreeTreeFn,
+} from "../../shared/workflow/git-snapshot.js";
 import { runValidationLoop as runValidationLoopFn } from "../../shared/workflow/validation.js";
 import { submitPlanForReview as submitPlanForReviewFn } from "../../shared/workflow/submit-plan.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
@@ -42,6 +46,8 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof ensureSlicerTasksFn} [ensureSlicerTasks]
  * @property {typeof runValidationLoopFn} [runValidationLoop]
  * @property {typeof loadPlanFn} [loadPlan]
+ * @property {typeof getWorkflowDiffFn} [getWorkflowDiff]
+ * @property {typeof restoreWorktreeTreeFn} [restoreWorktreeTree]
  * @property {typeof setActiveAgentFn} [setActiveAgent]
  * @property {typeof createDirectAgentHandlerFn} [createDirectAgentHandler]
  * @property {typeof resetTuiStateFn} [resetTuiState]
@@ -271,6 +277,287 @@ async function prepareApprovedPlanForWork(plan, uiAPI, ensureSlicerTasks, record
 }
 
 /**
+ * Execute a ready Plan and run validation if execution completes.
+ *
+ * @param {Object} opts
+ * @param {{ planName: string, markdown?: string, body: string, attrs: import('../../plan-store.js').PlanFrontMatter }} opts.plan
+ * @param {string} opts.agentName
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof executePlanFn} opts.executePlan
+ * @param {typeof runPlanningAgentFn} opts.runPlanningAgent
+ * @param {typeof runValidationLoopFn} opts.runValidationLoop
+ * @param {typeof loadPlanFn} opts.loadPlan
+ * @param {typeof setActiveAgentFn} opts.setActiveAgent
+ * @param {typeof createDirectAgentHandlerFn} opts.createDirectAgentHandler
+ * @returns {Promise<void>}
+ */
+async function executeReadyPlanWithRepair({
+    plan,
+    agentName,
+    uiAPI,
+    executePlan,
+    runPlanningAgent,
+    runValidationLoop,
+    loadPlan,
+    setActiveAgent,
+    createDirectAgentHandler,
+}) {
+    const MAX_REPAIR_ATTEMPTS = 2;
+    let currentPlanName = plan.planName;
+    /** @type {Partial<import('../../plan-store.js').PlanFrontMatter>} */
+    let currentMeta = plan.attrs;
+    /** @type {Array<{ task: number, assignee: string, dependencies: string, description: string }> | undefined} */
+    let currentTasks = undefined;
+
+    for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+        const execRes = await executePlan(currentPlanName, currentMeta, uiAPI, currentTasks);
+        if (!execRes || !execRes.repairRequired) {
+            await validateCompletedExecution(
+                execRes,
+                currentPlanName,
+                plan.markdown || plan.body || "",
+                /** @type {import('../../plan-store.js').PlanFrontMatter} */ (currentMeta),
+                uiAPI,
+                runValidationLoop,
+                loadPlan,
+            );
+            break;
+        }
+
+        if (attempt === MAX_REPAIR_ATTEMPTS) {
+            uiAPI.appendSystemMessage(
+                `Execution failed after ${MAX_REPAIR_ATTEMPTS} repair attempts. Aborting.`,
+                true,
+                "Harns",
+            );
+            break;
+        }
+
+        uiAPI.appendSystemMessage(
+            `Execution failed due to task table error. Rerouting to ${agentName} for repair (attempt ${
+                attempt + 1
+            }/${MAX_REPAIR_ATTEMPTS})...`,
+            false,
+            "Harns",
+        );
+        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+        const repairOutcome = await runPlanningAgent({
+            agentName,
+            initialRequest: [
+                `## Plan Execution Halted — Task Table Repair Required`,
+                "",
+                `The plan "${currentPlanName}" had a malformed Tasks table: ${
+                    execRes.error || "Unknown task table error"
+                }.`,
+                "",
+                "Fix the table to follow (Task ID | Assignee | Dependencies | Description),",
+                "then call plan_written again with the corrected tasks array.",
+            ].join("\n"),
+            triageMeta: currentMeta,
+            uiAPI,
+        });
+        if (repairOutcome.outcome !== "approved_execute" || !repairOutcome.planName) {
+            uiAPI.appendSystemMessage(
+                "Repair did not produce an approved plan. Aborting.",
+                false,
+                "Harns",
+            );
+            break;
+        }
+        currentPlanName = repairOutcome.planName;
+        currentMeta = repairOutcome.triageMeta || currentMeta;
+        currentTasks = repairOutcome.tasks;
+    }
+}
+
+/**
+ * Append recovery context for a partially executed Plan.
+ *
+ * @param {{ attrs: import('../../plan-store.js').PlanFrontMatter, body: string, markdown: string }} plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} uiAPI
+ * @param {typeof getWorkflowDiffFn} getWorkflowDiff
+ * @returns {Promise<void>}
+ */
+async function appendRecoveryReport(plan, uiAPI, getWorkflowDiff) {
+    const lines = [buildPlanSummary(plan)];
+    if (plan.attrs.failureReason) {
+        lines.push(`Failure reason:\n${plan.attrs.failureReason}`);
+    }
+    if (plan.attrs.executionBaselineTree) {
+        lines.push(`Execution baseline tree: ${plan.attrs.executionBaselineTree}`);
+        try {
+            const diff = await getWorkflowDiff(CWD, plan.attrs.executionBaselineTree);
+            lines.push(diff.trim() ? `Changes since execution baseline:\n${diff}` : "No changes since baseline.");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            lines.push(`Could not compute baseline diff: ${message}`);
+        }
+    } else {
+        lines.push("No execution baseline tree is recorded for this plan.");
+    }
+    uiAPI.appendSystemMessage(lines.join("\n\n"), false, "Plan Recovery");
+}
+
+/**
+ * Ask for destructive baseline reset confirmation.
+ *
+ * @param {string} planName
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} uiAPI
+ * @returns {Promise<boolean>}
+ */
+async function confirmBaselineReset(planName, uiAPI) {
+    const answer = await uiAPI.promptSelect(
+        `Reset "${planName}" to its execution-start snapshot? Changes made after that snapshot, including unrelated changes, will be lost.`,
+        [
+            { value: "reset", label: "Yes, reset and start over" },
+            { value: "cancel", label: "Cancel" },
+        ],
+    );
+    return answer === "reset";
+}
+
+/**
+ * Handle Plan Recovery menus for in-progress, failed, and implemented plans.
+ *
+ * @param {Object} opts
+ * @param {{ planName: string, path: string, markdown: string, body: string, attrs: import('../../plan-store.js').PlanFrontMatter }} opts.plan
+ * @param {string} opts.agentName
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof executePlanFn} opts.executePlan
+ * @param {typeof runPlanningAgentFn} opts.runPlanningAgent
+ * @param {typeof runValidationLoopFn} opts.runValidationLoop
+ * @param {typeof loadPlanFn} opts.loadPlan
+ * @param {typeof getWorkflowDiffFn} opts.getWorkflowDiff
+ * @param {typeof restoreWorktreeTreeFn} opts.restoreWorktreeTree
+ * @param {typeof recordPlanEventFn} opts.recordPlanEvent
+ * @param {typeof setActiveAgentFn} opts.setActiveAgent
+ * @param {typeof createDirectAgentHandlerFn} opts.createDirectAgentHandler
+ * @returns {Promise<"handled" | "review">}
+ */
+async function handlePlanRecovery({
+    plan,
+    agentName,
+    uiAPI,
+    executePlan,
+    runPlanningAgent,
+    runValidationLoop,
+    loadPlan,
+    getWorkflowDiff,
+    restoreWorktreeTree,
+    recordPlanEvent,
+    setActiveAgent,
+    createDirectAgentHandler,
+}) {
+    while (true) {
+        const options = plan.attrs.status === "implemented"
+            ? [
+                { value: "validate", label: "Retry Workflow Validation" },
+                { value: "inspect", label: "Inspect and report current state" },
+                { value: "reset", label: "Reset tree and start over" },
+                { value: "review", label: "Re-open for review" },
+                { value: "cancel", label: "Cancel" },
+            ]
+            : [
+                { value: "inspect", label: "Inspect and report current state" },
+                { value: "continue", label: "Continue execution from current worktree" },
+                { value: "reset", label: "Reset tree and start over" },
+                { value: "review", label: "Re-open for review" },
+                { value: "cancel", label: "Cancel" },
+            ];
+
+        const answer = await uiAPI.promptSelect(`Plan recovery (${plan.attrs.status}):`, options);
+        if (!answer || answer === "cancel") return "handled";
+
+        if (answer === "inspect") {
+            await appendRecoveryReport(plan, uiAPI, getWorkflowDiff);
+            continue;
+        }
+
+        if (answer === "validate") {
+            await validateCompletedExecution(
+                { executionComplete: true },
+                plan.planName,
+                plan.markdown || plan.body || "",
+                plan.attrs,
+                uiAPI,
+                runValidationLoop,
+                loadPlan,
+            );
+            return "handled";
+        }
+
+        if (answer === "continue") {
+            await recordPlanEvent({
+                cwd: CWD,
+                planName: plan.planName,
+                event: "recovery_continue",
+                currentStatus: plan.attrs.status,
+                details: { triageMeta: plan.attrs },
+            });
+            plan.attrs.status = "ready_for_work";
+            await executeReadyPlanWithRepair({
+                plan,
+                agentName,
+                uiAPI,
+                executePlan,
+                runPlanningAgent,
+                runValidationLoop,
+                loadPlan,
+                setActiveAgent,
+                createDirectAgentHandler,
+            });
+            return "handled";
+        }
+
+        if (answer === "reset") {
+            if (!plan.attrs.executionBaselineTree) {
+                uiAPI.appendSystemMessage(
+                    "Cannot reset this plan because no execution baseline tree is recorded.",
+                    true,
+                    "Harns",
+                );
+                continue;
+            }
+            if (!(await confirmBaselineReset(plan.planName, uiAPI))) continue;
+            await restoreWorktreeTree(CWD, plan.attrs.executionBaselineTree);
+            await recordPlanEvent({
+                cwd: CWD,
+                planName: plan.planName,
+                event: "recovery_reset",
+                currentStatus: plan.attrs.status,
+                details: { triageMeta: plan.attrs },
+            });
+            plan.attrs.status = "ready_for_work";
+            await executeReadyPlanWithRepair({
+                plan,
+                agentName,
+                uiAPI,
+                executePlan,
+                runPlanningAgent,
+                runValidationLoop,
+                loadPlan,
+                setActiveAgent,
+                createDirectAgentHandler,
+            });
+            return "handled";
+        }
+
+        if (answer === "review") {
+            await stripTasksFromPlanFile(plan);
+            await recordPlanEvent({
+                cwd: CWD,
+                planName: plan.planName,
+                event: "review_reopened",
+                currentStatus: plan.attrs.status,
+                details: { triageMeta: plan.attrs },
+            });
+            plan.attrs.status = "feedback";
+            return "review";
+        }
+    }
+}
+
+/**
  * Handle `load-plan` command.
  *
  * @param {string[]} argv
@@ -291,6 +578,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
         ensureSlicerTasks: ensureSlicerTasksDep,
         runValidationLoop: runValidationLoopDep,
         loadPlan: loadPlanDep,
+        getWorkflowDiff: getWorkflowDiffDep,
+        restoreWorktreeTree: restoreWorktreeTreeDep,
         setActiveAgent: setActiveAgentDep,
         createDirectAgentHandler: createDirectAgentHandlerDep,
         getRootAgentName: getRootAgentNameDep,
@@ -310,6 +599,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const ensureSlicerTasks = ensureSlicerTasksDep || ensureSlicerTasksFn;
     const runValidationLoop = runValidationLoopDep || runValidationLoopFn;
     const loadPlan = loadPlanDep || loadPlanFn;
+    const getWorkflowDiff = getWorkflowDiffDep || getWorkflowDiffFn;
+    const restoreWorktreeTree = restoreWorktreeTreeDep || restoreWorktreeTreeFn;
     const setActiveAgent = setActiveAgentDep || setActiveAgentFn;
     const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
     const getRootAgentName = getRootAgentNameDep || getRootAgentNameFn;
@@ -391,6 +682,24 @@ export async function runLoadPlanCommand(argv, options = {}) {
         const triageMeta = plan.attrs;
         const agentName = triageMeta.classification === "PROJECT" ? AGENTS.ARCHITECT : AGENTS.PLANNER;
 
+        if (["in_progress", "failed", "implemented"].includes(plan.attrs.status)) {
+            const result = await handlePlanRecovery({
+                plan,
+                agentName,
+                uiAPI,
+                executePlan,
+                runPlanningAgent,
+                runValidationLoop,
+                loadPlan,
+                getWorkflowDiff,
+                restoreWorktreeTree,
+                recordPlanEvent,
+                setActiveAgent,
+                createDirectAgentHandler,
+            });
+            if (result === "handled") return;
+        }
+
         if (plan.attrs.status === "verified") {
             uiAPI.appendSystemMessage("This plan is already verified.", false, "Harns");
             while (true) {
@@ -453,72 +762,17 @@ export async function runLoadPlanCommand(argv, options = {}) {
                         }
                     }
 
-                    const MAX_REPAIR_ATTEMPTS = 2;
-                    let currentPlanName = plan.planName;
-                    /** @type {Partial<import('../../plan-store.js').PlanFrontMatter>} */
-                    let currentMeta = plan.attrs;
-                    /** @type {Array<{ task: number, assignee: string, dependencies: string, description: string }> | undefined} */
-                    let currentTasks = undefined;
-
-                    for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
-                        const execRes = await executePlan(currentPlanName, currentMeta, uiAPI, currentTasks);
-                        if (!execRes || !execRes.repairRequired) {
-                            await validateCompletedExecution(
-                                execRes,
-                                currentPlanName,
-                                plan.markdown || plan.body || "",
-                                /** @type {import('../../plan-store.js').PlanFrontMatter} */ (currentMeta),
-                                uiAPI,
-                                runValidationLoop,
-                                loadPlan,
-                            );
-                            break;
-                        }
-
-                        if (attempt === MAX_REPAIR_ATTEMPTS) {
-                            uiAPI.appendSystemMessage(
-                                `Execution failed after ${MAX_REPAIR_ATTEMPTS} repair attempts. Aborting.`,
-                                true,
-                                "Harns",
-                            );
-                            break;
-                        }
-
-                        uiAPI.appendSystemMessage(
-                            `Execution failed due to task table error. Rerouting to ${agentName} for repair (attempt ${
-                                attempt + 1
-                            }/${MAX_REPAIR_ATTEMPTS})...`,
-                            false,
-                            "Harns",
-                        );
-                        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
-                        const repairOutcome = await runPlanningAgent({
-                            agentName,
-                            initialRequest: [
-                                `## Plan Execution Halted — Task Table Repair Required`,
-                                "",
-                                `The plan "${currentPlanName}" had a malformed Tasks table: ${
-                                    execRes.error || "Unknown task table error"
-                                }.`,
-                                "",
-                                "Fix the table to follow (Task ID | Assignee | Dependencies | Description),",
-                                "then call plan_written again with the corrected tasks array.",
-                            ].join("\n"),
-                            triageMeta: currentMeta,
-                            uiAPI,
-                        });
-                        if (repairOutcome.outcome !== "approved_execute" || !repairOutcome.planName) {
-                            uiAPI.appendSystemMessage(
-                                "Repair did not produce an approved plan. Aborting.",
-                                false,
-                                "Harns",
-                            );
-                            break;
-                        }
-                        currentPlanName = repairOutcome.planName;
-                        currentMeta = repairOutcome.triageMeta || currentMeta;
-                        currentTasks = repairOutcome.tasks;
-                    }
+                    await executeReadyPlanWithRepair({
+                        plan,
+                        agentName,
+                        uiAPI,
+                        executePlan,
+                        runPlanningAgent,
+                        runValidationLoop,
+                        loadPlan,
+                        setActiveAgent,
+                        createDirectAgentHandler,
+                    });
                     return;
                 }
 
