@@ -74,12 +74,7 @@ function restorePreviousAgentFlow(uiAPI, agentName, deps = {}) {
     const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
 
     resetTuiState(undefined, uiAPI, undefined);
-    setActiveAgent(agentName, createDirectAgentHandler(agentName));
-    uiAPI.appendSystemMessage(
-        `Switched back to ${getAgentDisplayName(agentName)}.`,
-        false,
-        "Harns",
-    );
+    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
 }
 
 /**

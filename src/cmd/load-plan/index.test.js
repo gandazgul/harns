@@ -611,7 +611,7 @@ Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_
 });
 
 Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan", async () => {
-    const { uiAPI, messages } = makeUi();
+    const { uiAPI } = makeUi();
     /** @type {string[]} */
     const restoredAgents = [];
 
@@ -632,20 +632,22 @@ Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan"
                         affectedPaths: [],
                         status: "draft",
                     },
-                }),
+            }),
             runPlanningAgent: () => Promise.resolve({ outcome: "saved", planName: "plan-g" }),
             createDirectAgentHandler: () => async () => {},
-            setActiveAgent: (/** @type {string} */ name) => restoredAgents.push(name),
+            setActiveAgent: (/** @type {string} */ name, /** @type {unknown} */ _handler, /** @type {any} */ actualUiAPI) => {
+                restoredAgents.push(name);
+                assertEquals(actualUiAPI, uiAPI);
+            },
             resetTuiState: () => {},
         }),
     });
 
     assertEquals(restoredAgents.includes(AGENTS.ROUTER), true);
-    assertEquals(messages.some((m) => m.includes("Switched back to Router")), true);
 });
 
 Deno.test("runLoadPlanCommand restores the initially active agent after lifecycle saves a plan", async () => {
-    const { uiAPI, messages } = makeUi();
+    const { uiAPI } = makeUi();
     /** @type {string[]} */
     const restoredAgents = [];
 
@@ -667,15 +669,17 @@ Deno.test("runLoadPlanCommand restores the initially active agent after lifecycl
                         affectedPaths: [],
                         status: "draft",
                     },
-                }),
+            }),
             runPlanningAgent: () => Promise.resolve({ outcome: "saved", planName: "plan-j" }),
             createDirectAgentHandler: () => async () => {},
-            setActiveAgent: (/** @type {string} */ name) => restoredAgents.push(name),
+            setActiveAgent: (/** @type {string} */ name, /** @type {unknown} */ _handler, /** @type {any} */ actualUiAPI) => {
+                restoredAgents.push(name);
+                assertEquals(actualUiAPI, uiAPI);
+            },
             resetTuiState: () => {},
         }),
     });
 
     assertEquals(restoredAgents.includes(AGENTS.IDEATOR), true);
     assertEquals(restoredAgents.includes(AGENTS.ROUTER), false);
-    assertEquals(messages.some((m) => m.includes("Switched back to Ideator")), true);
 });

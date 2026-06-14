@@ -1,6 +1,21 @@
 import { assertEquals } from "@std/assert";
 import { readLatestTriageOutcome } from "./orchestrator.js";
 
+Deno.test("dispatchPostTriage does not force Engineer after FEATURE/PROJECT validation", async () => {
+    const source = await Deno.readTextFile(new URL("./orchestrator.js", import.meta.url));
+    assertEquals(source.includes("setActiveAgent(AGENTS.ENGINEER"), false);
+});
+
+Deno.test("dispatchPostTriage restores plan owner when FEATURE/PROJECT execution is incomplete", async () => {
+    const source = await Deno.readTextFile(new URL("./orchestrator.js", import.meta.url));
+    assertEquals(
+        source.includes(
+            "} else {\n                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);",
+        ),
+        true,
+    );
+});
+
 Deno.test("readLatestTriageOutcome returns the latest triage_report details", () => {
     const messages = [
         /** @type {any} */ ({

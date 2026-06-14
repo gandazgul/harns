@@ -67,6 +67,27 @@ Deno.test("direct-agent skips validation when approved_execute did not complete 
     assertEquals(validationCount, 0);
 });
 
+Deno.test("direct-agent restores invoking agent when approved_execute execution is incomplete", async () => {
+    /** @type {string[]} */
+    const restoredAgents = [];
+    const uiAPI = /** @type {any} */ ({});
+    const handler = createDirectAgentHandler("architect", {
+        runAgentSession: () => Promise.resolve(/** @type {any} */ ([])),
+        readLatestPlanOutcome: () => /** @type {any} */ ({ outcome: "approved_execute", planName: "p" }),
+        executePlan: /** @type {any} */ (() => Promise.resolve({ repairRequired: false, executionComplete: false })),
+        runValidationLoop: () => {
+            throw new Error("should not validate incomplete execution");
+        },
+        setActiveAgent: (/** @type {string} */ name, /** @type {unknown} */ _handler, /** @type {any} */ actualUiAPI) => {
+            restoredAgents.push(name);
+            assertEquals(actualUiAPI, uiAPI);
+        },
+    });
+
+    await handler("req", [], uiAPI, /** @type {any} */ (undefined));
+    assertEquals(restoredAgents, ["architect"]);
+});
+
 Deno.test("direct-agent does NOT call executePlan when outcome is saved", async () => {
     let executeCount = 0;
     const handler = createDirectAgentHandler("planner", {

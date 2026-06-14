@@ -7,6 +7,7 @@
 
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { appendTaskCompletedMessage } from "../shared/ui/task-completed-message.js";
 
 const TOOL_PARAMS = Type.Object({
     message: Type.Optional(Type.String({
@@ -36,8 +37,7 @@ export function createTaskCompletedTool({ uiAPI, agentName = "agent" } = /** @ty
         parameters: TOOL_PARAMS,
         async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
             await Promise.resolve();
-            const msg = params.message ? `: ${params.message}` : "";
-            uiAPI.appendSystemMessage(`Task declared completed by ${agentName}${msg}`, false, "Harns");
+            appendTaskCompletedMessage(uiAPI, agentName, params.message);
 
             return {
                 content: [],
