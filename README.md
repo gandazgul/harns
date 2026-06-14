@@ -76,7 +76,9 @@ curl -fsSL https://raw.githubusercontent.com/gandazgul/harns/main/install.sh | b
 hns --help
 ```
 
-The installer downloads the latest release binary for macOS or Linux, verifies checksums, and installs `hns`.
+The installer downloads the latest release binary for macOS or Linux, verifies checksums, and installs `hns`. By default
+it installs to `~/.local/bin` and does not require root. To choose another user-writable directory, set
+`HNS_INSTALL_DIR`.
 
 ### From Source
 
@@ -301,5 +303,15 @@ Confirm the compiled Plannotator package can resolve:
 
 ## License
 
-Unlicensed for now. I retain full copyright and all rights reserved, but you can view the code and open issues. If you
-want to contribute or use parts of the code, please reach out.
+Harns is source-available and free to use, but it is not open source yet.
+
+You may install, run, inspect, and use Harns for personal, internal, or commercial work. You may also submit issues and
+pull requests.
+
+You may not distribute modified versions, publish derivative works, rebrand Harns, or offer it as a competing product or
+service without prior written permission.
+
+Harns also includes third-party dependencies, including Pi and Plannotator-related packages, which remain under their
+own license terms.
+
+See [LICENSE](LICENSE).
