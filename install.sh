@@ -2,7 +2,6 @@
 set -euo pipefail
 
 REPO="${HNS_REPO:-gandazgul/harns}"
-INSTALL_DIR="${HNS_INSTALL_DIR:-/usr/local/bin}"
 REQUESTED_VERSION="${1:-}"
 
 need_cmd() {
@@ -15,6 +14,40 @@ need_cmd() {
 need_cmd curl
 need_cmd tar
 need_cmd install
+
+expand_path() {
+  case "$1" in
+    "~")
+      if [[ -z "${HOME:-}" ]]; then
+        echo "[hns installer] HOME is not set. Set HNS_INSTALL_DIR to an absolute writable bin directory." >&2
+        exit 1
+      fi
+      echo "$HOME"
+      ;;
+    "~/"*)
+      if [[ -z "${HOME:-}" ]]; then
+        echo "[hns installer] HOME is not set. Set HNS_INSTALL_DIR to an absolute writable bin directory." >&2
+        exit 1
+      fi
+      echo "${HOME}/${1#~/}"
+      ;;
+    *) echo "$1" ;;
+  esac
+}
+
+resolve_install_dir() {
+  if [[ -n "${HNS_INSTALL_DIR:-}" ]]; then
+    expand_path "$HNS_INSTALL_DIR"
+    return
+  fi
+
+  if [[ -z "${HOME:-}" ]]; then
+    echo "[hns installer] HOME is not set. Set HNS_INSTALL_DIR to a writable bin directory." >&2
+    exit 1
+  fi
+
+  echo "${HOME}/.local/bin"
+}
 
 sha_verify() {
   local checksums_file="$1"
@@ -85,6 +118,110 @@ resolve_asset_suffix() {
   esac
 }
 
+shell_config_file() {
+  local current_shell
+  current_shell="$(basename "${SHELL:-sh}")"
+
+  case "$current_shell" in
+    fish) echo "${HOME}/.config/fish/config.fish" ;;
+    zsh) echo "${ZDOTDIR:-$HOME}/.zshrc" ;;
+    bash)
+      if [[ -f "${HOME}/.bashrc" ]]; then
+        echo "${HOME}/.bashrc"
+      else
+        echo "${HOME}/.profile"
+      fi
+      ;;
+    *) echo "${HOME}/.profile" ;;
+  esac
+}
+
+path_update_command() {
+  local bin_dir="$1"
+  local current_shell bin_expr home_dir
+  current_shell="$(basename "${SHELL:-sh}")"
+  home_dir="${HOME:-}"
+
+  if [[ -n "$home_dir" && "$bin_dir" == "${home_dir}/.local/bin" ]]; then
+    bin_expr='$HOME/.local/bin'
+  else
+    bin_expr="$bin_dir"
+  fi
+
+  case "$current_shell" in
+    fish) echo "fish_add_path \"${bin_expr}\"" ;;
+    *) echo "export PATH=\"${bin_expr}:\$PATH\"" ;;
+  esac
+}
+
+config_file_mentions_path() {
+  local config_file="$1"
+  local command="$2"
+
+  [[ -f "$config_file" ]] || return 1
+  grep -Fxq "$command" "$config_file"
+}
+
+prompt_add_path_to_profile() {
+  local bin_dir="$1"
+  local config_file command answer
+
+  [[ -n "${HOME:-}" ]] || return 1
+  ( : <>/dev/tty ) 2>/dev/null || return 1
+
+  config_file="$(shell_config_file)"
+  command="$(path_update_command "$bin_dir")"
+
+  if config_file_mentions_path "$config_file" "$command"; then
+    echo "[hns installer] A PATH update for ${bin_dir} already exists in ${config_file}."
+    return 0
+  fi
+
+  exec 3<>/dev/tty
+  printf "[hns installer] Add %s to your PATH in %s now? [Y/n] " "$bin_dir" "$config_file" >&3
+  if ! IFS= read -r answer <&3; then
+    answer=
+  fi
+  exec 3>&-
+
+  case "$answer" in
+    n|N|no|NO) return 1 ;;
+    *) ;;
+  esac
+
+  mkdir -p "$(dirname "$config_file")"
+  touch "$config_file"
+  printf '\n# Harns\n%s\n' "$command" >> "$config_file"
+  echo "[hns installer] Added ${bin_dir} to ${config_file}."
+}
+
+installed_hns_is_first_on_path() {
+  local installed_path active_path
+  installed_path="${INSTALL_DIR}/hns"
+  active_path="$(command -v hns 2>/dev/null || true)"
+
+  [[ -n "$active_path" ]] && [[ "$active_path" == "$installed_path" ]]
+}
+
+print_hns_not_on_path_message() {
+  local active_path command
+  active_path="$(command -v hns 2>/dev/null || true)"
+
+  echo "[hns installer] hns was installed, but your shell is not using that install yet."
+  if [[ -n "$active_path" ]]; then
+    echo "[hns installer] Your shell currently resolves hns to: ${active_path}"
+  fi
+
+  prompt_add_path_to_profile "$INSTALL_DIR" || true
+  command="$(path_update_command "$INSTALL_DIR")"
+  echo "[hns installer] Restart your shell or run:"
+  echo
+  echo "  ${command}"
+  echo
+  echo "[hns installer] Then run: hns --help"
+}
+
+INSTALL_DIR="$(resolve_install_dir)"
 VERSION="$(resolve_version)"
 SUFFIX="$(resolve_asset_suffix)"
 ASSET="hns-${VERSION}-${SUFFIX}.tar.gz"
@@ -107,16 +244,18 @@ if [[ ! -x "${TMP_DIR}/hns" ]]; then
 fi
 
 mkdir -p "$INSTALL_DIR"
-if [[ -w "$INSTALL_DIR" ]]; then
-  install -m 755 "${TMP_DIR}/hns" "${INSTALL_DIR}/hns"
-else
-  if command -v sudo >/dev/null 2>&1; then
-    sudo install -m 755 "${TMP_DIR}/hns" "${INSTALL_DIR}/hns"
-  else
-    echo "[hns installer] No write permission to ${INSTALL_DIR} and sudo is unavailable." >&2
-    exit 1
-  fi
+if [[ ! -w "$INSTALL_DIR" ]]; then
+  echo "[hns installer] No write permission to ${INSTALL_DIR}." >&2
+  echo "[hns installer] Choose a user-writable location with HNS_INSTALL_DIR, for example:" >&2
+  echo "[hns installer]   HNS_INSTALL_DIR=\"${HOME:-$PWD}/.local/bin\" bash install.sh" >&2
+  exit 1
 fi
 
+install -m 755 "${TMP_DIR}/hns" "${INSTALL_DIR}/hns"
+
 echo "[hns installer] ✅ Installed hns to ${INSTALL_DIR}/hns"
-echo "[hns installer] Run: hns --help"
+if installed_hns_is_first_on_path; then
+  echo "[hns installer] Run: hns --help"
+else
+  print_hns_not_on_path_message
+fi
