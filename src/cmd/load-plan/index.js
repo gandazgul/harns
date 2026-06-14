@@ -7,7 +7,6 @@
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { AGENTS, CLI_BIN, CWD } from "../../constants.js";
-import { getAgentDisplayName } from "../../shared/session/agents.js";
 import {
     injectFrontMatter,
     loadPlan as loadPlanFn,
