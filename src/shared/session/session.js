@@ -764,6 +764,10 @@ export async function buildAgentSession({
     // Override the built-in edit tool to return file contents on failure.
     finalCustomTools.push(createEditWithFallbackToolDefinition(CWD));
 
+    // Register multi_replace_file_content as a complementary edit tool.
+    const { createMultiReplaceFileContentTool } = await import("../../tools/multi_replace_file_content.js");
+    finalCustomTools.push(createMultiReplaceFileContentTool(CWD));
+
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools);
     const promptState = { text: finalSystemPrompt };
