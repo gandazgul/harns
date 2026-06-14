@@ -7,12 +7,7 @@
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { AGENTS, CLI_BIN, CWD } from "../../constants.js";
-import {
-    injectFrontMatter,
-    loadPlan as loadPlanFn,
-    resolvePlan as resolvePlanFn,
-    updatePlanStatus as updatePlanStatusFn,
-} from "../../plan-store.js";
+import { injectFrontMatter, loadPlan as loadPlanFn, resolvePlan as resolvePlanFn } from "../../plan-store.js";
 import {
     askApprovalWithTasks as askApprovalWithTasksFn,
     askPostApproval as askPostApprovalFn,
@@ -20,6 +15,7 @@ import {
     executePlan as executePlanFn,
     runPlanningAgent as runPlanningAgentFn,
 } from "../../shared/workflow/workflow.js";
+import { isExecutablePlanStatus, recordPlanEvent as recordPlanEventFn } from "../../shared/workflow/plan-lifecycle.js";
 import { runValidationLoop as runValidationLoopFn } from "../../shared/workflow/validation.js";
 import { submitPlanForReview as submitPlanForReviewFn } from "../../shared/workflow/submit-plan.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
@@ -51,7 +47,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof resetTuiStateFn} [resetTuiState]
  * @property {typeof getRootAgentNameFn} [getRootAgentName]
  * @property {(cwd: string) => Promise<Array<{name: string, attrs: {classification: string, status: string}}>>} [listPlans]
- * @property {typeof updatePlanStatusFn} [updatePlanStatus]
+ * @property {typeof recordPlanEventFn} [recordPlanEvent]
  */
 
 /**
@@ -237,6 +233,44 @@ async function validateCompletedExecution(
 }
 
 /**
+ * Run the Readiness Gate for an approved Plan.
+ *
+ * @param {{ planName: string, path: string, attrs: import('../../plan-store.js').PlanFrontMatter }} plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} uiAPI
+ * @param {typeof ensureSlicerTasksFn} ensureSlicerTasks
+ * @param {typeof recordPlanEventFn} recordPlanEvent
+ * @returns {Promise<boolean>}
+ */
+async function prepareApprovedPlanForWork(plan, uiAPI, ensureSlicerTasks, recordPlanEvent) {
+    if (plan.attrs.classification === "PROJECT") {
+        const sliceResult = await ensureSlicerTasks({
+            planName: plan.planName,
+            planPath: plan.path,
+            triageMeta: plan.attrs,
+            uiAPI,
+        });
+        if (!sliceResult.ok) {
+            uiAPI.appendSystemMessage(
+                `Readiness Gate failed before execution: ${sliceResult.error}`,
+                true,
+                "Harns",
+            );
+            return false;
+        }
+    }
+
+    await recordPlanEvent({
+        cwd: CWD,
+        planName: plan.planName,
+        event: "readiness_passed",
+        currentStatus: "approved",
+        details: { triageMeta: plan.attrs },
+    });
+    plan.attrs.status = "ready_for_work";
+    return true;
+}
+
+/**
  * Handle `load-plan` command.
  *
  * @param {string[]} argv
@@ -261,7 +295,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         createDirectAgentHandler: createDirectAgentHandlerDep,
         getRootAgentName: getRootAgentNameDep,
         listPlans: listPlansDep,
-        updatePlanStatus: updatePlanStatusDep,
+        recordPlanEvent: recordPlanEventDep,
     } = deps;
 
     const parseArgs = parseArgsDep || parseArgsFn;
@@ -279,7 +313,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const setActiveAgent = setActiveAgentDep || setActiveAgentFn;
     const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
     const getRootAgentName = getRootAgentNameDep || getRootAgentNameFn;
-    const updatePlanStatus = updatePlanStatusDep || updatePlanStatusFn;
+    const recordPlanEvent = recordPlanEventDep || recordPlanEventFn;
 
     const parsedArgs = parseArgs(argv, {
         boolean: ["help"],
@@ -357,11 +391,10 @@ export async function runLoadPlanCommand(argv, options = {}) {
         const triageMeta = plan.attrs;
         const agentName = triageMeta.classification === "PROJECT" ? AGENTS.ARCHITECT : AGENTS.PLANNER;
 
-        if (plan.attrs.status === "completed") {
-            uiAPI.appendSystemMessage("This plan is already marked as completed.", false, "Harns");
+        if (plan.attrs.status === "verified") {
+            uiAPI.appendSystemMessage("This plan is already verified.", false, "Harns");
             while (true) {
                 const answer = await uiAPI.promptSelect("What would you like to do?", [
-                    { value: "execute", label: "Re-execute the plan as-is" },
                     { value: "review", label: "Re-open for review (planner/architect)" },
                     { value: "view", label: "View plan details" },
                     { value: "cancel", label: "Cancel" },
@@ -373,22 +406,29 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
                     continue;
                 }
-                if (answer === "execute") {
-                    await updatePlanStatus(CWD, plan.planName, "approved", plan.attrs);
-                    plan.attrs.status = "approved";
-                } else {
-                    // Re-opening for review: discard the slicer's tasks so the
-                    // architect → slicer flow regenerates them against any revisions.
-                    await stripTasksFromPlanFile(plan);
-                    await updatePlanStatus(CWD, plan.planName, "in_review", plan.attrs);
-                    plan.attrs.status = "in_review";
-                }
+                // Re-opening for review: discard the slicer's tasks so the
+                // architect → slicer flow regenerates them against any revisions.
+                await stripTasksFromPlanFile(plan);
+                await recordPlanEvent({
+                    cwd: CWD,
+                    planName: plan.planName,
+                    event: "review_reopened",
+                    currentStatus: "verified",
+                    details: { triageMeta: plan.attrs },
+                });
+                plan.attrs.status = "feedback";
                 break;
             }
         }
 
-        if (plan.attrs.status === "approved") {
-            uiAPI.appendSystemMessage("This plan has already been approved.", false, "Harns");
+        if (plan.attrs.status === "approved" || isExecutablePlanStatus(plan.attrs.status)) {
+            uiAPI.appendSystemMessage(
+                plan.attrs.status === "approved"
+                    ? "This plan has been approved but is not ready for work yet."
+                    : "This plan is ready for work.",
+                false,
+                "Harns",
+            );
 
             while (true) {
                 const answer = await uiAPI.promptSelect("What would you like to do?", [
@@ -400,6 +440,19 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 if (!answer) return;
 
                 if (answer === "proceed") {
+                    if (plan.attrs.status === "approved") {
+                        const ready = await prepareApprovedPlanForWork(
+                            plan,
+                            uiAPI,
+                            ensureSlicerTasks,
+                            recordPlanEvent,
+                        );
+                        if (!ready) {
+                            skipRouterRestore = true;
+                            return;
+                        }
+                    }
+
                     const MAX_REPAIR_ATTEMPTS = 2;
                     let currentPlanName = plan.planName;
                     /** @type {Partial<import('../../plan-store.js').PlanFrontMatter>} */
@@ -473,6 +526,16 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     // Re-opening for review: discard the slicer's tasks so the
                     // architect → slicer flow regenerates them against any revisions.
                     await stripTasksFromPlanFile(plan);
+                    if (isExecutablePlanStatus(plan.attrs.status)) {
+                        await recordPlanEvent({
+                            cwd: CWD,
+                            planName: plan.planName,
+                            event: "review_reopened",
+                            currentStatus: plan.attrs.status,
+                            details: { triageMeta: plan.attrs },
+                        });
+                        plan.attrs.status = "feedback";
+                    }
 
                     setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
 
@@ -491,22 +554,15 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     }
 
                     if (reviewResult.approved) {
-                        if (plan.attrs.classification === "PROJECT") {
-                            const sliceResult = await ensureSlicerTasks({
-                                planName: plan.planName,
-                                planPath: plan.path,
-                                triageMeta: plan.attrs,
-                                uiAPI,
-                            });
-                            if (!sliceResult.ok) {
-                                uiAPI.appendSystemMessage(
-                                    `Slicer failed before execution: ${sliceResult.error}`,
-                                    true,
-                                    "Harns",
-                                );
-                                skipRouterRestore = true;
-                                return;
-                            }
+                        const ready = await prepareApprovedPlanForWork(
+                            plan,
+                            uiAPI,
+                            ensureSlicerTasks,
+                            recordPlanEvent,
+                        );
+                        if (!ready) {
+                            skipRouterRestore = true;
+                            return;
                         }
                         const action = plan.attrs.classification === "PROJECT"
                             ? await askApprovalWithTasks(plan.planName, uiAPI)

@@ -32,7 +32,7 @@ function makeDeps(overrides = {}) {
         askApprovalWithTasks: () => Promise.resolve("proceed"),
         askPostApproval: () => Promise.resolve("proceed"),
         ensureSlicerTasks: () => Promise.resolve({ ok: true, slicerInvoked: false }),
-        updatePlanStatus: () => Promise.resolve(),
+        recordPlanEvent: () => Promise.resolve(/** @type {any} */ ({})),
         ...overrides,
     };
 }
@@ -103,10 +103,10 @@ Deno.test("returns feedback outcome and revision request when user submits feedb
 
 // ── PROJECT slicer integration ──────────────────────────────────
 
-Deno.test("PROJECT plan invokes ensureSlicerTasks and flips status to ready_for_work on success", async () => {
+Deno.test("PROJECT plan invokes ensureSlicerTasks and records readiness on success", async () => {
     let slicerCalled = false;
-    /** @type {Array<[string, string]>} */
-    const statusUpdates = [];
+    /** @type {Array<{ planName: string, event: string, currentStatus: string }>} */
+    const events = [];
     const result = await runTool(
         { planName: "p" },
         {
@@ -116,30 +116,29 @@ Deno.test("PROJECT plan invokes ensureSlicerTasks and flips status to ready_for_
                     slicerCalled = true;
                     return Promise.resolve({ ok: true, slicerInvoked: true });
                 },
-                updatePlanStatus: (_cwd, planName, status) => {
-                    statusUpdates.push([planName, status]);
-                    return Promise.resolve();
+                recordPlanEvent: ({ planName, event, currentStatus }) => {
+                    events.push({ planName, event, currentStatus });
+                    return Promise.resolve(/** @type {any} */ ({}));
                 },
             }),
         },
     );
     assertEquals(slicerCalled, true);
-    assertEquals(statusUpdates, [["p", "ready_for_work"]]);
+    assertEquals(events, [{ planName: "p", event: "readiness_passed", currentStatus: "approved" }]);
     assertEquals(result.details.outcome, "approved_execute");
 });
 
 Deno.test("PROJECT plan returns feedback outcome when slicer fails", async () => {
-    /** @type {Array<[string, string]>} */
-    const statusUpdates = [];
+    let events = 0;
     const result = await runTool(
         { planName: "p" },
         {
             triageMeta: { classification: "PROJECT", complexity: "LOW", summary: "x", affectedPaths: [] },
             __deps: makeDeps({
                 ensureSlicerTasks: () => Promise.resolve({ ok: false, error: "model timeout", stage: "slicer" }),
-                updatePlanStatus: (_cwd, name, s) => {
-                    statusUpdates.push([name, s]);
-                    return Promise.resolve();
+                recordPlanEvent: () => {
+                    events++;
+                    return Promise.resolve(/** @type {any} */ ({}));
                 },
             }),
         },
@@ -147,8 +146,8 @@ Deno.test("PROJECT plan returns feedback outcome when slicer fails", async () =>
     assertEquals(result.details.outcome, "feedback");
     assertEquals(result.details.feedback, "model timeout");
     assertStringIncludes(result.content[0]?.text ?? "", "the slicer agent failed");
-    // Status must NOT be flipped to ready_for_work on slicer failure.
-    assertEquals(statusUpdates.length, 0);
+    // Readiness must NOT be recorded on slicer failure.
+    assertEquals(events, 0);
 });
 
 Deno.test("PROJECT plan returns feedback outcome when slicer output is unparseable", async () => {
@@ -184,18 +183,41 @@ Deno.test("PROJECT plan with already-present tasks skips slicer (slicerInvoked=f
     assertEquals(result.details.outcome, "approved_execute");
 });
 
-Deno.test("PROJECT plan ignores updatePlanStatus failure (non-fatal)", async () => {
+Deno.test("PROJECT plan propagates readiness recording failure", async () => {
+    let rejected = false;
+    try {
+        await runTool(
+            { planName: "p" },
+            {
+                triageMeta: { classification: "PROJECT", complexity: "LOW", summary: "x", affectedPaths: [] },
+                __deps: makeDeps({
+                    recordPlanEvent: () => Promise.reject(new Error("disk full")),
+                }),
+            },
+        );
+    } catch {
+        rejected = true;
+    }
+    assertEquals(rejected, true);
+});
+
+Deno.test("FEATURE plan records readiness without invoking slicer", async () => {
+    /** @type {string[]} */
+    const events = [];
     const result = await runTool(
         { planName: "p" },
         {
-            triageMeta: { classification: "PROJECT", complexity: "LOW", summary: "x", affectedPaths: [] },
+            triageMeta: { classification: "FEATURE", complexity: "LOW", summary: "x", affectedPaths: [] },
             __deps: makeDeps({
-                updatePlanStatus: () => Promise.reject(new Error("disk full")),
+                recordPlanEvent: ({ event }) => {
+                    events.push(event);
+                    return Promise.resolve(/** @type {any} */ ({}));
+                },
             }),
         },
     );
-    // Status write fails silently; the lifecycle still proceeds.
     assertEquals(result.details.outcome, "approved_execute");
+    assertEquals(events, ["readiness_passed"]);
 });
 
 // ── FEATURE / non-PROJECT path ──────────────────────────────────

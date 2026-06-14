@@ -1,6 +1,6 @@
 ---
 name: Tester
-model: coftai/deepseek-v4-pro
+model: crofai/deepseek-v4-pro
 description: "Test-writing agent responsible for creating, running, and updating test suites following existing project conventions."
 tools:
     - read
