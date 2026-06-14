@@ -15,6 +15,7 @@ import {
     DefaultResourceLoader,
     SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { createEditWithFallbackToolDefinition } from "../../tools/edit-with-fallback.js";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
 import { join } from "@std/path";
 import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
@@ -759,6 +760,9 @@ export async function buildAgentSession({
         const { createTaskCompletedTool } = await import("../../tools/task-completed.js");
         finalCustomTools.push(createTaskCompletedTool({ uiAPI, agentName }));
     }
+
+    // Override the built-in edit tool to return file contents on failure.
+    finalCustomTools.push(createEditWithFallbackToolDefinition(CWD));
 
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools);
