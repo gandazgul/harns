@@ -1,6 +1,6 @@
 ---
 name: Reviewer
-model: coftai/deepseek-v4-pro
+model: crofai/deepseek-v4-pro
 description: "Semantic code reviewer. Compares implemented code against the original plan."
 tools:
     - read

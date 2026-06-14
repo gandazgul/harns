@@ -48,8 +48,13 @@ export async function ensurePlansDir(cwd) {
  * @property {string[]} affectedPaths - Files that will be created/modified
  * @property {string} createdAt - ISO timestamp
  * @property {string} [updatedAt] - ISO timestamp (set on revision)
- * @property {"draft"|"in_review"|"approved"|"ready_for_work"|"feedback"|"completed"} status
+ * @property {"draft"|"feedback"|"approved"|"ready_for_work"|"in_progress"|"failed"|"implemented"|"verified"} status
  * @property {"internal"|"external"} [origin] - "internal" = created by a Harns agent; "external" = a pre-existing markdown file loaded from an arbitrary path and resumed with Harns
+ * @property {string|null} [failureReason] - Concise durable failure detail for failed or unverified implemented plans
+ * @property {string|null} [failedAt] - ISO timestamp when execution failed
+ * @property {string|null} [implementedAt] - ISO timestamp when execution finished
+ * @property {string|null} [verifiedAt] - ISO timestamp when validation passed
+ * @property {string|null} [executionBaselineTree] - Git tree captured before execution started
  */
 
 /**
@@ -101,8 +106,55 @@ function formatFrontMatter(fm) {
     }
     lines.push(`status: "${escapeYamlDoubleQuoted(fm.status)}"`);
     if (fm.origin) lines.push(`origin: "${escapeYamlDoubleQuoted(fm.origin)}"`);
+    if (fm.failureReason) lines.push(`failureReason: "${escapeYamlDoubleQuoted(fm.failureReason)}"`);
+    if (fm.failedAt) lines.push(`failedAt: "${escapeYamlDoubleQuoted(fm.failedAt)}"`);
+    if (fm.implementedAt) lines.push(`implementedAt: "${escapeYamlDoubleQuoted(fm.implementedAt)}"`);
+    if (fm.verifiedAt) lines.push(`verifiedAt: "${escapeYamlDoubleQuoted(fm.verifiedAt)}"`);
+    if (fm.executionBaselineTree) {
+        lines.push(`executionBaselineTree: "${escapeYamlDoubleQuoted(fm.executionBaselineTree)}"`);
+    }
     lines.push("---");
     return lines.join("\n");
+}
+
+/**
+ * Normalize legacy statuses from older saved plans into the current lifecycle.
+ *
+ * @param {string | undefined} status
+ * @returns {PlanFrontMatter["status"]}
+ */
+function normalizePlanStatus(status) {
+    if (status === "completed") return "verified";
+    if (status === "in_review") return "feedback";
+    const allowed = new Set([
+        "draft",
+        "feedback",
+        "approved",
+        "ready_for_work",
+        "in_progress",
+        "failed",
+        "implemented",
+        "verified",
+    ]);
+    if (status && allowed.has(status)) {
+        return /** @type {PlanFrontMatter["status"]} */ (status);
+    }
+    return DEFAULT_FRONT_MATTER.status;
+}
+
+/**
+ * Return an optional front matter value, allowing explicit null to clear it.
+ *
+ * @param {Partial<PlanFrontMatter>} overrides
+ * @param {Partial<PlanFrontMatter>} existingFm
+ * @param {keyof PlanFrontMatter} key
+ * @returns {string | null | undefined}
+ */
+function optionalFrontMatterValue(overrides, existingFm, key) {
+    if (Object.hasOwn(overrides, key)) {
+        return /** @type {string | null | undefined} */ (overrides[key] ?? undefined);
+    }
+    return /** @type {string | null | undefined} */ (existingFm[key]);
 }
 
 /**
@@ -125,22 +177,27 @@ export function injectFrontMatter(markdown, overrides = {}) {
     }
 
     const fm = {
-        classification: overrides.classification ||
-            existingFm.classification ||
+        classification: overrides.classification ??
+            existingFm.classification ??
             DEFAULT_FRONT_MATTER.classification,
-        complexity: overrides.complexity ||
-            existingFm.complexity ||
+        complexity: overrides.complexity ??
+            existingFm.complexity ??
             DEFAULT_FRONT_MATTER.complexity,
-        summary: overrides.summary || existingFm.summary || DEFAULT_FRONT_MATTER.summary,
-        affectedPaths: overrides.affectedPaths ||
-            existingFm.affectedPaths ||
+        summary: overrides.summary ?? existingFm.summary ?? DEFAULT_FRONT_MATTER.summary,
+        affectedPaths: overrides.affectedPaths ??
+            existingFm.affectedPaths ??
             DEFAULT_FRONT_MATTER.affectedPaths,
-        createdAt: overrides.createdAt ||
-            existingFm.createdAt ||
+        createdAt: overrides.createdAt ??
+            existingFm.createdAt ??
             DEFAULT_FRONT_MATTER.createdAt,
-        updatedAt: overrides.updatedAt || existingFm.updatedAt || new Date().toISOString(),
-        status: overrides.status || existingFm.status || DEFAULT_FRONT_MATTER.status,
-        origin: overrides.origin || existingFm.origin || "internal",
+        updatedAt: overrides.updatedAt ?? existingFm.updatedAt ?? new Date().toISOString(),
+        status: normalizePlanStatus(overrides.status ?? existingFm.status),
+        origin: overrides.origin ?? existingFm.origin ?? "internal",
+        failureReason: optionalFrontMatterValue(overrides, existingFm, "failureReason"),
+        failedAt: optionalFrontMatterValue(overrides, existingFm, "failedAt"),
+        implementedAt: optionalFrontMatterValue(overrides, existingFm, "implementedAt"),
+        verifiedAt: optionalFrontMatterValue(overrides, existingFm, "verifiedAt"),
+        executionBaselineTree: optionalFrontMatterValue(overrides, existingFm, "executionBaselineTree"),
     };
 
     return formatFrontMatter(fm) + "\n" + body.trimStart();
@@ -175,8 +232,13 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
             affectedPaths: attrs.affectedPaths || DEFAULT_FRONT_MATTER.affectedPaths,
             createdAt: attrs.createdAt || DEFAULT_FRONT_MATTER.createdAt,
             updatedAt: attrs.updatedAt,
-            status: attrs.status || DEFAULT_FRONT_MATTER.status,
+            status: normalizePlanStatus(attrs.status),
             origin: attrs.origin || missingOrigin,
+            failureReason: attrs.failureReason,
+            failedAt: attrs.failedAt,
+            implementedAt: attrs.implementedAt,
+            verifiedAt: attrs.verifiedAt,
+            executionBaselineTree: attrs.executionBaselineTree,
         },
         body,
     };
@@ -244,7 +306,7 @@ export async function loadExternalPlan(absolutePath) {
  *
  * @param {string} cwd
  * @param {string} planName
- * @param {string} status - draft | in_review | approved | feedback
+ * @param {string} status
  * @returns {Promise<void>}
  */
 /**
@@ -302,6 +364,45 @@ export async function updatePlanStatus(
         updatedAt: new Date().toISOString(),
     });
     await Deno.writeTextFile(filePath, healed);
+}
+
+/**
+ * Update arbitrary plan front matter fields while preserving the body.
+ * Passing null for optional fields clears them.
+ *
+ * @param {string} cwd
+ * @param {string} planName
+ * @param {Partial<PlanFrontMatter>} updates
+ * @param {Partial<PlanFrontMatter>} [recoveryAttrs]
+ * @returns {Promise<PlanFrontMatter>}
+ */
+export async function updatePlanFrontMatter(
+    cwd,
+    planName,
+    updates,
+    recoveryAttrs = {},
+) {
+    const plan = await loadPlan(cwd, planName);
+    if (plan) {
+        const attrs = { ...plan.attrs, ...updates, updatedAt: updates.updatedAt ?? new Date().toISOString() };
+        const withFm = injectFrontMatter(plan.body, attrs);
+        await Deno.writeTextFile(plan.path, withFm);
+        return parsePlanFrontMatter(withFm).attrs;
+    }
+
+    const filePath = join(getPlansDir(cwd), `${planName}.md`);
+    let markdown;
+    try {
+        markdown = await Deno.readTextFile(filePath);
+    } catch {
+        throw new Error(`Plan not found: ${planName}`);
+    }
+
+    const body = stripLeadingFrontMatterBlock(markdown);
+    const attrs = { ...recoveryAttrs, ...updates, updatedAt: updates.updatedAt ?? new Date().toISOString() };
+    const healed = injectFrontMatter(body, attrs);
+    await Deno.writeTextFile(filePath, healed);
+    return parsePlanFrontMatter(healed).attrs;
 }
 
 /**

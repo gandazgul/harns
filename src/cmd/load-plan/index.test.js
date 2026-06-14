@@ -22,6 +22,10 @@ function makeUi() {
     };
 }
 
+function noOpRecordPlanEvent() {
+    return Promise.resolve(/** @type {any} */ ({}));
+}
+
 Deno.test("runLoadPlanCommand prints help", async () => {
     let helped = "";
 
@@ -87,6 +91,7 @@ Deno.test("runLoadPlanCommand approved plan proceed path", async () => {
                 executed = true;
                 return Promise.resolve(undefined);
             },
+            recordPlanEvent: noOpRecordPlanEvent,
             createDirectAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
@@ -127,6 +132,7 @@ Deno.test("runLoadPlanCommand validates completed execution against freshly load
                 validatedPlanContent = args.planContent;
                 return Promise.resolve();
             },
+            recordPlanEvent: noOpRecordPlanEvent,
             createDirectAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
@@ -236,6 +242,7 @@ Deno.test("runLoadPlanCommand approved review approves directly via submitPlanFo
                 executed = true;
                 return Promise.resolve(undefined);
             },
+            recordPlanEvent: noOpRecordPlanEvent,
             createDirectAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
@@ -290,6 +297,7 @@ Deno.test("runLoadPlanCommand approved PROJECT review runs slicer before proceed
                 validated = true;
                 return Promise.resolve();
             },
+            recordPlanEvent: noOpRecordPlanEvent,
             createDirectAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
@@ -362,7 +370,9 @@ Deno.test("runLoadPlanCommand approved proceed with repair reroutes to planner",
                         status: "approved",
                     },
                 }),
+            ensureSlicerTasks: () => Promise.resolve({ ok: true, slicerInvoked: false }),
             executePlan: () => Promise.resolve({ repairRequired: true, error: "bad tasks" }),
+            recordPlanEvent: noOpRecordPlanEvent,
             runPlanningAgent: () => {
                 plannerCalled = true;
                 return Promise.resolve({ outcome: "executed", planName: "plan-e" });
@@ -382,40 +392,29 @@ Deno.test("runLoadPlanCommand approved proceed with repair reroutes to planner",
     );
 });
 
-Deno.test("runLoadPlanCommand completed plan execute path re-executes", async () => {
+Deno.test("runLoadPlanCommand ready_for_work plan proceed path executes", async () => {
     const { uiAPI, selections } = makeUi();
-    // First select: completed-plan menu → execute. Second select: approved-block → proceed.
-    selections.push("execute", "proceed");
+    selections.push("proceed");
     let executed = false;
-    /** @type {string | null} */
-    let statusUpdated = null;
 
-    await runLoadPlanCommand(["plan-completed-exec"], {
+    await runLoadPlanCommand(["plan-ready-exec"], {
         uiAPI,
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
-            parseArgs: () => ({ help: false, _: ["plan-completed-exec"] }),
+            parseArgs: () => ({ help: false, _: ["plan-ready-exec"] }),
             resolvePlan: () =>
                 Promise.resolve({
-                    planName: "plan-completed-exec",
-                    path: "plans/plan-completed-exec.md",
+                    planName: "plan-ready-exec",
+                    path: "plans/plan-ready-exec.md",
                     body: "body",
                     attrs: {
                         classification: "FEATURE",
                         complexity: "LOW",
                         summary: "s",
                         affectedPaths: [],
-                        status: "completed",
+                        status: "ready_for_work",
                     },
                 }),
-            updatePlanStatus: (
-                /** @type {string} */ _cwd,
-                /** @type {string} */ _name,
-                /** @type {string} */ status,
-            ) => {
-                statusUpdated = status;
-                return Promise.resolve();
-            },
             executePlan: () => {
                 executed = true;
                 return Promise.resolve(undefined);
@@ -426,46 +425,41 @@ Deno.test("runLoadPlanCommand completed plan execute path re-executes", async ()
         }),
     });
 
-    assertEquals(statusUpdated, "approved");
     assertEquals(executed, true);
 });
 
-Deno.test("runLoadPlanCommand completed plan review path resets to in_review", async () => {
+Deno.test("runLoadPlanCommand verified plan review path records review_reopened", async () => {
     const { uiAPI, selections } = makeUi();
     selections.push("review");
     let lifecycleCalled = false;
     /** @type {string | null} */
-    let statusUpdated = null;
+    let lifecycleEvent = null;
 
-    await runLoadPlanCommand(["plan-completed-review"], {
+    await runLoadPlanCommand(["plan-verified-review"], {
         uiAPI,
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
-            parseArgs: () => ({ help: false, _: ["plan-completed-review"] }),
+            parseArgs: () => ({ help: false, _: ["plan-verified-review"] }),
             resolvePlan: () =>
                 Promise.resolve({
-                    planName: "plan-completed-review",
-                    path: "plans/plan-completed-review.md",
+                    planName: "plan-verified-review",
+                    path: "plans/plan-verified-review.md",
                     body: "body",
                     attrs: {
                         classification: "FEATURE",
                         complexity: "LOW",
                         summary: "s",
                         affectedPaths: [],
-                        status: "completed",
+                        status: "verified",
                     },
                 }),
-            updatePlanStatus: (
-                /** @type {string} */ _cwd,
-                /** @type {string} */ _name,
-                /** @type {string} */ status,
-            ) => {
-                statusUpdated = status;
-                return Promise.resolve();
+            recordPlanEvent: (/** @type {{ event: string }} */ args) => {
+                lifecycleEvent = args.event;
+                return Promise.resolve(/** @type {any} */ ({}));
             },
             runPlanningAgent: () => {
                 lifecycleCalled = true;
-                return Promise.resolve({ outcome: "saved", planName: "plan-completed-review" });
+                return Promise.resolve({ outcome: "saved", planName: "plan-verified-review" });
             },
             createDirectAgentHandler: () => async () => {},
             resetTuiState: () => {},
@@ -473,38 +467,38 @@ Deno.test("runLoadPlanCommand completed plan review path resets to in_review", a
         }),
     });
 
-    assertEquals(statusUpdated, "in_review");
+    assertEquals(lifecycleEvent, "review_reopened");
     assertEquals(lifecycleCalled, true);
 });
 
-Deno.test("runLoadPlanCommand completed plan cancel returns without changes", async () => {
+Deno.test("runLoadPlanCommand verified plan cancel returns without changes", async () => {
     const { uiAPI, selections } = makeUi();
     selections.push("cancel");
     let executed = false;
     let lifecycleCalled = false;
-    let statusUpdateCalls = 0;
+    let lifecycleEvents = 0;
 
-    await runLoadPlanCommand(["plan-completed-cancel"], {
+    await runLoadPlanCommand(["plan-verified-cancel"], {
         uiAPI,
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
-            parseArgs: () => ({ help: false, _: ["plan-completed-cancel"] }),
+            parseArgs: () => ({ help: false, _: ["plan-verified-cancel"] }),
             resolvePlan: () =>
                 Promise.resolve({
-                    planName: "plan-completed-cancel",
-                    path: "plans/plan-completed-cancel.md",
+                    planName: "plan-verified-cancel",
+                    path: "plans/plan-verified-cancel.md",
                     body: "body",
                     attrs: {
                         classification: "FEATURE",
                         complexity: "LOW",
                         summary: "s",
                         affectedPaths: [],
-                        status: "completed",
+                        status: "verified",
                     },
                 }),
-            updatePlanStatus: () => {
-                statusUpdateCalls += 1;
-                return Promise.resolve();
+            recordPlanEvent: () => {
+                lifecycleEvents += 1;
+                return Promise.resolve(/** @type {any} */ ({}));
             },
             executePlan: () => {
                 executed = true;
@@ -520,7 +514,7 @@ Deno.test("runLoadPlanCommand completed plan cancel returns without changes", as
         }),
     });
 
-    assertEquals(statusUpdateCalls, 0);
+    assertEquals(lifecycleEvents, 0);
     assertEquals(executed, false);
     assertEquals(lifecycleCalled, false);
 });

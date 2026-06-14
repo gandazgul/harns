@@ -16,6 +16,7 @@ import { createSilentUiApi } from "../ui/api.js";
 import { extractAssistantOutput, readLatestTaskCompletedOutcome } from "./workflow.js";
 import { setActiveAgent } from "../interactive/chat-session.js";
 import { getWorkflowDiff } from "./git-snapshot.js";
+import { recordPlanEvent } from "./plan-lifecycle.js";
 
 /**
  * @param {import('./workflow.js').UiAPI} uiAPI
@@ -151,12 +152,13 @@ function isApprovedReviewResponse(response) {
  *   runCompletionGatedRepair?: typeof runCompletionGatedRepair,
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcome,
  *   getDiffText?: typeof getGitDiffText,
+ *   recordPlanEvent?: typeof recordPlanEvent,
  *   setActiveAgent?: typeof setActiveAgent,
  *   createDirectAgentHandler?: (agentName: string) => import('../session/types.js').AgentMessageHandler,
  * }} [args.__deps] Test-only injection point.
  */
 export async function runValidationLoop({
-    planName: _planName,
+    planName,
     planContent,
     triageMeta,
     uiAPI,
@@ -174,6 +176,7 @@ export async function runValidationLoop({
                 readLatestTaskCompletedOutcome: __deps?.readLatestTaskCompletedOutcome,
             }));
     const getDiffText = __deps?.getDiffText || getGitDiffText;
+    const recordPlanEventImpl = __deps?.recordPlanEvent || recordPlanEvent;
     const activeWorkflow = getActiveExecutionWorkflow();
     const baselineTree = activeWorkflow?.baselineTree;
     if (activeWorkflow) {
@@ -282,8 +285,27 @@ export async function runValidationLoop({
             ? triageMeta.classification.toLocaleLowerCase().replace(/^([a-z])/, (c) => c.toUpperCase())
             : "Plan";
         uiAPI.appendSystemMessage(`${triageClassificationDisplay} execution and validation complete.`);
+        if (planName && planName !== "quick-fix") {
+            await recordPlanEventImpl({
+                cwd: CWD,
+                planName,
+                event: "validation_passed",
+                currentStatus: "implemented",
+                details: { triageMeta },
+            });
+        }
     } else {
-        uiAPI.appendSystemMessage(`Workflow halted: ${haltReason || "Validation stopped before completion."}`);
+        const reason = haltReason || "Validation stopped before completion.";
+        uiAPI.appendSystemMessage(`Workflow halted: ${reason}`);
+        if (planName && planName !== "quick-fix") {
+            await recordPlanEventImpl({
+                cwd: CWD,
+                planName,
+                event: "validation_failed",
+                currentStatus: "implemented",
+                details: { triageMeta, failureReason: reason },
+            });
+        }
     }
 
     if (finalAgentName) {

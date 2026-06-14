@@ -6,7 +6,8 @@
  * to call the server in-process, eliminating the need for the plannotator CLI.
  */
 
-import { injectFrontMatter, parsePlanFrontMatter, updatePlanStatus } from "../../plan-store.js";
+import { injectFrontMatter, parsePlanFrontMatter } from "../../plan-store.js";
+import { recordPlanEvent } from "./plan-lifecycle.js";
 import { startPlanReviewServer } from "@gandazgul/plannotator-pi-extension-compiled/server";
 import { plannotatorHtml } from "@gandazgul/plannotator-pi-extension-compiled/assets";
 
@@ -107,7 +108,6 @@ export async function submitPlanForReview({
     /** @type {Partial<import('../../plan-store.js').PlanFrontMatter>} */
     const fmOverrides = {
         ...attrs,
-        status: "in_review",
         updatedAt: new Date().toISOString(),
     };
 
@@ -178,10 +178,22 @@ export async function submitPlanForReview({
 
         // 6. Update status
         if (decision.approved) {
-            await updatePlanStatus(cwd, planName, "approved", triageMeta);
+            await recordPlanEvent({
+                cwd,
+                planName,
+                event: "review_approved",
+                currentStatus: attrs.status,
+                details: { triageMeta },
+            });
             uiAPI.appendSystemMessage(`[Harns] ✅ Plan approved: ${planName}`);
         } else {
-            await updatePlanStatus(cwd, planName, "feedback", triageMeta);
+            await recordPlanEvent({
+                cwd,
+                planName,
+                event: "review_feedback",
+                currentStatus: attrs.status,
+                details: { triageMeta, failureReason: decision.feedback },
+            });
             uiAPI.appendSystemMessage(`[Harns] Plan returned with feedback: ${planName}`);
         }
 

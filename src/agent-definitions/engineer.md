@@ -1,6 +1,6 @@
 ---
 name: Engineer
-model: coftai/deepseek-v4-pro
+model: crofai/deepseek-v4-pro
 description: "Code execution agent that implements approved plans and individual tasks while adhering strictly to DAG scope."
 tools:
     - read

@@ -16,7 +16,8 @@ import { join } from "@std/path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { CLI_BIN, CWD, PLANS_DIR_NAME } from "../constants.js";
-import { loadPlan, updatePlanStatus } from "../plan-store.js";
+import { loadPlan } from "../plan-store.js";
+import { recordPlanEvent } from "../shared/workflow/plan-lifecycle.js";
 
 /**
  * @typedef {{
@@ -99,7 +100,7 @@ async function resolveTriageMeta(triageMeta, planName) {
  * @property {(planName: string, uiAPI: any) => Promise<"proceed" | "save">} [askApprovalWithTasks]
  * @property {(planName: string, uiAPI: any) => Promise<"proceed" | "save">} [askPostApproval]
  * @property {(opts: { planName: string, planPath: string, triageMeta?: TriageMeta, uiAPI: any }) => Promise<{ ok: true, slicerInvoked: boolean } | { ok: false, error: string, stage: "slicer" | "validation" }>} [ensureSlicerTasks]
- * @property {(cwd: string, planName: string, status: string, recoveryAttrs?: any) => Promise<void>} [updatePlanStatus]
+ * @property {typeof recordPlanEvent} [recordPlanEvent]
  * @property {(path: string) => Promise<{ isFile: boolean }>} [stat]
  * @property {string} [cwd]
  */
@@ -166,7 +167,7 @@ export function createPlanWrittenTool(
             const askApprovalWithTasks = deps.askApprovalWithTasks || workflow.askApprovalWithTasks;
             const askPostApproval = deps.askPostApproval || workflow.askPostApproval;
             const ensureSlicerTasks = deps.ensureSlicerTasks || workflow.ensureSlicerTasks;
-            const updatePlanStatusFn = deps.updatePlanStatus || updatePlanStatus;
+            const recordPlanEventFn = deps.recordPlanEvent || recordPlanEvent;
 
             const reviewResult = await submitPlanForReview({
                 cwd,
@@ -221,13 +222,21 @@ export function createPlanWrittenTool(
                     );
                 }
 
-                // Slicer is done (or was skipped because tasks already existed) — flip status
-                // to ready_for_work so the dispatcher knows tasks can be assigned.
-                try {
-                    await updatePlanStatusFn(cwd, planName, "ready_for_work", effectiveMeta);
-                } catch {
-                    /* status write failure is non-fatal; tasks are still present */
-                }
+                await recordPlanEventFn({
+                    cwd,
+                    planName,
+                    event: "readiness_passed",
+                    currentStatus: "approved",
+                    details: { triageMeta: effectiveMeta },
+                });
+            } else {
+                await recordPlanEventFn({
+                    cwd,
+                    planName,
+                    event: "readiness_passed",
+                    currentStatus: "approved",
+                    details: { triageMeta: effectiveMeta },
+                });
             }
 
             const action = effectiveMeta.classification === "PROJECT"

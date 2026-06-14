@@ -1,6 +1,6 @@
 # Collaborative Planning — PRD
 
-**Status:** Draft v1 **Author:** Ganda **Last Updated:** 2026-05-08
+**Status:** Draft v1 **Author:** Gandazgul **Last Updated:** 2026-05-08
 
 ---
 

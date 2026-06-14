@@ -51,8 +51,40 @@ Request. _Avoid_: Blueprint, spec, design doc
 **Front Matter**: YAML metadata at the top of a Plan containing classification, complexity, status, timestamps, and
 origin. _Avoid_: Metadata, header, YAML block
 
-**Plan Status**: The lifecycle state of a Plan: `draft`, `in_review`, `approved`, `ready_for_work`, `feedback`, or
-`completed`. _Avoid_: Phase, stage
+**Plan Status**: The lifecycle state of a Plan: `draft`, `feedback`, `approved`, `ready_for_work`, `in_progress`,
+`failed`, `implemented`, or `verified`. _Avoid_: Phase, stage
+
+**Plan Lifecycle**: The state machine that decides how Plan Events change Plan Status and recovery metadata; see
+`docs/plan-lifecycle.md`. _Avoid_: Status helper, plan status logic
+
+**Plan Event**: A recorded workflow fact that the Plan Lifecycle uses to transition a Plan. _Avoid_: Next step, status
+update
+
+**Approved Plan**: A Plan whose Review Loop ended in user approval but whose pre-execution preparation may still be
+unfinished. _Avoid_: Ready plan, executable plan
+
+**Ready For Work**: The only executable Plan Status, meaning a Plan is approved and every pre-execution prerequisite is
+satisfied. _Avoid_: Approved, executable, runnable
+
+**Readiness Gate**: The classification-aware lifecycle step that promotes an Approved Plan to Ready For Work once
+pre-execution preparation is complete. _Avoid_: Slicer phase, execution check
+
+**Failed Plan**: A Plan that reached Ready For Work but could not complete execution successfully. _Avoid_: Rejected
+plan, invalid plan
+
+**In-Progress Plan**: A Plan whose execution has started and whose worktree may contain partial implementation work.
+_Avoid_: Running plan, active plan
+
+**Plan Recovery**: Choosing how to continue an In-Progress Plan or Failed Plan from the current worktree state. _Avoid_:
+Resume, restart
+
+**Failure Detail**: A durable explanation of why a Failed Plan could not complete work. _Avoid_: Error log, crash dump
+
+**Implemented Plan**: A Plan whose execution work finished but whose Workflow Validation has not yet passed. _Avoid_:
+Completed plan, done plan
+
+**Verified Plan**: A Plan whose execution and Workflow Validation both finished successfully. _Avoid_: Completed plan,
+done plan
 
 **Review Loop**: The cycle where a planning agent writes or revises a Plan and the user approves or returns it through
 Plannotator. _Avoid_: Feedback loop, approval cycle
@@ -178,6 +210,17 @@ command definition, prompt command
 - A **PROJECT** is planned by the **Architect**, optionally sliced by the **Slicer**, and executed as one or more
   **Tasks**.
 - A **Plan** has exactly one **Plan Status**, exactly one **Origin**, and one **Front Matter** block.
+- A **Plan Event** is the only way workflow code should ask the **Plan Lifecycle** to change Plan Status.
+- An **Approved Plan** passes through the **Readiness Gate** before becoming **Ready For Work**.
+- A **Plan** can proceed to execution only when its **Plan Status** is **Ready For Work**.
+- A **Failed Plan** must have reached **Ready For Work** before work failed.
+- An **In-Progress Plan** requires recovery because execution may have partially changed the worktree.
+- **Plan Recovery** resolves whether Harns continues the current worktree state, reports on it, re-opens the Plan, or
+  returns the worktree to a known pre-execution state.
+- A **Failed Plan** should include **Failure Detail** when Harns can identify the cause.
+- An **Implemented Plan** still requires **Workflow Validation**.
+- An **Implemented Plan** may include **Failure Detail** when Workflow Validation fails.
+- A **Verified Plan** must have passed **Workflow Validation**.
 - A denied **Plan** produces **Feedback**, and each **Feedback** response triggers one **Revision**.
 - A **Task** has exactly one **Assignee** and may depend on zero or more other **Tasks**.
 - **Task Dispatch** sends each ready **Task** to an **Agent Session** for its **Assignee**.
@@ -218,5 +261,6 @@ command definition, prompt command
   use **Agent Name** or **Agent Display Name** only for identifiers.
 - "feedback" can mean any response in ordinary prose; resolved: **Feedback** means Plannotator annotations returned to a
   planning Agent.
-- "completed" can describe either a Plan lifecycle state or an execution signal; resolved: use **Plan Status** for
-  `completed` plans and **Task Completion** for the `task_completed` tool outcome.
+- "completed" can describe either a Plan lifecycle state or an execution signal; resolved: use **Implemented Plan** for
+  finished work, **Verified Plan** for proven work, and **Task Completion** for the `task_completed` tool outcome.
+- "approved" previously meant both user-approved and executable; resolved: only **Ready For Work** means executable.

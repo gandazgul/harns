@@ -15,6 +15,10 @@ function makeUi() {
     });
 }
 
+function noOpRecordPlanEvent() {
+    return Promise.resolve({});
+}
+
 Deno.test("runValidationLoop does not switch active agent unless finalAgentName is provided", async () => {
     const uiAPI = makeUi();
     await runValidationLoop({
@@ -26,6 +30,7 @@ Deno.test("runValidationLoop does not switch active agent unless finalAgentName 
         __deps: /** @type {any} */ ({
             runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
             getDiffText: () => Promise.resolve(""),
+            recordPlanEvent: noOpRecordPlanEvent,
             setActiveAgent: () => {
                 throw new Error("should not switch agent");
             },
@@ -52,6 +57,7 @@ Deno.test("runValidationLoop restores requested final agent after validation", a
         __deps: /** @type {any} */ ({
             runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
             getDiffText: () => Promise.resolve(""),
+            recordPlanEvent: noOpRecordPlanEvent,
             createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
             setActiveAgent: (/** @type {string} */ name) => switched.push(name),
         }),
@@ -76,6 +82,7 @@ Deno.test("runValidationLoop halts when CI repair does not call task_completed",
                 return Promise.resolve([]);
             },
             readLatestTaskCompletedOutcome: () => false,
+            recordPlanEvent: noOpRecordPlanEvent,
             setActiveAgent: () => {},
         }),
     });
@@ -116,6 +123,7 @@ Deno.test("runValidationLoop reports exact semantic repair halt reason", async (
                     }]),
                 ),
             runCompletionGatedRepair: () => Promise.resolve(false),
+            recordPlanEvent: noOpRecordPlanEvent,
             setActiveAgent: () => {},
         }),
     });
@@ -166,6 +174,7 @@ Deno.test("runValidationLoop reviews the diff scoped to the active workflow base
                     }]),
                 );
             },
+            recordPlanEvent: noOpRecordPlanEvent,
             setActiveAgent: () => {},
         }),
     });

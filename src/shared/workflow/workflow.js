@@ -13,12 +13,13 @@ import { join } from "@std/path";
 // @ts-ignore — quikdown/ast .d.ts uses export= but ESM runtime has default export
 import quikdownAst from "quikdown/ast";
 import { AGENTS, CWD, MAX_PARALLEL_TASKS } from "../../constants.js";
-import { loadPlan, updatePlanStatus } from "../../plan-store.js";
+import { loadPlan } from "../../plan-store.js";
 import { runAgentSession } from "../session/session.js";
 import { getAgentDisplayName } from "../session/agents.js";
 import { createSilentUiApi } from "../ui/api.js";
 import { captureWorktreeTree } from "./git-snapshot.js";
 import { getActiveExecutionWorkflow, setActiveExecutionWorkflow } from "../session/session-state.js";
+import { isExecutablePlanStatus, recordPlanEvent } from "./plan-lifecycle.js";
 
 /**
  * Extract the last text output from the agent's assistant messages.
@@ -491,7 +492,14 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
         return { repairRequired: false, executionComplete: false, error: `Could not load plan ${planName}` };
     }
 
+    if (!isExecutablePlanStatus(plan.attrs.status)) {
+        const error = `Plan ${planName} is not ready for work (status: ${plan.attrs.status}).`;
+        uiAPI.appendSystemMessage(`ERROR: ${error}`, true, "Harns");
+        return { repairRequired: false, executionComplete: false, error };
+    }
+
     uiAPI.appendSystemMessage(`=== Executing Plan: ${planName} ===`, false, "Harns");
+    let executionStarted = false;
 
     if (triageMeta.classification === "PROJECT") {
         try {
@@ -499,7 +507,8 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
             validateProjectTasks(tasks);
 
             if (tasks.length > 0) {
-                await startActiveExecutionWorkflow(planName, triageMeta);
+                await startActiveExecutionWorkflow(planName, triageMeta, plan.attrs.status);
+                executionStarted = true;
                 uiAPI.appendSystemMessage(
                     `Found ${tasks.length} tasks in plan. Executing in parallel where possible.`,
                     false,
@@ -554,6 +563,16 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                         if (spinnerInterval) clearInterval(spinnerInterval);
                         if (finalResult.failedTasks.length > 0) {
                             reportExecutionSummary(finalResult, uiAPI);
+                            await recordPlanEvent({
+                                cwd: CWD,
+                                planName,
+                                event: "execution_failed",
+                                currentStatus: "in_progress",
+                                details: {
+                                    triageMeta,
+                                    failureReason: `Failed tasks after retry: ${finalResult.failedTasks.join(", ")}`,
+                                },
+                            });
                             return {
                                 repairRequired: false,
                                 executionComplete: false,
@@ -564,6 +583,16 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                         }
                     } else {
                         reportExecutionSummary(executionResult, uiAPI);
+                        await recordPlanEvent({
+                            cwd: CWD,
+                            planName,
+                            event: "execution_failed",
+                            currentStatus: "in_progress",
+                            details: {
+                                triageMeta,
+                                failureReason: `Failed tasks: ${executionResult.failedTasks.join(", ")}`,
+                            },
+                        });
                         return {
                             repairRequired: false,
                             executionComplete: false,
@@ -574,7 +603,8 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                     uiAPI.appendSystemMessage(`✅ All tasks completed successfully.`, false, "Harns");
                 }
             } else {
-                await startActiveExecutionWorkflow(planName, triageMeta);
+                await startActiveExecutionWorkflow(planName, triageMeta, plan.attrs.status);
+                executionStarted = true;
                 const engineerResult = await runEngineerWithPlan(
                     planName,
                     plan.body,
@@ -583,28 +613,64 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                     triageMeta,
                 );
                 if (!engineerResult.completed) {
+                    await recordPlanEvent({
+                        cwd: CWD,
+                        planName,
+                        event: "execution_failed",
+                        currentStatus: "in_progress",
+                        details: {
+                            triageMeta,
+                            failureReason: `${getAgentDisplayName(AGENTS.ENGINEER)} stopped without task_completed.`,
+                        },
+                    });
                     return { repairRequired: false, executionComplete: false };
                 }
             }
         } catch (e) {
             const error = e instanceof Error ? e : new Error(String(e));
             uiAPI.appendSystemMessage(`TASK TABLE ERROR: ${error.message}`, true, "Harns");
+            if (executionStarted) {
+                await recordPlanEvent({
+                    cwd: CWD,
+                    planName,
+                    event: "execution_failed",
+                    currentStatus: "in_progress",
+                    details: { triageMeta, failureReason: error.message },
+                });
+            }
             return { repairRequired: true, executionComplete: false, error: error.message };
         }
     } else {
-        await startActiveExecutionWorkflow(planName, triageMeta);
+        await startActiveExecutionWorkflow(planName, triageMeta, plan.attrs.status);
+        executionStarted = true;
         const engineerResult = await runEngineerWithPlan(planName, plan.body, uiAPI, sessionManager, triageMeta);
         if (!engineerResult.completed) {
+            await recordPlanEvent({
+                cwd: CWD,
+                planName,
+                event: "execution_failed",
+                currentStatus: "in_progress",
+                details: {
+                    triageMeta,
+                    failureReason: `${getAgentDisplayName(AGENTS.ENGINEER)} stopped without task_completed.`,
+                },
+            });
             return { repairRequired: false, executionComplete: false };
         }
     }
 
     uiAPI.appendSystemMessage(
-        `✅ Plan execution complete: ${planName}`,
+        `✅ Plan implementation complete: ${planName}`,
         false,
         "Harns",
     );
-    await updatePlanStatus(CWD, planName, "completed", triageMeta);
+    await recordPlanEvent({
+        cwd: CWD,
+        planName,
+        event: "implementation_finished",
+        currentStatus: "in_progress",
+        details: { triageMeta },
+    });
     return { repairRequired: false, executionComplete: true };
 }
 
@@ -936,9 +1002,10 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, _sessionManager, _
 /**
  * @param {string} planName
  * @param {Partial<import('../../plan-store.js').PlanFrontMatter>} triageMeta
+ * @param {import('./plan-lifecycle.js').PlanStatus} currentStatus
  * @returns {Promise<void>}
  */
-async function startActiveExecutionWorkflow(planName, triageMeta) {
+async function startActiveExecutionWorkflow(planName, triageMeta, currentStatus) {
     const existing = getActiveExecutionWorkflow();
     if (existing?.planName === planName && existing.baselineTree) {
         setActiveExecutionWorkflow({ ...existing, triageMeta });
@@ -947,4 +1014,11 @@ async function startActiveExecutionWorkflow(planName, triageMeta) {
 
     const baselineTree = await captureWorktreeTree(CWD);
     setActiveExecutionWorkflow({ planName, triageMeta, baselineTree });
+    await recordPlanEvent({
+        cwd: CWD,
+        planName,
+        event: "execution_started",
+        currentStatus,
+        details: { triageMeta, executionBaselineTree: baselineTree },
+    });
 }

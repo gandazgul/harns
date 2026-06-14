@@ -1,6 +1,6 @@
 ---
 name: Doc Writer
-model: coftai/deepseek-v4-pro
+model: crofai/deepseek-v4-pro
 description: Create clear, comprehensive technical project documentation. Like READMEs, API docs, and user guides.
 tools:
     - read
