@@ -1,11 +1,6 @@
 # TODO
 
-- [ ] add details to other tool calls
-  - ls add the directory
-  - code_* add the parameters as it makes sense like read for example
-  - memory_store - the body of the memory
-
-- [ ] write should automatically return the file or a 1000 line chunk if write fails.
+- [x] edit should automatically return the file or a 1000 line chunk if write fails.
 - [ ] Add this tool multi_replace_file_content
 - [ ] when using /resume on a long session (we have to define long but probably more than 50% of the small models
       contexts) offer to compact it before loading it.
