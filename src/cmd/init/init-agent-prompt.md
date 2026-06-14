@@ -51,33 +51,7 @@ and mnemosyne effectively.
    exploration using `memory_store`. Tag the tech stack and architectural boundaries with `core` as these will be auto
    injected into future sessions.
 8. At the end, write the final version of the `CONTEXT.md` file, in root of the project, summarizing your findings. Use
-   the following structure:
-
-## CONTEXT.md Structure
-
-```markdown
-# {{Project Name}} - Context Overview
-
-Brief description of what the project does and its high-level architecture.
-
-## Language
-
-Extract and formalize domain terminology from your exploration into a consistent glossary.
-
-### Key Concepts
-
-| Term        | Definition                   | Aliases to avoid |
-| ----------- | ---------------------------- | ---------------- |
-| **Example** | A description of the concept | Avoid this term  |
-
-## Key Files
-
-Entry points, configs, where are the docs? Any other gravity centers of the codebase?
-
-## Patterns & Conventions
-
-Coding patterns, naming conventions, error handling approaches, etc.
-```
+   the canonical format at `{{BUNDLED_AGENT_DEFS_DIR}}/document-formats/CONTEXT-FORMAT.md`.
 
 ## Important Rules
 

@@ -71,8 +71,8 @@ You will receive:
 
 ## The Plan Format (CRITICAL)
 
-Use the embedded template file at `{{BUNDLED_AGENT_DEFS_DIR}}/plan-formats/planner-plan-format.md` as the canonical plan
-format.
+Use the embedded template file at `{{BUNDLED_AGENT_DEFS_DIR}}/document-formats/planner-plan-format.md` as the canonical
+plan format.
 
 Before drafting, read that file and follow its structure exactly.
 
