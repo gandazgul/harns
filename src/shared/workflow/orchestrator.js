@@ -186,15 +186,14 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                     sessionManager,
                     finalAgentName: agentName,
                 });
+            } else {
+                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
             }
         } finally {
             if (shouldPop) {
                 popAgentInfo();
             }
         }
-        // executePlan sets the active agent to ENGINEER, but if shouldPop is false, we already did it.
-        // We ensure the fallback is right.
-        setActiveAgent(AGENTS.ENGINEER, createDirectAgentHandler(AGENTS.ENGINEER), uiAPI);
     }
 }
 

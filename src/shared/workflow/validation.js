@@ -111,17 +111,7 @@ async function runCompletionGatedRepair({
     });
     consumePendingSwitchHandoff();
 
-    const completed = readTaskCompleted(messages);
-    if (!completed) {
-        uiAPI?.appendSystemMessage?.(
-            `${
-                getAgentDisplayName(agentName)
-            } stopped without task_completed during validation repair. Halting for human review.`,
-            false,
-            "Harns",
-        );
-    }
-    return completed;
+    return readTaskCompleted(messages);
 }
 
 /**
@@ -171,16 +161,19 @@ export async function runValidationLoop({
     __deps,
 }) {
     const runLocalCIImpl = __deps?.runLocalCI || runLocalCI;
+    const runAgentSessionImpl = __deps?.runAgentSession || runAgentSession;
     const repair = __deps?.runCompletionGatedRepair ||
         ((args) =>
             runCompletionGatedRepair({
                 ...args,
-                runAgentSession: __deps?.runAgentSession,
+                runAgentSession: runAgentSessionImpl,
                 readLatestTaskCompletedOutcome: __deps?.readLatestTaskCompletedOutcome,
             }));
     const getDiffText = __deps?.getDiffText || getGitDiffText;
     const setActiveAgentImpl = __deps?.setActiveAgent || setActiveAgent;
     let executionComplete = false;
+    /** @type {string | null} */
+    let haltReason = null;
     let validationCycles = 0;
     const MAX_VALIDATION_CYCLES = 3;
 
@@ -211,12 +204,17 @@ export async function runValidationLoop({
                     uiAPI,
                     sessionManager,
                 });
-                if (!completed) break;
+                if (!completed) {
+                    haltReason = `${
+                        getAgentDisplayName(AGENTS.OPERATOR)
+                    } stopped without task_completed during CI repair.`;
+                    break;
+                }
             }
         }
 
         if (!buildPasses) {
-            uiAPI?.appendSystemMessage?.("Mechanical validation failed 3 times. Halting cycle for human review.");
+            haltReason ||= "CI validation failed after 3 repair attempts.";
             break;
         }
 
@@ -233,7 +231,7 @@ export async function runValidationLoop({
         const reviewPrompt =
             `Compare the current implementation diff against the original plan. If the code fully satisfies the plan, reply ONLY with the word 'APPROVED'. Otherwise, list the missing semantic requirements.\n\n### Original Plan\n${planContent}\n\n### Git Diff\n${diffText}`;
 
-        const sessionMessages = await runAgentSession({
+        const sessionMessages = await runAgentSessionImpl({
             agentName: AGENTS.REVIEWER,
             userRequest: reviewPrompt,
             uiAPI: createSilentUiApi(),
@@ -257,8 +255,17 @@ export async function runValidationLoop({
                 uiAPI,
                 sessionManager,
             });
-            if (!completed) break;
+            if (!completed) {
+                haltReason = `${
+                    getAgentDisplayName(AGENTS.ENGINEER)
+                } stopped without task_completed during semantic repair.`;
+                break;
+            }
         }
+    }
+
+    if (!executionComplete && !haltReason && validationCycles >= MAX_VALIDATION_CYCLES) {
+        haltReason = `Semantic validation did not approve after ${MAX_VALIDATION_CYCLES} cycles.`;
     }
 
     if (executionComplete) {
@@ -267,9 +274,7 @@ export async function runValidationLoop({
             : "Plan";
         uiAPI.appendSystemMessage(`${triageClassificationDisplay} execution and validation complete.`);
     } else {
-        uiAPI.appendSystemMessage(
-            "Halting workflow. Maximum validation cycles reached or CI completely failed.",
-        );
+        uiAPI.appendSystemMessage(`Workflow halted: ${haltReason || "Validation stopped before completion."}`);
     }
 
     if (finalAgentName) {

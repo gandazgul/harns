@@ -65,6 +65,7 @@ import {
     resolveSessionToolNames,
 } from "./agents.js";
 import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsManager } from "../settings.js";
+import { recordActiveAgent } from "./active-agent-session.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
@@ -946,6 +947,10 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
                 currentMarkdownBlock = null;
                 invokedToolNames.push(event.toolName);
 
+                if (event.toolName === "task_completed") {
+                    break;
+                }
+
                 const filePath = getFilePathForTool(event.toolName, event.args);
                 let headerArgs = "";
                 if (filePath) headerArgs = `${filePath}`;
@@ -1247,6 +1252,7 @@ export async function ensureRootAgentSession(opts) {
 
     setRootAgentSession(session);
     setRootAgentName(opts.agentName);
+    recordActiveAgent(opts.sessionManager, opts.agentName);
     rootSessionMetadata.set(session, {
         agentDef,
         promptState,

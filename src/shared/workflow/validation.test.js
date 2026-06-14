@@ -80,5 +80,53 @@ Deno.test("runValidationLoop halts when CI repair does not call task_completed",
     });
 
     assertEquals(repairCalls, 1);
-    assertEquals(uiAPI.messages.some((/** @type {string} */ m) => m.includes("stopped without task_completed")), true);
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) =>
+            m.includes("Workflow halted: Operator stopped without task_completed during CI repair.")
+        ),
+        true,
+    );
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) => m.includes("Mechanical validation failed 3 times")),
+        false,
+    );
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) => m.includes("during validation repair")),
+        false,
+    );
+});
+
+Deno.test("runValidationLoop reports exact semantic repair halt reason", async () => {
+    const uiAPI = makeUi();
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve("diff"),
+            runAgentSession: () =>
+                Promise.resolve(
+                    /** @type {any} */ ([{
+                        role: "assistant",
+                        content: [{ type: "text", text: "missing requirement" }],
+                    }]),
+                ),
+            runCompletionGatedRepair: () => Promise.resolve(false),
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) =>
+            m.includes("Workflow halted: Engineer stopped without task_completed during semantic repair.")
+        ),
+        true,
+    );
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) => m.includes("Maximum validation cycles")),
+        false,
+    );
 });

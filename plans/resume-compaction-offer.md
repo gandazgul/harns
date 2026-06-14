@@ -6,7 +6,7 @@ affectedPaths:
     - "src/cmd/resume/index.js"
 createdAt: "2026-06-13T15:00:00.000Z"
 updatedAt: "2026-06-14T02:27:08.779Z"
-status: "approved"
+status: "completed"
 origin: "internal"
 ---
 

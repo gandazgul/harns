@@ -313,6 +313,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     const tui = initTUI();
 
     const container = new Container();
+    const suppressStartupHeader = options.sessionStartMode === "continue";
 
     // Header
     const titleLine = `${theme.fg("accent", theme.bold("Harns ─ Plan-by-Default Harness"))} ${
@@ -349,17 +350,19 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         helpText.setText(expanded ? expandedHelp : compactHelp);
     }
 
-    // Render the logo first
-    renderBootLogo(container);
-    // Title line
-    container.addChild(new Text(titleLine, 0, 0));
-    // Help text
-    container.addChild(helpText);
+    if (!suppressStartupHeader) {
+        // Render the logo first
+        renderBootLogo(container);
+        // Title line
+        container.addChild(new Text(titleLine, 0, 0));
+        // Help text
+        container.addChild(helpText);
 
-    // Blank lines before first message
-    container.addChild(new Spacer(1));
-    container.addChild(new Spacer(1));
-    container.addChild(new Spacer(1));
+        // Blank lines before first message
+        container.addChild(new Spacer(1));
+        container.addChild(new Spacer(1));
+        container.addChild(new Spacer(1));
+    }
 
     const messageList = new Container();
     container.addChild(messageList);
@@ -1013,12 +1016,14 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         },
     });
 
-    await renderBootBanner({
-        uiAPI,
-        invokablePromptTemplates,
-        blockedPromptTemplates,
-        chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
-    });
+    if (!suppressStartupHeader) {
+        await renderBootBanner({
+            uiAPI,
+            invokablePromptTemplates,
+            blockedPromptTemplates,
+            chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
+        });
+    }
 
     // Hydrate TUI from persisted root-session history (e.g. --continue)
     // Keep this after startup system notices so those appear first.

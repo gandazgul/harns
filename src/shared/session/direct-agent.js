@@ -18,6 +18,7 @@ import {
     getRootAgentName,
 } from "./session-state.js";
 import { runValidationLoop } from "../workflow/validation.js";
+import { setActiveAgent as setActiveAgentFn } from "../interactive/chat-session.js";
 import { join } from "@std/path";
 import { CWD } from "../../constants.js";
 
@@ -42,6 +43,7 @@ import { CWD } from "../../constants.js";
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcomeFn,
  *   executePlan?: typeof executePlanFn,
  *   runValidationLoop?: typeof runValidationLoop,
+ *   setActiveAgent?: typeof setActiveAgentFn,
  * }} [__deps] - Test-only injection point.
  * @returns {import('./types.js').AgentMessageHandler}
  */
@@ -52,6 +54,7 @@ export function createDirectAgentHandler(agentName, __deps) {
     const readLatestTaskCompletedOutcome = __deps?.readLatestTaskCompletedOutcome || readLatestTaskCompletedOutcomeFn;
     const executePlan = __deps?.executePlan || executePlanFn;
     const runValidationLoopImpl = __deps?.runValidationLoop || runValidationLoop;
+    const setActiveAgent = __deps?.setActiveAgent || setActiveAgentFn;
 
     return async (userRequest, images, uiAPI, sessionManager) => {
         // If the live root is already this agent (the common case after a switch has been
@@ -99,6 +102,8 @@ export function createDirectAgentHandler(agentName, __deps) {
                     sessionManager,
                     finalAgentName: agentName,
                 });
+            } else if (executionResult && executionResult.executionComplete === false) {
+                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
             }
             return;
         }
