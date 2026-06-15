@@ -1,6 +1,20 @@
 import { assertEquals } from "@std/assert";
-import { setActiveModel } from "./chat-session.js";
-import { setActiveUiAPI, setRootAgentSession } from "../session/session-state.js";
+import {
+    applyPendingRootSwap,
+    getActiveModel,
+    persistThinkingLevel,
+    resolveTemplateModel,
+    setActiveAgent,
+    setActiveModel,
+} from "./chat-session.js";
+import {
+    getActiveOnMessage,
+    getPendingRootSwap,
+    setActiveUiAPI,
+    setPendingRootSwap,
+    setRootAgentName,
+    setRootAgentSession,
+} from "../session/session-state.js";
 
 Deno.test("setActiveModel reports setModel rejection instead of leaving an unhandled crash", async () => {
     const originalHome = Deno.env.get("HOME");
@@ -38,6 +52,115 @@ Deno.test("setActiveModel reports setModel rejection instead of leaving an unhan
         else Deno.env.set("HOME", originalHome);
         if (originalOpenAiKey === undefined) Deno.env.delete("OPENAI_API_KEY");
         else Deno.env.set("OPENAI_API_KEY", originalOpenAiKey);
+        await Deno.remove(tempHome, { recursive: true });
+    }
+});
+
+Deno.test("setActiveAgent updates the active handler and queues a pending root swap for a different agent", () => {
+    const renders = [];
+    const handler = () => Promise.resolve();
+    const uiAPI = /** @type {any} */ ({
+        requestRender: () => renders.push(1),
+    });
+
+    try {
+        setRootAgentName("router");
+        setPendingRootSwap(null);
+
+        setActiveAgent("planner", handler, uiAPI, "test/model");
+
+        assertEquals(getActiveOnMessage(), handler);
+        assertEquals(getPendingRootSwap(), {
+            agentName: "planner",
+            displayName: "Planner",
+            model: "test/model",
+        });
+        assertEquals(renders.length, 1);
+    } finally {
+        setRootAgentName(null);
+        setPendingRootSwap(null);
+    }
+});
+
+Deno.test("setActiveAgent only requests render when target already owns the root", () => {
+    const renders = [];
+    const handler = () => Promise.resolve();
+    const uiAPI = /** @type {any} */ ({
+        requestRender: () => renders.push(1),
+    });
+
+    try {
+        setRootAgentName("router");
+        setPendingRootSwap({ agentName: "planner", displayName: "Planner" });
+
+        setActiveAgent("router", handler, uiAPI);
+
+        assertEquals(getActiveOnMessage(), handler);
+        assertEquals(getPendingRootSwap(), { agentName: "planner", displayName: "Planner" });
+        assertEquals(renders.length, 1);
+    } finally {
+        setRootAgentName(null);
+        setPendingRootSwap(null);
+    }
+});
+
+Deno.test("applyPendingRootSwap clears no-op swaps without rebuilding", async () => {
+    /** @type {string[]} */
+    const messages = [];
+    const uiAPI = /** @type {any} */ ({
+        appendSystemMessage: (/** @type {string} */ message) => messages.push(message),
+        requestRender: () => {},
+    });
+
+    try {
+        setRootAgentName("planner");
+        setPendingRootSwap({ agentName: "planner", displayName: "Planner" });
+
+        await applyPendingRootSwap(uiAPI);
+
+        assertEquals(getPendingRootSwap(), null);
+        assertEquals(messages, []);
+    } finally {
+        setRootAgentName(null);
+        setPendingRootSwap(null);
+    }
+});
+
+Deno.test("resolveTemplateModel validates provider/id format, model lookup, and configured auth", () => {
+    const registry = {
+        find: (/** @type {string} */ provider, /** @type {string} */ id) =>
+            provider === "test" && id === "model" ? { provider, id } : null,
+        hasConfiguredAuth: (/** @type {unknown} */ model) => !!model,
+    };
+    const noAuthRegistry = {
+        find: () => ({ provider: "test", id: "model" }),
+        hasConfiguredAuth: () => false,
+    };
+
+    assertEquals(resolveTemplateModel("not-strict", registry), { ok: false });
+    assertEquals(resolveTemplateModel("test/missing", registry), { ok: false });
+    assertEquals(resolveTemplateModel("test/model", noAuthRegistry), { ok: false });
+    assertEquals(resolveTemplateModel("test/model", registry), { ok: true, provider: "test", id: "model" });
+});
+
+Deno.test("getActiveModel reflects setActiveModel state when no root session is present", async () => {
+    setRootAgentSession(null);
+
+    await setActiveModel("model-a", "provider-a");
+
+    assertEquals(getActiveModel(), "model-a");
+});
+
+Deno.test("persistThinkingLevel stores the selected level without throwing", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const tempHome = await Deno.makeTempDir({ prefix: "harns-thinking-level-" });
+
+    try {
+        Deno.env.set("HOME", tempHome);
+        await persistThinkingLevel("high");
+    } finally {
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
         await Deno.remove(tempHome, { recursive: true });
     }
 });
