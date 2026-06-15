@@ -32,6 +32,8 @@ const compile = await runCmd("deno", [
     "--include",
     "src/cmd/init/init-agent-prompt.md",
     "--include",
+    "src/shared/workflow/slicer-prompt.md",
+    "--include",
     "src/shared/ui/catppuccin-mocha.json",
 
     "--output",
