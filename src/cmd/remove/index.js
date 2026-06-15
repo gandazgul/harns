@@ -3,8 +3,8 @@
  * Harns remove command wrapping Pi's PackageManager.
  */
 
-import { DefaultPackageManager, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { getSettingsManager } from "../../shared/settings.js";
+import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
+import { getSettingsDir, getSettingsManager } from "../../shared/settings.js";
 import { discoverAndRegisterThemes, getAvailableThemes, setTheme } from "../../shared/ui/theme.js";
 
 const DEFAULT_THEME = "catppuccin-mocha";
@@ -24,7 +24,7 @@ export async function runRemoveCommand(argv, _options = {}) {
         const settings = getSettingsManager();
         const packageManager = new DefaultPackageManager({
             cwd: Deno.cwd(),
-            agentDir: getAgentDir(),
+            agentDir: getSettingsDir("global"),
             settingsManager: settings,
         });
 

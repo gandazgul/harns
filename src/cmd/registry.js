@@ -59,8 +59,9 @@ const bin = (...parts) => [CLI_BIN, ...parts].join(" ");
  * @property {string[]} usage
  * @property {string[]} [notes]
  * @property {CommandHandler} execute
- * @property {boolean} isSlash
- * @property {boolean} isCli
+ * @property {("cli" | "slash")[]} surfaces
+ * @property {"boolean" | "string"} [cliFlag]
+ * @property {string[]} [cliFlagAliases]
  * @property {(argumentPrefix: string) => Promise<CommandCompletionItem[]>} [getArgumentCompletions]
  */
 
@@ -81,8 +82,7 @@ export const commandRegistry = {
             `Source-run fallback: ${DEV_CLI_RUN} "<user request>"`,
         ],
         execute: runRouterCommand,
-        isSlash: false,
-        isCli: true,
+        surfaces: ["cli"],
     },
     [COMMAND_NAMES.AGENT]: {
         name: COMMAND_NAMES.AGENT,
@@ -100,8 +100,9 @@ export const commandRegistry = {
             "Use /agent inside the TUI to switch agents at any time.",
         ],
         execute: runAgentsCommand,
-        isSlash: true,
-        isCli: true,
+        surfaces: ["cli", "slash"],
+        cliFlag: "string",
+        cliFlagAliases: ["a"],
         getArgumentCompletions: getAgentCompletions,
     },
     [COMMAND_NAMES.MODEL]: {
@@ -119,8 +120,8 @@ export const commandRegistry = {
             "Inside the interactive session, use '/model <tab>' for autocomplete.",
         ],
         execute: runModelsCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["cli", "slash"],
+        cliFlag: "string",
         getArgumentCompletions: getModelCompletions,
     },
     [COMMAND_NAMES.LOGIN]: {
@@ -138,8 +139,7 @@ export const commandRegistry = {
             "Use /status to inspect configured providers.",
         ],
         execute: runLoginCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.LOGOUT]: {
         name: COMMAND_NAMES.LOGOUT,
@@ -154,8 +154,7 @@ export const commandRegistry = {
             "Environment variables and models.json provider config are not changed.",
         ],
         execute: runLogoutCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.STATUS]: {
         name: COMMAND_NAMES.STATUS,
@@ -169,8 +168,7 @@ export const commandRegistry = {
             "This reports model/auth status for the current Harns configuration.",
         ],
         execute: runStatusCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.LOAD_PLAN]: {
         name: COMMAND_NAMES.LOAD_PLAN,
@@ -186,8 +184,8 @@ export const commandRegistry = {
             "If the plan is approved, you can proceed, re-open review, or inspect details.",
         ],
         execute: runLoadPlanCommand,
-        isSlash: true,
-        isCli: true,
+        surfaces: ["cli", "slash"],
+        cliFlag: "string",
         getArgumentCompletions: getLoadPlanCompletions,
     },
     [COMMAND_NAMES.RESUME]: {
@@ -202,8 +200,7 @@ export const commandRegistry = {
             "Slash command only (interactive session).",
         ],
         execute: runResumeCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.NEW]: {
         name: COMMAND_NAMES.NEW,
@@ -218,8 +215,7 @@ export const commandRegistry = {
             "Slash command only (interactive session).",
         ],
         execute: runNewCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.SESSION]: {
         name: COMMAND_NAMES.SESSION,
@@ -233,8 +229,7 @@ export const commandRegistry = {
             "Slash command only (interactive session).",
         ],
         execute: runSessionCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.SHARE]: {
         name: COMMAND_NAMES.SHARE,
@@ -249,8 +244,7 @@ export const commandRegistry = {
             "Saves session as a secret (private) Gist.",
         ],
         execute: runShareCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.EXPORT]: {
         name: COMMAND_NAMES.EXPORT,
@@ -267,8 +261,7 @@ export const commandRegistry = {
             "Default output path is session-<iso-datetime>.html in the current working directory.",
         ],
         execute: runExportCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.PLANS]: {
         name: COMMAND_NAMES.PLANS,
@@ -283,8 +276,8 @@ export const commandRegistry = {
             "Shows status, classification, complexity, summary, and creation time.",
         ],
         execute: runPlansCommand,
-        isSlash: false,
-        isCli: true,
+        surfaces: ["cli"],
+        cliFlag: "boolean",
     },
     [COMMAND_NAMES.SLEEP]: {
         name: COMMAND_NAMES.SLEEP,
@@ -301,8 +294,8 @@ export const commandRegistry = {
             "You can also run /sleep directly inside the interactive TUI.",
         ],
         execute: runSleepCommand,
-        isSlash: true,
-        isCli: true,
+        surfaces: ["cli", "slash"],
+        cliFlag: "boolean",
     },
     [COMMAND_NAMES.HELP]: {
         name: COMMAND_NAMES.HELP,
@@ -316,8 +309,7 @@ export const commandRegistry = {
         ],
         notes: [],
         execute: runHelpCommand,
-        isSlash: false,
-        isCli: true,
+        surfaces: ["cli"],
     },
     [COMMAND_NAMES.QUIT]: {
         name: COMMAND_NAMES.QUIT,
@@ -327,8 +319,7 @@ export const commandRegistry = {
         usage: ["/quit"],
         notes: [],
         execute: runQuitCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.EXIT]: {
         name: COMMAND_NAMES.EXIT,
@@ -338,8 +329,7 @@ export const commandRegistry = {
         usage: ["/exit"],
         notes: [],
         execute: runQuitCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.INIT]: {
         name: COMMAND_NAMES.INIT,
@@ -356,8 +346,8 @@ export const commandRegistry = {
             "This command is also available as /init inside the interactive TUI.",
         ],
         execute: runInitCommand,
-        isSlash: true,
-        isCli: true,
+        surfaces: ["cli", "slash"],
+        cliFlag: "boolean",
     },
     [COMMAND_NAMES.THEME]: {
         name: COMMAND_NAMES.THEME,
@@ -366,14 +356,15 @@ export const commandRegistry = {
         summary: "Switch the active visual theme.",
         usage: [
             "/theme",
+            `${bin("theme <name>")}`,
+            `${bin("theme --list")}`,
         ],
         notes: [
-            "Slash command only (interactive session).",
             "Inside the TUI, /theme opens an interactive picker with live previews.",
         ],
         execute: runThemeCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["cli", "slash"],
+        cliFlag: "string",
     },
     [COMMAND_NAMES.INSTALL]: {
         name: COMMAND_NAMES.INSTALL,
@@ -389,8 +380,8 @@ export const commandRegistry = {
             "Only theme (.json) resources are registered. Logic extensions (skills/prompts) are ignored.",
         ],
         execute: runInstallCommand,
-        isSlash: false,
-        isCli: true,
+        surfaces: ["cli"],
+        cliFlag: "string",
     },
     [COMMAND_NAMES.REMOVE]: {
         name: COMMAND_NAMES.REMOVE,
@@ -402,8 +393,8 @@ export const commandRegistry = {
         ],
         notes: [],
         execute: runRemoveCommand,
-        isSlash: false,
-        isCli: true,
+        surfaces: ["cli"],
+        cliFlag: "string",
     },
     [COMMAND_NAMES.COMPACT]: {
         name: COMMAND_NAMES.COMPACT,
@@ -419,8 +410,7 @@ export const commandRegistry = {
             "Optionally pass custom instructions to guide the summarization.",
         ],
         execute: runCompactCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
     [COMMAND_NAMES.RELOAD]: {
         name: COMMAND_NAMES.RELOAD,
@@ -435,10 +425,18 @@ export const commandRegistry = {
             "Refreshes memories, HARNS.md, prompt templates, skills, model settings, and themes.",
         ],
         execute: runReloadCommand,
-        isSlash: true,
-        isCli: false,
+        surfaces: ["slash"],
     },
 };
+
+/**
+ * @param {CommandDefinition} command
+ * @param {"cli" | "slash"} surface
+ * @returns {boolean}
+ */
+export function hasCommandSurface(command, surface) {
+    return command.surfaces.includes(surface);
+}
 
 /**
  * @param {string | undefined} commandName
@@ -455,5 +453,86 @@ export function getCommandDefinition(commandName) {
  * @returns {CommandDefinition[]}
  */
 export function getCliCommandDefinitions() {
-    return Object.values(commandRegistry).filter((command) => command.isCli);
+    return Object.values(commandRegistry).filter((command) => hasCommandSurface(command, "cli"));
+}
+
+/**
+ * @returns {CommandDefinition[]}
+ */
+export function getSlashCommandDefinitions() {
+    return Object.values(commandRegistry).filter((command) => hasCommandSurface(command, "slash"));
+}
+
+/**
+ * @param {CommandDefinition} command
+ * @returns {string[]}
+ */
+export function getCommandInvocationNames(command) {
+    return [command.name, ...(command.aliases || [])];
+}
+
+/**
+ * @returns {string[]}
+ */
+export function getSlashCommandInvocationNames() {
+    return getSlashCommandDefinitions().flatMap(getCommandInvocationNames);
+}
+
+/**
+ * @param {string | undefined} commandName
+ * @returns {CommandDefinition | undefined}
+ */
+export function getSlashCommandDefinition(commandName) {
+    const command = getCommandDefinition(commandName);
+    if (!command || !hasCommandSurface(command, "slash")) return undefined;
+    return command;
+}
+
+/**
+ * @param {CommandDefinition} command
+ * @returns {string[]}
+ */
+function getCliFlagNames(command) {
+    return [...getCommandInvocationNames(command), ...(command.cliFlagAliases || [])];
+}
+
+/**
+ * @returns {{ string: string[], boolean: string[], alias: Record<string, string> }}
+ */
+export function getCliParseConfig() {
+    /** @type {string[]} */
+    const string = [];
+    /** @type {string[]} */
+    const boolean = [];
+    /** @type {Record<string, string>} */
+    const alias = {};
+
+    for (const command of getCliCommandDefinitions()) {
+        if (!command.cliFlag) continue;
+        const target = command.cliFlag === "string" ? string : boolean;
+        const [canonical, ...aliases] = getCliFlagNames(command);
+        target.push(canonical, ...aliases);
+        for (const name of aliases) {
+            alias[name] = canonical;
+        }
+    }
+
+    return { string, boolean, alias };
+}
+
+/**
+ * @param {Record<string, unknown>} parsed
+ * @returns {{ command: CommandDefinition, flagValue: unknown } | null}
+ */
+export function findCliFlagCommand(parsed) {
+    for (const command of getCliCommandDefinitions()) {
+        if (!command.cliFlag) continue;
+        for (const name of getCliFlagNames(command)) {
+            const value = parsed[name] ?? parsed[command.name];
+            if (value === true || typeof value === "string") {
+                return { command, flagValue: value };
+            }
+        }
+    }
+    return null;
 }

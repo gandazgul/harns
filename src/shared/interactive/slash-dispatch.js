@@ -57,10 +57,11 @@ export async function handleSlashCommand(ctx) {
 
     const thisGen = ctx.generationGuard.bump();
 
-    const { commandRegistry } = await import("../../cmd/registry.js");
+    const { commandRegistry, getSlashCommandDefinition } = await import("../../cmd/registry.js");
 
-    if (ctx.builtinNames.has(command) && commandRegistry[command]) {
-        await dispatchBuiltin(ctx, command, args, commandRegistry, thisGen);
+    const builtinCommand = getSlashCommandDefinition(command);
+    if (builtinCommand && ctx.builtinNames.has(builtinCommand.name)) {
+        await dispatchBuiltin(ctx, builtinCommand.name, args, commandRegistry, thisGen);
         return true;
     }
 

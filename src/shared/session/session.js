@@ -363,7 +363,34 @@ export async function listSkills() {
 }
 
 /**
- * Report which HARNS.md files exist in the locations
+ * @param {string} homeDir
+ * @returns {string[]}
+ */
+export function getGlobalAgentMdPaths(homeDir) {
+    if (!homeDir) return [];
+    return [
+        join(homeDir, ".hns", "HARNS.md"),
+        join(homeDir, ".hns", "AGENTS.md"),
+    ];
+}
+
+/**
+ * @param {string} homeDir
+ * @returns {Promise<string>}
+ */
+export async function readGlobalAgentMd(homeDir) {
+    for (const path of getGlobalAgentMdPaths(homeDir)) {
+        try {
+            return await Deno.readTextFile(path);
+        } catch {
+            // Try next candidate.
+        }
+    }
+    return "";
+}
+
+/**
+ * Report which instruction files exist in the locations
  * `assembleFinalSystemPrompt` reads from. Used by the boot banner to show
  * the user what context was actually injected into the system prompt.
  *
@@ -373,13 +400,10 @@ export async function listLoadedAgentMdFiles() {
     /** @type {{ path: string, source: "home" | "local" }[]} */
     const results = [];
 
-    if (HOME_DIR) {
-        const homePath = join(HOME_DIR, ".hns", "HARNS.md");
-        const fallbackPath = join(HOME_DIR, ".pi", "agent", "HARNS.md");
+    for (const homePath of getGlobalAgentMdPaths(HOME_DIR)) {
         if (await fileExists(homePath)) {
             results.push({ path: homePath, source: "home" });
-        } else if (await fileExists(fallbackPath)) {
-            results.push({ path: fallbackPath, source: "home" });
+            break;
         }
     }
 
@@ -625,15 +649,7 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
     let globalAgentsMd = "";
     const homeDir = Deno.env.get("HOME") || "";
     if (homeDir) {
-        try {
-            globalAgentsMd = await Deno.readTextFile(join(homeDir, ".hns", "HARNS.md"));
-        } catch {
-            try {
-                globalAgentsMd = await Deno.readTextFile(join(homeDir, ".pi", "agent", "HARNS.md"));
-            } catch {
-                globalAgentsMd = "";
-            }
-        }
+        globalAgentsMd = await readGlobalAgentMd(homeDir);
     }
     finalSystemPrompt = finalSystemPrompt.replace("{{GLOBAL_AGENTSMD}}", globalAgentsMd);
 

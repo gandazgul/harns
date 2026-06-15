@@ -9,12 +9,11 @@
 import process from "node:process";
 import {
     DefaultPackageManager,
-    getAgentDir,
     getMarkdownTheme as upstreamGetMarkdownTheme,
     getSelectListTheme as upstreamGetSelectListTheme,
     Theme,
 } from "@earendil-works/pi-coding-agent";
-import { getSettingsManager } from "../settings.js";
+import { getSettingsDir, getSettingsManager } from "../settings.js";
 
 /** @typedef {import('@earendil-works/pi-coding-agent').Theme} ThemeInstance */
 
@@ -277,7 +276,7 @@ export async function discoverAndRegisterThemes() {
     const settings = getSettingsManager();
     const packageManager = new DefaultPackageManager({
         cwd: Deno.cwd(),
-        agentDir: getAgentDir(),
+        agentDir: getSettingsDir("global"),
         settingsManager: settings,
     });
 

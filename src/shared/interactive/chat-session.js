@@ -13,7 +13,7 @@ import { createUiApi } from "../ui/api.js";
 import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
 import { ensureRootAgentSession, listPromptTemplates, listSkills, steerRootSession } from "../session/session.js";
 import { ensureMnemosyneBinary } from "../runtime-preflight.js";
-import { commandRegistry } from "../../cmd/registry.js";
+import { commandRegistry, getCommandInvocationNames, getSlashCommandDefinitions } from "../../cmd/registry.js";
 import { AGENTS, COMMAND_NAMES } from "../../constants.js";
 import { getAgentDisplayName, listAvailableAgents } from "../session/agents.js";
 import { getModelRegistry } from "../models/model-registry.js";
@@ -290,9 +290,7 @@ export function resolveTemplateModel(templateModel, modelRegistry) {
  */
 export async function startInteractiveSession(initialUserRequest, onMessage, options = {}) {
     CHAT_BUILTIN_SLASH_NAMES = new Set(
-        Object.values(commandRegistry)
-            .filter((command) => command.isSlash)
-            .map((command) => command.name),
+        getSlashCommandDefinitions().map((command) => command.name),
     );
 
     const rootSessionManager = await createRootSessionManager(options.sessionStartMode || "new", Deno.cwd());
@@ -582,8 +580,13 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     }
 
     // ── Build autocomplete AFTER auto-offer (so /init removal is reflected) ──
-    const invokablePromptTemplates = promptTemplates.filter((template) => !CHAT_BUILTIN_SLASH_NAMES.has(template.name));
-    const blockedPromptTemplates = promptTemplates.filter((template) => CHAT_BUILTIN_SLASH_NAMES.has(template.name));
+    const builtinSlashInvocationNames = new Set(
+        Array.from(CHAT_BUILTIN_SLASH_NAMES).flatMap((name) => getCommandInvocationNames(commandRegistry[name])),
+    );
+    const invokablePromptTemplates = promptTemplates.filter((template) =>
+        !builtinSlashInvocationNames.has(template.name)
+    );
+    const blockedPromptTemplates = promptTemplates.filter((template) => builtinSlashInvocationNames.has(template.name));
     /** @type {Map<string, (typeof invokablePromptTemplates)[number]>} */
     const promptTemplateByName = new Map(invokablePromptTemplates.map((template) => [template.name, template]));
 

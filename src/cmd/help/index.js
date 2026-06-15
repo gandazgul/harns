@@ -24,8 +24,10 @@ export function printGlobalHelp() {
     console.log(`  ${CLI_BIN} <command> [args]\n`);
 
     console.log("Commands:");
-    for (const command of getCliCommandDefinitions()) {
-        console.log(`  ${command.name.padEnd(8)} ${command.summary}`);
+    const commands = getCliCommandDefinitions();
+    const nameWidth = Math.max(...commands.map((command) => command.name.length));
+    for (const command of commands) {
+        console.log(`  ${command.name.padEnd(nameWidth)} ${command.summary}`);
     }
 
     console.log("\nGlobal flags:");
