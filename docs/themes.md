@@ -51,7 +51,9 @@ hns install <source>
 
 > [!IMPORTANT]
 > **Theme-only constraints**: Harns only registers `.json` theme files found within these packages. Any other resources
-> (logic extensions, skills, prompts) are ignored; `hns install` reports the count so you know what was skipped.
+> (logic extensions, skills, prompts) are ignored; `hns install` reports the count so you know what was skipped. Skills
+> are intentionally handled by the wider skill ecosystem instead: Harns discovers compatible skills from
+> `~/.agents/skills`, `~/.hns/skills`, local `.hns/skills`, and bundled `src/skills`.
 
 ### Removing Themes
 

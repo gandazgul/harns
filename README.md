@@ -169,6 +169,22 @@ from the same registry plus installed prompt templates and skills.
 Prompt templates from `src/prompt-templates/`, `~/.hns/prompts/`, and `.hns/prompts/` also become slash commands when
 they do not collide with built-ins. Bundled skills can be invoked as `/skill:<name>`.
 
+## Skills
+
+Harns intentionally focuses on skill discovery and invocation rather than becoming another skill package manager. It
+loads skills from these locations, in priority order:
+
+1. Local project skills: `<repo>/.hns/skills`
+2. Home skills: `~/.hns/skills`
+3. Bundled skills: `src/skills`
+4. External ecosystem skills: `~/.agents/skills`
+
+Each skill lives in a directory with a `SKILL.md` file. Skills are advertised to agents by name and description, and the
+full instructions are injected only when a user invokes the skill with `/skill:<name>`.
+
+External tools can own skill installation and updates. Harns should interoperate with that ecosystem by reading
+`~/.agents/skills`, making loaded skills visible, and providing clear invocation behavior.
+
 ## Plans
 
 Plans are markdown files with YAML front matter in `plans/`. Harns records:
@@ -233,6 +249,8 @@ hns remove <source>
 ```
 
 Only JSON theme files are registered. Logic extensions, JavaScript, prompts, and skills inside packages are ignored.
+Install skills with whichever external skill tooling you prefer; Harns reads compatible skills from `~/.agents/skills`
+and its local/home/bundled skill directories.
 
 Switch themes inside the TUI with `/theme`; the picker previews themes live and persists the selected theme.
 
