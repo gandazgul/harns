@@ -28,12 +28,12 @@ done with the right amount of ceremony.
 - **Completion has a handshake.** Execution agents are expected to call `task_completed`; for saved plan execution,
   Harns treats that as the strong signal before running validation.
 - **Validation is built into plan workflows.** After completed `FEATURE` or `PROJECT` plan work, Harns runs the
-  configured local verification command and then a semantic review loop against the original plan.
+  configured local validation command and then a semantic review loop against the original plan.
 - **Context is durable.** Sessions live under `~/.hns/sessions/`, settings under `~/.hns/settings.json`, plans in the
   repo, and Mnemosyne keeps recallable project and global memory.
 
-Use Harns when you want an agent workflow that leaves durable plans, review points, verification notes, and a clear
-record of why each change happened. Use a lighter harness when you only want a one-shot chat wrapper around edit tools.
+Use Harns when you want an agent workflow that leaves durable plans, review points, validation notes, and a clear record
+of why each change happened. Use a lighter harness when you only want a one-shot chat wrapper around edit tools.
 
 ## High-Level Flow
 
@@ -53,7 +53,7 @@ flowchart TD
     PA -->|yes| E[Engineer executes approved plan]
     PA -->|no| SP[Saved plan]
     E --> TC2{task_completed?}
-    TC2 -->|yes| V2[Local verification + semantic review]
+    TC2 -->|yes| V2[Workflow Validation: local validation + semantic review]
 
     R -->|PROJECT| A[Architect writes design plan]
     A --> PR2[Plannotator review]
@@ -62,7 +62,8 @@ flowchart TD
     S --> PX{Proceed now?}
     PX -->|yes| T[Engineer/Tester/Doc Writer tasks run by dependency order]
     PX -->|no| SP
-    T --> V3[Local verification + semantic review]
+    T --> IP[Final tester Integration Point]
+    IP --> V3[Workflow Validation: local validation + semantic review]
 
     SP --> LP[hns load-plan]
 ```
@@ -303,7 +304,7 @@ Confirm the compiled Plannotator package can resolve:
 1. Create a branch.
 2. Make focused changes.
 3. Run `deno task ci`.
-4. Open a PR with a summary, affected flow (`QUICK_FIX`, `FEATURE`, or `PROJECT`), and verification notes.
+4. Open a PR with a summary, affected flow (`QUICK_FIX`, `FEATURE`, or `PROJECT`), and validation notes.
 
 ## License
 

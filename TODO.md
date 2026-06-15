@@ -1,11 +1,5 @@
 # TODO
 
-- [x] edit should automatically return the file or a 1000 line chunk if write fails.
-- [x] Add this tool multi_replace_file_content
-- [ ] when using /resume on a long session (we have to define long but probably more than 50% of the small models
-      contexts) offer to compact it before loading it.
-  - [ ] resume TUI looks weird I think blocks are not compacted
-- [x] optionally, on by default disable with setting, load skills in ~/.agents/skills
 - [ ] allow installing skills from a package like themes. First prompt the user saying that skills should be installed
       to ~/.agents/skills by skill management tools (e.g. npx skills@latest add). Advise that this install will be harns
       specific. If yes, then proceed with the install.
@@ -19,8 +13,6 @@
       execution again.
 - [ ] Plan archiving: move old plans (e.g., completed > N days) into `plans/archive/` so the active plans list stays
       short. Surface archived plans only on explicit request.
-- [ ] change the plans statuses: draft -> feedback/approved -> in_progress -> in_review -> completed -> archived.
-      Loading the plan changes it back to draft or in_progress.
 - [ ] Look at mastra framework to see if we can incorporate it for better plan management and execution control.
 - [ ] when we want to trully restrict an agent's write/edit access we should invoke bash commands with a user that has
       no write permissions on the codebase. This way even if the agent tries to use bash to modify files, it will be

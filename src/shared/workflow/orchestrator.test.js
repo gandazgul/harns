@@ -20,12 +20,8 @@ Deno.test("dispatchPostTriage does not force Engineer after FEATURE/PROJECT vali
 
 Deno.test("dispatchPostTriage restores plan owner when FEATURE/PROJECT execution is incomplete", async () => {
     const source = await Deno.readTextFile(new URL("./orchestrator.js", import.meta.url));
-    assertEquals(
-        source.includes(
-            "} else {\n                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);",
-        ),
-        true,
-    );
+    assertEquals(source.includes('executionDecision.kind === "stay_with_agent"'), true);
+    assertEquals(source.includes("setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);"), true);
 });
 
 Deno.test("dispatchPostTriage skips workflow validation for completed QUICK_FIX", async () => {

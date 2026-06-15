@@ -49,7 +49,11 @@ fails or produces invalid Tasks, the Plan stays `approved` and records no execut
 ## Workflow Validation
 
 Workflow Validation applies only to FEATURE and PROJECT Plans. It promotes `implemented` to `verified` only after local
-verification and semantic review pass.
+validation and semantic review pass.
+
+For PROJECT Plans, the final tester-owned Task is the Integration Point. It checks cross-slice integration inside the
+Task graph and may run the project's validation command, but it does not promote the Plan to `verified`. Only Workflow
+Validation is the independent acceptance gate for `verified`.
 
 For FEATURE and PROJECT Plans, the workflow diff must contain implementation changes. An empty scoped diff, or a diff
 that only changes Plan documents under `plans/`, is a validation failure. QUICK_FIX workflows are operational and are
@@ -99,5 +103,6 @@ the semantic review diff is scoped to the original execution attempt rather than
 - `failed` only occurs after work started from `ready_for_work`.
 - `implemented` means implementation finished, even if validation later fails.
 - FEATURE and PROJECT validation cannot pass with an empty or Plan-document-only workflow diff.
+- A PROJECT Task graph must finish with an Integration Point before Workflow Validation starts.
 - `verified` is the terminal success status.
 - Workflow code should record Plan Events instead of directly mutating Plan Status.

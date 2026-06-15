@@ -76,7 +76,7 @@ Deno.test("extractTasks parses write scope column when present", () => {
 | Task | Assignee | Dependencies | Write Scope | Description |
 |---|---|---|---|---|
 | 1 | engineer | None | src/shared/workflow | Implement workflow scheduling |
-| 2 | tester | 1 | none | Run verification |
+| 2 | tester | 1 | none | Integration Point: run validation |
 `;
     const tasks = extractTasks(content);
     assertEquals(tasks[0], {
@@ -91,7 +91,7 @@ Deno.test("extractTasks parses write scope column when present", () => {
         assignee: "tester",
         dependencies: "1",
         writeScope: "none",
-        description: "Run verification",
+        description: "Integration Point: run validation",
     });
 });
 
@@ -150,22 +150,34 @@ Deno.test("extractTasks throws error when table is empty", () => {
 
 // ── validateProjectTasks ──────────────────────────────────────────
 
-Deno.test("validateProjectTasks accepts a valid PROJECT task DAG with final tester verification", () => {
+Deno.test("validateProjectTasks accepts a valid PROJECT task DAG with final Integration Point", () => {
     validateProjectTasks([
         { task: 1, assignee: "engineer", dependencies: "none", description: "Implement slice" },
         { task: 2, assignee: "doc-writer", dependencies: "none", description: "Document user-facing behavior" },
-        { task: 3, assignee: "tester", dependencies: "1, 2", description: "Run full verification command" },
+        { task: 3, assignee: "tester", dependencies: "1, 2", description: "Integration Point: run validation" },
     ]);
 });
 
-Deno.test("validateProjectTasks rejects missing final tester verification task", () => {
+Deno.test("validateProjectTasks rejects missing final tester Integration Point", () => {
     assertThrows(
         () =>
             validateProjectTasks([
                 { task: 1, assignee: "engineer", dependencies: "none", description: "Implement slice" },
             ]),
         Error,
-        "final PROJECT task must be assigned to tester",
+        "final PROJECT task must be assigned to tester as the Integration Point",
+    );
+});
+
+Deno.test("validateProjectTasks rejects final tester task that is not labeled Integration Point", () => {
+    assertThrows(
+        () =>
+            validateProjectTasks([
+                { task: 1, assignee: "engineer", dependencies: "none", description: "Implement slice" },
+                { task: 2, assignee: "tester", dependencies: "1", description: "Run validation" },
+            ]),
+        Error,
+        "identify the task as the Integration Point",
     );
 });
 
@@ -174,7 +186,7 @@ Deno.test("validateProjectTasks rejects invalid assignees", () => {
         () =>
             validateProjectTasks([
                 { task: 1, assignee: "planner", dependencies: "none", description: "Implement slice" },
-                { task: 2, assignee: "tester", dependencies: "1", description: "Run verification" },
+                { task: 2, assignee: "tester", dependencies: "1", description: "Integration Point: run validation" },
             ]),
         Error,
         "invalid assignee",
@@ -186,7 +198,7 @@ Deno.test("validateProjectTasks rejects cyclic dependencies", () => {
         () =>
             validateProjectTasks([
                 { task: 1, assignee: "engineer", dependencies: "2", description: "Implement slice" },
-                { task: 2, assignee: "tester", dependencies: "1", description: "Run verification" },
+                { task: 2, assignee: "tester", dependencies: "1", description: "Integration Point: run validation" },
             ]),
         Error,
         "cycle",
@@ -415,7 +427,13 @@ Deno.test("ensureSlicerTasks skips slicer when Tasks already parseable (resumed 
                 Promise.resolve("## Tasks\n| Task | A | B | C |\n|-|-|-|-|\n| 1 | engineer | none | x |"),
             extractTasks: () => [
                 { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/x.js", description: "x" },
-                { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Run verification" },
+                {
+                    task: 2,
+                    assignee: "tester",
+                    dependencies: "1",
+                    writeScope: "none",
+                    description: "Integration Point: run validation",
+                },
             ],
             runSlicerAgent: () => {
                 slicerCalls++;
@@ -447,7 +465,7 @@ Deno.test("ensureSlicerTasks invokes slicer when Tasks missing", async () => {
                         assignee: "tester",
                         dependencies: "1",
                         writeScope: "none",
-                        description: "Run verification",
+                        description: "Integration Point: run validation",
                     },
                 ];
             },

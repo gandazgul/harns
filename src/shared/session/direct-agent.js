@@ -12,6 +12,10 @@ import {
     readLatestTaskCompletedOutcome as readLatestTaskCompletedOutcomeFn,
 } from "../workflow/workflow.js";
 import {
+    decidePostExecution as decidePostExecutionFn,
+    decidePostPlanning as decidePostPlanningFn,
+} from "../workflow/decisions.js";
+import {
     clearActiveExecutionWorkflow,
     consumePendingSwitchHandoff,
     getActiveExecutionWorkflow,
@@ -41,6 +45,8 @@ import { CWD } from "../../constants.js";
  *   runRootTurn?: typeof runRootTurnFn,
  *   readLatestPlanOutcome?: typeof readLatestPlanOutcomeFn,
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcomeFn,
+ *   decidePostPlanning?: typeof decidePostPlanningFn,
+ *   decidePostExecution?: typeof decidePostExecutionFn,
  *   executePlan?: typeof executePlanFn,
  *   runValidationLoop?: typeof runValidationLoop,
  *   setActiveAgent?: typeof setActiveAgentFn,
@@ -52,6 +58,8 @@ export function createDirectAgentHandler(agentName, __deps) {
     const runRootTurn = __deps?.runRootTurn || runRootTurnFn;
     const readLatestPlanOutcome = __deps?.readLatestPlanOutcome || readLatestPlanOutcomeFn;
     const readLatestTaskCompletedOutcome = __deps?.readLatestTaskCompletedOutcome || readLatestTaskCompletedOutcomeFn;
+    const decidePostPlanning = __deps?.decidePostPlanning || decidePostPlanningFn;
+    const decidePostExecution = __deps?.decidePostExecution || decidePostExecutionFn;
     const executePlan = __deps?.executePlan || executePlanFn;
     const runValidationLoopImpl = __deps?.runValidationLoop || runValidationLoop;
     const setActiveAgent = __deps?.setActiveAgent || setActiveAgentFn;
@@ -75,12 +83,23 @@ export function createDirectAgentHandler(agentName, __deps) {
         // Other outcomes (saved/feedback/canceled/repair_required) self-terminate
         // appropriately inside plan_written.
         const outcome = readLatestPlanOutcome(messages);
-        if (outcome && outcome.outcome === "approved_execute" && outcome.planName) {
+        const planningDecision = decidePostPlanning(outcome, {
+            planningAgentName: agentName,
+            fallbackTriageMeta: {},
+        });
+        if (planningDecision.kind === "execute_plan") {
+            const planName = /** @type {string} */ (planningDecision.payload.planName);
+            const triageMeta = /** @type {import('../../tools/plan-written.js').TriageMeta} */ (
+                planningDecision.payload.triageMeta || {}
+            );
+            const tasks = /** @type {import('../workflow/workflow.js').PlanOutcomeResult["tasks"]} */ (
+                planningDecision.payload.tasks
+            );
             const executionResult = await executePlan(
-                outcome.planName,
-                outcome.triageMeta || {},
+                planName,
+                triageMeta,
                 uiAPI,
-                outcome.tasks,
+                tasks,
                 sessionManager,
             );
 
@@ -88,21 +107,27 @@ export function createDirectAgentHandler(agentName, __deps) {
 
             let planContent = "";
             try {
-                planContent = await Deno.readTextFile(join(CWD, "plans", `${outcome.planName}.md`));
+                planContent = await Deno.readTextFile(join(CWD, "plans", `${planName}.md`));
             } catch {
                 // Ignore in tests or if the file doesn't exist
             }
 
-            if (executionResult?.executionComplete) {
+            const executionDecision = decidePostExecution(executionResult, {
+                planName,
+                triageMeta,
+                executionAgentName: agentName,
+            });
+
+            if (executionDecision.kind === "run_validation") {
                 await runValidationLoopImpl({
-                    planName: outcome.planName,
+                    planName,
                     planContent,
-                    triageMeta: outcome.triageMeta || {},
+                    triageMeta,
                     uiAPI,
                     sessionManager,
                     finalAgentName: agentName,
                 });
-            } else if (executionResult && executionResult.executionComplete === false) {
+            } else if (executionDecision.kind === "stay_with_agent") {
                 setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
             }
             return;

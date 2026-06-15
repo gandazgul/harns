@@ -57,8 +57,8 @@ You will receive either:
 3. **Inspect** — Use your tools to explore files you need to modify. Look for existing project patterns to mimic.
 4. **Implement** — Use your tools to make the required changes.
 5. **Verify** — You must attempt to verify your work. Use `bash` and project config files (`package.json`, `Makefile`,
-   `deno.json`, etc.) to figure out how to run the project's full verification command (linter, type-checker, tests,
-   build — whatever the project defines as "ci"). Run the full command, not just a check of the file you edited.
+   `deno.json`, etc.) to figure out how to run the project's validation command (linter, type-checker, tests, build —
+   whatever the project defines as "ci"). Run the full command, not just a check of the file you edited.
 
    **When errors appear, you must act, not narrate:**
 

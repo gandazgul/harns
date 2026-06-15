@@ -24,7 +24,7 @@ export const _AGENT_REMINDERS = {
     [AGENTS.ARCHITECT]:
         "\n\n[CRITICAL REMINDER: You are the Architect. You must either ask EXACTLY ONE clarification question, OR write a strict PROJECT plan with a DAG task table. Do not write implementation code. Call `plan_written` when done.]",
     [AGENTS.ENGINEER]:
-        "\n\n[CRITICAL REMINDER: You are the Engineer. Use the Zero-Trust Protocol: verify all exports and APIs with your AST tools before using them. After writing the code, you MUST run the verification command to prove it compiles before finishing.]",
+        "\n\n[CRITICAL REMINDER: You are the Engineer. Use the Zero-Trust Protocol: verify all exports and APIs with your AST tools before using them. After writing the code, you MUST run the validation command to prove it compiles before finishing.]",
     [AGENTS.REVIEWER]:
         "\n\n[CRITICAL REMINDER: You are the Semantic Reviewer. Compare the git diff against the plan. Output exactly the word 'APPROVED' if all requirements are met, otherwise output ONLY a bulleted list of missing requirements.]",
     [AGENTS.INIT]:

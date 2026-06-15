@@ -33,6 +33,7 @@ import {
     popAgentInfo,
     pushAgentInfo,
 } from "../session/session-state.js";
+import { decidePostExecution, decidePostPlanning } from "./decisions.js";
 import { executePlan, readLatestTaskCompletedOutcome, runPlanningAgent } from "./workflow.js";
 import { runValidationLoop, shouldRunWorkflowValidation } from "./validation.js";
 
@@ -97,6 +98,8 @@ function buildTriageBlock(triage) {
  *   applyPendingRootSwap?: typeof applyPendingRootSwap,
  *   createDirectAgentHandler?: typeof createDirectAgentHandler,
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcome,
+ *   decidePostPlanning?: typeof decidePostPlanning,
+ *   decidePostExecution?: typeof decidePostExecution,
  *   runRootTurn?: typeof runRootTurn,
  *   runValidationLoop?: typeof runValidationLoop,
  *   setActiveAgent?: typeof setActiveAgent,
@@ -108,6 +111,8 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
     const triageBlock = buildTriageBlock(triage);
     const decoratedRequest = ["## User Request", userRequest, "", triageBlock].join("\n");
     const runValidationLoopImpl = __deps?.runValidationLoop || runValidationLoop;
+    const decidePostPlanningImpl = __deps?.decidePostPlanning || decidePostPlanning;
+    const decidePostExecutionImpl = __deps?.decidePostExecution || decidePostExecution;
 
     if (triage.classification === "QUICK_FIX") {
         const operatorDisplay = getAgentDisplayName(AGENTS.OPERATOR);
@@ -167,32 +172,53 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             });
             consumePendingSwitchHandoff(); // Drain any switch requests from planner
 
-            if (outcome.outcome !== "approved_execute" || !outcome.planName) {
+            const decision = decidePostPlanningImpl(outcome, {
+                planningAgentName: agentName,
+                fallbackTriageMeta: triage,
+            });
+
+            if (decision.kind === "stay_with_agent" || decision.kind === "save_plan") {
                 setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
                 shouldPop = false;
                 return;
             }
 
+            if (decision.kind !== "execute_plan") {
+                uiAPI.appendSystemMessage(`Workflow halted: ${String(decision.payload.reason || "unknown reason")}`);
+                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                shouldPop = false;
+                return;
+            }
+
+            const planName = /** @type {string} */ (decision.payload.planName);
+            const decisionTriageMeta = /** @type {TriageOutcome} */ (decision.payload.triageMeta || triage);
+            const tasks = /** @type {import('./workflow.js').PlanOutcomeResult["tasks"]} */ (decision.payload.tasks);
+
             const executionResult = await executePlan(
-                outcome.planName,
-                outcome.triageMeta || triage,
+                planName,
+                decisionTriageMeta,
                 uiAPI,
-                outcome.tasks,
+                tasks,
                 sessionManager,
             );
-            if (executionResult.executionComplete) {
-                const plan = await loadPlan(CWD, outcome.planName);
-                if (shouldRunWorkflowValidation(outcome.triageMeta || triage)) {
+            const executionDecision = decidePostExecutionImpl(executionResult, {
+                planName,
+                triageMeta: decisionTriageMeta,
+                executionAgentName: agentName,
+            });
+            if (executionDecision.kind === "run_validation") {
+                const plan = await loadPlan(CWD, planName);
+                if (shouldRunWorkflowValidation(decisionTriageMeta)) {
                     await runValidationLoopImpl({
-                        planName: outcome.planName,
+                        planName,
                         planContent: plan?.markdown || "",
-                        triageMeta: outcome.triageMeta || triage,
+                        triageMeta: decisionTriageMeta,
                         uiAPI,
                         sessionManager,
                         finalAgentName: agentName,
                     });
                 }
-            } else {
+            } else if (executionDecision.kind === "stay_with_agent") {
                 setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
             }
         } finally {
