@@ -7,9 +7,7 @@ Refactor-first (before testing) candidates:
 - chat-session.js: biggest one. startInteractiveSession owns TUI construction, boot flow, init prompt, autocomplete,
   queueing, steering, cancellation, bash, slash commands, and submission processing. It wants extraction into smaller
   controllers before test growth.
-- tui.js: very low function/line coverage because it is mostly terminal wiring around the live TUI runtime.
 - root-session.js: session manager persistence/bootstrap is hard-coupled to concrete external session APIs.
-- theme.js: mutable global theme registry/state makes isolated tests awkward.
 - workflow.js: improved, but still large; splitting executor, prompts, and task scheduling would make the remaining gaps
   much easier to cover.
 

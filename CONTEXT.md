@@ -205,6 +205,9 @@ Collection, namespace
 **Cymbal**: The external code indexing and search system exposed to agents as codebase tools. _Avoid_: Search layer,
 indexer
 
+**RTK**: The external command-output compression proxy Harns uses as a default-on, fail-open runtime optimization for
+eligible shell commands. _Avoid_: Required tool, agent tool, search tool
+
 **Prompt Template**: A layered markdown template that defines a slash command available in the TUI. _Avoid_: Slash
 command definition, prompt command
 
