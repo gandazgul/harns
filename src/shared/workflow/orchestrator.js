@@ -128,8 +128,6 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
 
     if (triage.classification === "QUICK_FIX") {
         const operatorDisplay = getAgentDisplayName(AGENTS.OPERATOR);
-        uiAPI.appendSystemMessage(`=== Phase B: ${operatorDisplay} (Execute) ===`);
-
         const runRootTurnImpl = __deps?.runRootTurn || runRootTurn;
         const readLatestTaskCompletedOutcomeImpl = __deps?.readLatestTaskCompletedOutcome ||
             readLatestTaskCompletedOutcome;
@@ -158,12 +156,6 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         const isFeature = triage.classification === "FEATURE";
         const agentName = isFeature ? AGENTS.PLANNER : AGENTS.ARCHITECT;
         const displayName = getAgentDisplayName(agentName);
-        const phaseLabel = isFeature
-            ? `FEATURE detected. Handing off to ${displayName}...`
-            : `PROJECT detected. Handing off to ${displayName} for targeted deep exploration + planning...`;
-
-        uiAPI.appendSystemMessage(phaseLabel);
-        uiAPI.appendSystemMessage(`=== Phase B: ${displayName} ===`);
 
         const getConfiguredAgentModelImpl = __deps?.getConfiguredAgentModel ||
             (await import("../session/session.js")).getConfiguredAgentModel;

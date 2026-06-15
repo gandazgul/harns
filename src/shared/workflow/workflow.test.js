@@ -526,18 +526,18 @@ Deno.test("runSlicerAgent surfaces non-Error throws as string", async () => {
     assertEquals(result.error, "string failure");
 });
 
-Deno.test("runSlicerAgent reports progress via uiAPI when present", async () => {
+Deno.test("runSlicerAgent handles success via uiAPI when present", async () => {
     /** @type {string[]} */
     const messages = [];
     const uiAPI = /** @type {any} */ ({
         appendSystemMessage: (/** @type {string} */ msg) => messages.push(String(msg)),
     });
-    await runSlicerAgent({
+    const result = await runSlicerAgent({
         planName: "p",
         uiAPI,
         __deps: { runAgentSession: () => Promise.resolve([]) },
     });
-    assertEquals(messages.some((m) => m.includes("Running Slicer")), true);
+    assertEquals(result.ok, true);
 });
 
 Deno.test("runSlicerAgent reports failure via uiAPI when present", async () => {
