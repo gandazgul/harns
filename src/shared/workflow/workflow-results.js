@@ -41,11 +41,16 @@ export function extractAssistantOutput(messages) {
 /**
  * Read the latest plan_written tool result's outcome from a message stream.
  *
+ * When `fromIndex` is provided, only messages at or after that index are searched,
+ * preventing stale outcomes from earlier turns from being picked up.
+ *
  * @param {import('@earendil-works/pi-agent-core').AgentMessage[]} messages
+ * @param {number} [fromIndex] - Only search messages from this index onwards (exclusive lower bound)
  * @returns {PlanOutcomeResult | null}
  */
-export function readLatestPlanOutcome(messages) {
-    for (let i = messages.length - 1; i >= 0; i--) {
+export function readLatestPlanOutcome(messages, fromIndex) {
+    const start = fromIndex != null ? fromIndex : 0;
+    for (let i = messages.length - 1; i >= start; i--) {
         const msg = messages[i];
         if (
             msg && "role" in msg && msg.role === "toolResult" &&

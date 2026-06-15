@@ -187,12 +187,36 @@ export async function submitPlanForReview({
         }
 
         // 6. Update status
+        // If the plan is in a terminal/completed status (e.g. verified, implemented),
+        // reopen it first so the review event can transition cleanly.
+        const STATUS_ALLOWS_REVIEW = attrs.status === "draft" ||
+            attrs.status === "feedback" ||
+            attrs.status === "approved";
+
+        if (!STATUS_ALLOWS_REVIEW) {
+            try {
+                await recordPlanEventImpl({
+                    cwd,
+                    planName,
+                    event: "review_reopened",
+                    currentStatus: attrs.status,
+                    details: { triageMeta },
+                });
+            } catch (_reopenErr) {
+                // If review_reopened also fails, fall back to the original status.
+                // The downstream recordPlanEvent will surface its own error.
+            }
+        }
+
+        // Use the reopened status ("feedback") if we reopened, or the original if already reviewable
+        const postReopenStatus = STATUS_ALLOWS_REVIEW ? attrs.status : "feedback";
+
         if (decision.approved) {
             await recordPlanEventImpl({
                 cwd,
                 planName,
                 event: "review_approved",
-                currentStatus: attrs.status,
+                currentStatus: postReopenStatus,
                 details: { triageMeta },
             });
             uiAPI.appendSystemMessage(`[Harns] ✅ Plan approved: ${planName}`);
@@ -201,7 +225,7 @@ export async function submitPlanForReview({
                 cwd,
                 planName,
                 event: "review_feedback",
-                currentStatus: attrs.status,
+                currentStatus: postReopenStatus,
                 details: { triageMeta, failureReason: decision.feedback },
             });
             uiAPI.appendSystemMessage(`[Harns] Plan returned with feedback: ${planName}`);

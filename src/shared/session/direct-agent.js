@@ -20,6 +20,7 @@ import {
     consumePendingSwitchHandoff,
     getActiveExecutionWorkflow,
     getRootAgentName,
+    getRootAgentSession,
 } from "./session-state.js";
 import { runValidationLoop, shouldRunWorkflowValidation } from "../workflow/validation.js";
 import { setActiveAgent as setActiveAgentFn } from "../interactive/chat-session.js";
@@ -69,6 +70,13 @@ export function createDirectAgentHandler(agentName, __deps) {
         // applied), reuse it. Otherwise fall back to a transient invocation — this can happen
         // before the first applyPendingRootSwap (e.g. mid-turn from a workflow sub-step).
         const useRoot = getRootAgentName() === agentName;
+
+        // Capture the pre-turn message count so we only consider plan_written outcomes
+        // from the current turn. Stale outcomes from earlier turns (e.g. an already-executed
+        // approved_execute) would otherwise trigger duplicate executePlan calls on
+        // follow-up questions.
+        const preTurnCount = useRoot ? getRootAgentSession()?.agent?.state?.messages?.length ?? 0 : 0;
+
         const messages = useRoot
             ? await runRootTurn({ agentName, userRequest, images, uiAPI })
             : await runAgentSession({
@@ -82,7 +90,7 @@ export function createDirectAgentHandler(agentName, __deps) {
         // If the agent's plan_written returned approved_execute, dispatch the plan.
         // Other outcomes (saved/feedback/canceled/repair_required) self-terminate
         // appropriately inside plan_written.
-        const outcome = readLatestPlanOutcome(messages);
+        const outcome = readLatestPlanOutcome(messages, preTurnCount);
         const planningDecision = decidePostPlanning(outcome, {
             planningAgentName: agentName,
             fallbackTriageMeta: {},
