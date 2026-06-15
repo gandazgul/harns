@@ -6,7 +6,7 @@
  * that would shadow a built-in slash command.
  */
 
-import { HOME_DIR } from "../../constants.js";
+import { CWD, HOME_DIR } from "../../constants.js";
 import { listLoadedAgentMdFiles, listSkills } from "../session/session.js";
 
 /**
@@ -25,6 +25,9 @@ function toUserFacingPromptPath(template) {
  * @param {{ path: string, source: "home" | "external" | "local" }} file
  */
 function toUserFacingAgentMdPath(file) {
+    if (CWD && file.path.startsWith(CWD)) {
+        return `.${file.path.slice(CWD.length)}`;
+    }
     if ((file.source === "home" || file.source === "external") && HOME_DIR && file.path.startsWith(HOME_DIR)) {
         return `~${file.path.slice(HOME_DIR.length)}`;
     }

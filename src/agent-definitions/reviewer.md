@@ -7,9 +7,6 @@ tools:
     - ls
     - find
     - grep
-    - bash
-    - user_interview
-    - switch_agent
     - code_search
     - code_show
     - code_outline

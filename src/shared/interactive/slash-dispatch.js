@@ -40,6 +40,16 @@ import { getRootSessionManager } from "../session/session-state.js";
  * @property {(uiAPI: import('../ui/types.js').UiAPI) => Promise<void>} applyPendingRootSwap
  * @property {import('./generation-guard.js').GenerationGuard} generationGuard
  * @property {(cancel: (() => void) | null) => void} registerOperationCancel
+ * @property {{
+ *   abortActiveSession?: typeof abortActiveSession,
+ *   expandPromptTemplate?: typeof expandPromptTemplate,
+ *   expandSkillCommand?: typeof expandSkillCommand,
+ *   runAgentSession?: typeof runAgentSession,
+ *   createDirectAgentHandler?: typeof createDirectAgentHandler,
+ *   getRootSessionManager?: typeof getRootSessionManager,
+ *   commandRegistry?: Record<string, { execute: (args: string[], deps: object) => Promise<void> | void }>,
+ *   getSlashCommandDefinition?: (name: string) => { name: string } | undefined,
+ * }} [__deps]
  */
 
 /**
@@ -57,7 +67,14 @@ export async function handleSlashCommand(ctx) {
 
     const thisGen = ctx.generationGuard.bump();
 
-    const { commandRegistry, getSlashCommandDefinition } = await import("../../cmd/registry.js");
+    const registryDeps = ctx.__deps || {};
+    let commandRegistry = registryDeps.commandRegistry;
+    let getSlashCommandDefinition = registryDeps.getSlashCommandDefinition;
+    if (!commandRegistry || !getSlashCommandDefinition) {
+        const registryModule = await import("../../cmd/registry.js");
+        commandRegistry = commandRegistry || registryModule.commandRegistry;
+        getSlashCommandDefinition = getSlashCommandDefinition || registryModule.getSlashCommandDefinition;
+    }
 
     const builtinCommand = getSlashCommandDefinition(command);
     if (builtinCommand && ctx.builtinNames.has(builtinCommand.name)) {
@@ -105,15 +122,19 @@ async function dispatchBuiltin(ctx, command, args, commandRegistry, thisGen) {
         applyPendingRootSwap,
     } = ctx;
 
+    const deps = ctx.__deps || {};
+    const abortActiveSessionImpl = deps.abortActiveSession || abortActiveSession;
+    const getRootSessionManagerImpl = deps.getRootSessionManager || getRootSessionManager;
+
     registerOperationCancel(() => {
-        abortActiveSession();
+        abortActiveSessionImpl();
     });
 
     try {
         await commandRegistry[command].execute(args, {
             uiAPI,
             editor,
-            sessionManager: getRootSessionManager() || undefined,
+            sessionManager: getRootSessionManagerImpl() || undefined,
             sessionStartedAt,
             tui,
             originalHandleInput,
@@ -148,21 +169,25 @@ async function dispatchSkill(ctx, skill, additionalInstructions, thisGen) {
         chatPromptAgentName,
         generationGuard,
     } = ctx;
+    const deps = ctx.__deps || {};
+    const expandSkillCommandImpl = deps.expandSkillCommand || expandSkillCommand;
+    const runAgentSessionImpl = deps.runAgentSession || runAgentSession;
+    const getRootSessionManagerImpl = deps.getRootSessionManager || getRootSessionManager;
 
     try {
-        const expandedText = await expandSkillCommand(skill.name, additionalInstructions || undefined);
+        const expandedText = await expandSkillCommandImpl(skill.name, additionalInstructions || undefined);
 
         uiAPI.appendUserMessage?.(ctx.userRequest);
         savedImages.forEach((img) => {
             if (uiAPI.appendImage) uiAPI.appendImage(img.base64, img.mimeType);
         });
 
-        await runAgentSession({
+        await runAgentSessionImpl({
             agentName: chatPromptAgentName,
             userRequest: expandedText,
             images: savedImages,
             uiAPI,
-            sessionManager: getRootSessionManager() || undefined,
+            sessionManager: getRootSessionManagerImpl() || undefined,
         });
     } catch (err) {
         if (generationGuard.isCurrent(thisGen)) {
@@ -188,6 +213,11 @@ async function dispatchTemplate(ctx, template, additionalInstructions, thisGen) 
         setActiveAgent,
         generationGuard,
     } = ctx;
+    const deps = ctx.__deps || {};
+    const expandPromptTemplateImpl = deps.expandPromptTemplate || expandPromptTemplate;
+    const runAgentSessionImpl = deps.runAgentSession || runAgentSession;
+    const createDirectAgentHandlerImpl = deps.createDirectAgentHandler || createDirectAgentHandler;
+    const getRootSessionManagerImpl = deps.getRootSessionManager || getRootSessionManager;
 
     let resolvedTemplateModel = null;
     if (template.model) {
@@ -204,7 +234,7 @@ async function dispatchTemplate(ctx, template, additionalInstructions, thisGen) 
     let expandedText = "";
     try {
         if (template.path) {
-            expandedText = await expandPromptTemplate(template.path, additionalInstructions || undefined);
+            expandedText = await expandPromptTemplateImpl(template.path, additionalInstructions || undefined);
         } else {
             // Fallback just in case path is somehow missing
             expandedText = `/${template.name} ${additionalInstructions}`.trim();
@@ -227,19 +257,19 @@ async function dispatchTemplate(ctx, template, additionalInstructions, thisGen) 
 
     setActiveAgent(
         chatPromptAgentName,
-        createDirectAgentHandler(chatPromptAgentName),
+        createDirectAgentHandlerImpl(chatPromptAgentName),
         uiAPI,
         templateModelValue,
     );
 
     try {
-        await runAgentSession({
+        await runAgentSessionImpl({
             agentName: chatPromptAgentName,
             modelOverride: templateModelValue,
             userRequest: expandedText,
             images,
             uiAPI,
-            sessionManager: getRootSessionManager() || undefined,
+            sessionManager: getRootSessionManagerImpl() || undefined,
         });
     } catch (err) {
         if (generationGuard.isCurrent(thisGen)) {

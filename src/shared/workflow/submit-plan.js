@@ -89,6 +89,12 @@ export function cancelActivePlanReview() {
  * @param {string} opts.planPath - Absolute path to the plan .md file
  * @param {Partial<import('../../plan-store.js').PlanFrontMatter>} [opts.triageMeta] - Triage metadata to ensure in front matter
  * @param {import('../ui/types.js').UiAPI} opts.uiAPI - UI API for output
+ * @param {{
+ *   startPlanReviewServer?: typeof startPlanReviewServer,
+ *   openInDefaultBrowser?: typeof openInDefaultBrowser,
+ *   recordPlanEvent?: typeof recordPlanEvent,
+ *   htmlContent?: string,
+ * }} [opts.__deps]
  * @returns {Promise<PlanReviewResult>}
  */
 export async function submitPlanForReview({
@@ -97,8 +103,12 @@ export async function submitPlanForReview({
     planPath,
     triageMeta,
     uiAPI,
+    __deps,
 }) {
     if (!uiAPI) throw new Error("submitPlanForReview: uiAPI is required");
+    const startPlanReviewServerImpl = __deps?.startPlanReviewServer || startPlanReviewServer;
+    const openInDefaultBrowserImpl = __deps?.openInDefaultBrowser || openInDefaultBrowser;
+    const recordPlanEventImpl = __deps?.recordPlanEvent || recordPlanEvent;
 
     // 1. Read plan
     const planContent = await Deno.readTextFile(planPath);
@@ -126,13 +136,13 @@ export async function submitPlanForReview({
     await Deno.writeTextFile(planPath, planWithFm);
 
     // 3. Use HTML embedded in package exports (compile-safe; no runtime fs lookup).
-    const htmlContent = plannotatorHtml;
+    const htmlContent = __deps?.htmlContent || plannotatorHtml;
 
     uiAPI.appendSystemMessage(`[Harns] Opening plan review UI for: ${planName}`);
     uiAPI.appendSystemMessage(`[Harns] Plan file: ${planPath}`);
 
     // 4. Start review server IN-PROCESS
-    const server = await startPlanReviewServer({
+    const server = await startPlanReviewServerImpl({
         plan: planWithFm,
         htmlContent,
         origin: "harns",
@@ -140,7 +150,7 @@ export async function submitPlanForReview({
 
     uiAPI.appendSystemMessage(`[Harns] Review UI available at: ${server.url}`);
 
-    const opened = await openInDefaultBrowser(server.url);
+    const opened = await openInDefaultBrowserImpl(server.url);
     if (opened) {
         uiAPI.appendSystemMessage(`[Harns] Opened review UI in your default browser.`);
     } else {
@@ -178,7 +188,7 @@ export async function submitPlanForReview({
 
         // 6. Update status
         if (decision.approved) {
-            await recordPlanEvent({
+            await recordPlanEventImpl({
                 cwd,
                 planName,
                 event: "review_approved",
@@ -187,7 +197,7 @@ export async function submitPlanForReview({
             });
             uiAPI.appendSystemMessage(`[Harns] ✅ Plan approved: ${planName}`);
         } else {
-            await recordPlanEvent({
+            await recordPlanEventImpl({
                 cwd,
                 planName,
                 event: "review_feedback",

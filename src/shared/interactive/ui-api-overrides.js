@@ -21,9 +21,22 @@ import { imageTheme } from "../ui/theme.js";
  *   container: import('@earendil-works/pi-tui').Container,
  *   messageList: import('@earendil-works/pi-tui').Container,
  *   setActiveModel: (model: string, provider?: string) => Promise<void> | void,
+ *   __deps?: {
+ *     Image?: typeof Image,
+ *     ModelSelectorComponent?: typeof ModelSelectorComponent,
+ *     getModelRegistry?: typeof getModelRegistry,
+ *     getSettingsManager?: typeof getSettingsManager,
+ *     getActiveModelState?: typeof getActiveModelState,
+ *   },
  * }} deps
  */
-export function installUiApiOverrides({ uiAPI, tui, editor, container, messageList, setActiveModel }) {
+export function installUiApiOverrides({ uiAPI, tui, editor, container, messageList, setActiveModel, __deps }) {
+    const ImageImpl = __deps?.Image || Image;
+    const ModelSelectorComponentImpl = __deps?.ModelSelectorComponent || ModelSelectorComponent;
+    const getModelRegistryImpl = __deps?.getModelRegistry || getModelRegistry;
+    const getSettingsManagerImpl = __deps?.getSettingsManager || getSettingsManager;
+    const getActiveModelStateImpl = __deps?.getActiveModelState || getActiveModelState;
+
     uiAPI.disableInput = () => {
         if (editor) {
             // editor.disableSubmit = true;
@@ -40,9 +53,9 @@ export function installUiApiOverrides({ uiAPI, tui, editor, container, messageLi
 
     uiAPI.showModelSelector = () => {
         return new Promise((resolve) => {
-            const settingsManager = getSettingsManager();
-            const modelRegistry = getModelRegistry();
-            const activeModelState = getActiveModelState();
+            const settingsManager = getSettingsManagerImpl();
+            const modelRegistry = getModelRegistryImpl();
+            const activeModelState = getActiveModelStateImpl();
             const currentModel = modelRegistry.find(activeModelState.provider, activeModelState.model);
 
             const editorIndex = container.children.indexOf(editor);
@@ -62,7 +75,7 @@ export function installUiApiOverrides({ uiAPI, tui, editor, container, messageLi
                 resolve();
             };
 
-            const selector = new ModelSelectorComponent(
+            const selector = new ModelSelectorComponentImpl(
                 tui,
                 currentModel,
                 settingsManager,
@@ -89,7 +102,7 @@ export function installUiApiOverrides({ uiAPI, tui, editor, container, messageLi
 
     uiAPI.appendImage = (base64, mimeType) => {
         if (uiAPI.isOutputSuppressed?.()) return;
-        const img = new Image(base64, mimeType, imageTheme, {
+        const img = new ImageImpl(base64, mimeType, imageTheme, {
             maxWidthCells: 60,
             maxHeightCells: 20,
         });

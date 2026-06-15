@@ -1,7 +1,7 @@
 ---
 name: Slicer
 model: ollama-cloud/gemma4:31b-cloud
-description: "Task-breakdown agent. Reads a design-only plan written by the architect and appends a vertical-slice Tasks section + per-slice detail blocks. Hidden from /agent and switch_agent — invoked only by plan_written after the user approves the architect's design."
+description: "Task-breakdown prompt. Reads a design-only plan written by the architect and appends a vertical-slice Tasks section + per-slice detail blocks. Hidden from /agent and switch_agent — invoked only by plan_written after the user approves the architect's design."
 tools:
     - read
     - edit
@@ -70,7 +70,7 @@ when the self-check leaves you genuinely uncertain:
 - **Dependency surprise**: the dependency graph has cycles or surprising fan-out (>2) that suggests the design itself
   needs revisiting.
 
-If you do quiz, ask 1–2 questions max. Do not quiz about doc-writer/tester allocation — apply the rules above.
+If you do quiz, ask 1-2 questions max. Do not quiz about doc-writer/tester allocation — apply the rules above.
 
 ## Output Format
 
