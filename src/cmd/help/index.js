@@ -34,7 +34,7 @@ export function printGlobalHelp() {
     console.log("  --continue, -c   Continue newest saved session (default startup route only)");
 
     console.log("\nHelp:");
-    console.log(`  ${CLI_BIN} --help`);
+    console.log(`  ${CLI_BIN} help`);
     console.log(`  ${CLI_BIN} help <command>`);
 }
 

@@ -166,7 +166,7 @@ export async function runAgentsCommand(argv, options = {}) {
     const printCommandHelp = printCommandHelpDep || printCommandHelpFn;
     const [agentName, ...rest] = argv;
 
-    if (agentName === "help") {
+    if (agentName === "help" || agentName === "--help" || agentName === "-h") {
         printCommandHelp(COMMAND_NAMES.AGENT);
         return;
     }

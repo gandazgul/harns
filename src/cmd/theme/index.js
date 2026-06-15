@@ -5,6 +5,8 @@
 
 import { discoverAndRegisterThemes, getAvailableThemes, setTheme } from "../../shared/ui/theme.js";
 import { getSettingsManager } from "../../shared/settings.js";
+import { COMMAND_NAMES } from "../../constants.js";
+import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 
 const DEFAULT_THEME = "catppuccin-mocha";
 
@@ -14,8 +16,18 @@ const DEFAULT_THEME = "catppuccin-mocha";
  * @param {import('../../cmd/registry.js').CommandContext} options
  */
 export async function runThemeCommand(argv, options = {}) {
-    const settings = getSettingsManager();
+    const deps = /** @type {{ printCommandHelp?: typeof printCommandHelpFn }} */ (
+        /** @type {import('../registry.js').CommandContext} */ (options).__testDeps || {}
+    );
+    const printCommandHelp = deps.printCommandHelp || printCommandHelpFn;
     const arg = argv[0];
+
+    if (arg === "help" || arg === "--help" || arg === "-h") {
+        printCommandHelp(COMMAND_NAMES.THEME);
+        return;
+    }
+
+    const settings = getSettingsManager();
 
     // --list: print available themes.
     if (arg === "--list") {

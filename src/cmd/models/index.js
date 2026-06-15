@@ -6,6 +6,8 @@
 import { setActiveModel as setActiveModelFn } from "../../shared/interactive/chat-session.js";
 import { getModelRegistry as getModelRegistryFn } from "../../shared/models/model-registry.js";
 import { parseProviderModel as parseProviderModelFn } from "../../shared/models/model-validation.js";
+import { COMMAND_NAMES } from "../../constants.js";
+import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 export { getModelCompletions } from "./getArgumentCompletions.js";
 
 /**
@@ -13,6 +15,7 @@ export { getModelCompletions } from "./getArgumentCompletions.js";
  * @property {typeof getModelRegistryFn} [getModelRegistry]
  * @property {typeof parseProviderModelFn} [parseProviderModel]
  * @property {typeof setActiveModelFn} [setActiveModel]
+ * @property {typeof printCommandHelpFn} [printCommandHelp]
  */
 
 /**
@@ -27,16 +30,24 @@ export async function runModelsCommand(argv, options = {}) {
         getModelRegistry: getModelRegistryDep,
         parseProviderModel: parseProviderModelDep,
         setActiveModel: setActiveModelDep,
+        printCommandHelp: printCommandHelpDep,
     } = deps;
 
     const getModelRegistry = getModelRegistryDep || getModelRegistryFn;
     const parseProviderModel = parseProviderModelDep || parseProviderModelFn;
     const setActiveModel = setActiveModelDep || setActiveModelFn;
+    const printCommandHelp = printCommandHelpDep || printCommandHelpFn;
 
     const { uiAPI, editor } = options;
 
     let targetModel;
     const firstArg = argv[0]?.trim();
+
+    if (firstArg === "help" || firstArg === "--help" || firstArg === "-h") {
+        printCommandHelp(COMMAND_NAMES.MODEL);
+        return;
+    }
+
     const modelRegistry = getModelRegistry();
 
     if (!firstArg) {

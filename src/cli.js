@@ -16,14 +16,8 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { COMMAND_NAMES } from "./constants.js";
-import {
-    commandRegistry,
-    findCliFlagCommand,
-    getCliParseConfig,
-    getCommandDefinition,
-    hasCommandSurface,
-} from "./cmd/registry.js";
-import { printGlobalHelp } from "./cmd/help/index.js";
+import { commandRegistry, getCommandDefinition, hasCommandSurface } from "./cmd/registry.js";
+import { printCommandHelp, printGlobalHelp } from "./cmd/help/index.js";
 import { stopTUI } from "./shared/ui/tui.js";
 
 /**
@@ -48,31 +42,70 @@ function stripLeadingGlobalFlags(argv) {
 }
 
 /**
+ * @param {string} arg
+ * @returns {boolean}
+ */
+function isHelpFlag(arg) {
+    return arg === "--help" || arg === "-h";
+}
+
+/**
+ * @param {string} arg
+ * @returns {boolean}
+ */
+function isGlobalFlag(arg) {
+    return isHelpFlag(arg) || arg === "--continue" || arg === "-c";
+}
+
+/**
+ * Resolve all supported help spellings:
+ * - hns help
+ * - hns --help
+ * - hns help <command>
+ * - hns --help <command>
+ * - hns <command> --help
+ *
+ * @param {string[]} argv
+ * @returns {{ requested: false } | { requested: true, commandName?: string }}
+ */
+function resolveHelpRequest(argv) {
+    if (argv[0] === COMMAND_NAMES.HELP) {
+        const commandName = argv.slice(1).find((arg) => !isHelpFlag(arg));
+        return commandName ? { requested: true, commandName } : { requested: true };
+    }
+
+    if (!argv.some(isHelpFlag)) return { requested: false };
+
+    const commandName = argv.find((arg) => !isGlobalFlag(arg));
+    return commandName ? { requested: true, commandName } : { requested: true };
+}
+
+/**
  * Main CLI entrypoint.
  */
 async function main() {
     const args = Deno.args;
-    const commandParseConfig = getCliParseConfig();
 
     const parsed = parseArgs(args, {
         stopEarly: true,
-        string: commandParseConfig.string,
-        boolean: ["help", "continue", ...commandParseConfig.boolean],
-        alias: { h: "help", c: "continue", ...commandParseConfig.alias },
+        boolean: ["help", "continue"],
+        alias: { h: "help", c: "continue" },
     });
 
     const normalizedArgs = stripLeadingGlobalFlags(args);
     const [firstPositional] = parsed._.map(String);
 
-    const flagCommand = findCliFlagCommand(parsed);
-    if (flagCommand && flagCommand.command.name !== COMMAND_NAMES.ROUTER) {
-        const commandArgs = typeof flagCommand.flagValue === "string" && flagCommand.flagValue
-            ? [flagCommand.flagValue, ...parsed._.map(String)]
-            : [...parsed._.map(String)];
-
-        await flagCommand.command.execute(commandArgs, {
-            sessionStartMode: parsed.continue ? "continue" : "new",
-        });
+    const helpRequest = resolveHelpRequest(args);
+    if (helpRequest.requested) {
+        if (!helpRequest.commandName) {
+            printGlobalHelp();
+            return;
+        }
+        if (!printCommandHelp(helpRequest.commandName)) {
+            console.error(`[Harns] Unknown command for help: ${helpRequest.commandName}`);
+            console.log();
+            Deno.exit(1);
+        }
         return;
     }
 
@@ -96,8 +129,13 @@ async function main() {
         return;
     }
 
+    if (normalizedArgs[0]?.startsWith("-")) {
+        console.error(`[Harns] Unknown option: ${normalizedArgs[0]}`);
+        console.error("Use positional commands, for example: hns <command> [args]");
+        Deno.exit(1);
+    }
+
     // Default command route: `cli.js "<user request>"` => router
-    // this is the same as cli.js --agent router "request"
     await commandRegistry[COMMAND_NAMES.ROUTER].execute(normalizedArgs, {
         sessionStartMode: parsed.continue ? "continue" : "new",
     });
