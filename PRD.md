@@ -13,7 +13,8 @@ memory, and treating the SDLC as a series of intentional gates.
   subsequent turn.
 - **Architectural Intent:** Provide specialized agents (Architect, PM, Coder, etc.) that respect the project's "Gravity
   Centers."
-- **Session Persistence:** Branching, tree-based session states that can span days and survive interruptions.
+- **Session Persistence:** Branching, tree-based session states that can span days, preserve the active agent, and
+  survive interruptions.
 
 ## 3. Core Features & Functional Requirements
 
@@ -29,7 +30,7 @@ paths:
 - **Quick Fix:** Troubleshooting and rapid changes with no upfront decisions. Uses Debugger or Execution agents.
 - **Feature:** Requires upfront clarification and a structured plan. Can be decomposed into dependent tasks.
 - **Project:** Large-scale changes. The **Architect Agent** performs deep vertical-slice exploration and produces a
-  formal proposal with task decomposition.
+  formal proposal; the Slicer/readiness flow turns approved project plans into an executable task DAG.
 
 **Dynamic Agent Switching:** Users can switch the active agent they are conversing with using slash commands (e.g.
 `/resume <plan>`). When `/resume` is invoked, the TUI drops the Router and connects the user directly to the Planner or
@@ -38,10 +39,10 @@ started via `hns resume <plan>`.
 
 #### Routing & Lifecycle Tools
 
-Routing and the planning lifecycle are driven by two **factory tools** that are auto-wired by the session runner. Each
-factory captures TUI/session context (`uiAPI`, `sessionManager`, `triageMeta`) at session-start time, so the same tool
-name is implemented by a different concrete instance per session. The agent never knows the difference; it just calls
-the tool by name.
+Routing and the planning lifecycle are driven by a small set of **declaration tools** plus a session-level orchestrator.
+Factory tools are auto-wired by the session runner and capture TUI/session context (`uiAPI`, `sessionManager`,
+`triageMeta`) at session-start time, so the same tool name is implemented by a different concrete instance per session.
+The agent declares intent by calling the tool; Harns orchestration code decides what happens next.
 
 **`triage_report` (router-only)**
 
@@ -50,50 +51,87 @@ the tool by name.
   `affectedPaths` (ordered vertical-slice).
 - **Behavior on `execute`:**
   1. Emits the triage report to the TUI.
-  2. **Switches the active agent first**, before running any downstream work, so the user-visible agent matches what is
-     about to run.
-  3. Runs the downstream flow on the **same root session**:
-     - `QUICK_FIX` → set active agent to Operator, run `runAgentSession({ agentName: "operator" })` with the user
-       request and the triage block.
-     - `FEATURE` → set active agent to Planner, ensure `plans/`, and call `runPlanningAgent({ agentName: "planner" })`.
-       The planner's `plan_written` tool drives the rest of the lifecycle.
-     - `PROJECT` → identical to `FEATURE` but with the Architect agent and a deeper-exploration prompt; the architect's
-       `plan_written` call must include a populated `tasks` array.
-  4. After the downstream agent finishes, the active agent **stays** on the assigned planner/architect (or operator).
-     There is no automatic restoration to Router; the user can `/agent router` explicitly to triage a new request.
-- **Tool result:** explicit "Your role as Router is finished. Do not generate any further text." This is reinforced by
-  the router prompt; the router must produce zero text after this tool call.
-- **No sub-agents:** all execution happens in the same root session manager. There is no parallel router/operator
-  process model; "switching agents" is just rebinding the active agent name and message handler.
+  2. Stores the structured triage outcome in the tool result.
+  3. Terminates the Router turn so the session-level orchestrator can dispatch without extra Router prose.
+- **Post-tool orchestration:** after the Router turn ends, the orchestrator reads the latest `triage_report` outcome and
+  runs the downstream flow on the **same root session**:
+  - `QUICK_FIX` → set active agent to Operator and run the Operator with the user request plus triage block.
+  - `FEATURE` → set active agent to Planner, ensure `plans/`, and call the planning workflow.
+  - `PROJECT` → set active agent to Architect for targeted deep exploration and planning. Project task slicing is
+    handled by the readiness flow after the plan is approved.
+- After the downstream agent finishes, the active agent **stays** on the assigned Planner, Architect, or Operator. There
+  is no automatic restoration to Router; the user can `/agent router` explicitly to triage a new request.
+- **No parallel router/operator process model:** execution happens through the same root session manager. "Switching
+  agents" means rebinding the active agent name and message handler, while persisted active-agent markers allow
+  `/resume` to reopen the session with the correct specialist.
 
 **`plan_written` (planner / architect)**
 
 - **Owner:** the Planner and Architect agents. It is auto-wired into any agent whose frontmatter `tools:` list contains
   `plan_written` (currently planner.md and architect.md).
-- **Parameters:** `planName` (filename without `.md`), `tasks` (required for `PROJECT`, optional otherwise — array of
-  `{ task, assignee, dependencies, description }` objects matching the markdown table).
+- **Parameters:** `planName` (filename without `.md`).
 - **Behavior on `execute`:**
   1. Validate that `plans/<planName>.md` exists; if not, return guidance text as the tool result so the agent writes the
      file first and re-calls.
   2. Resolve `triageMeta` (factory-captured value first, plan front matter as fallback).
-  3. For `PROJECT`, require a non-empty `tasks` array; otherwise return a corrective tool result.
-  4. Call `submitPlanForReview` (browser UI) and wait for the user's decision.
-     - **Approved:** ask save-vs-proceed; on `proceed`, run `executePlan` (engineer for FEATURE, parallel task DAG for
-       PROJECT). Successful completion returns "Your role is complete. Do not generate any further text."
+  3. Call `submitPlanForReview` (browser UI) and wait for the user's decision.
+     - **Approved:** record durable approval, run the classification-aware readiness gate, then ask save-vs-proceed. On
+       `proceed`, return an `approved_execute` outcome so the orchestrator can execute the plan after the planning agent
+       turn ends.
      - **Feedback submitted:** return the user's feedback as the tool result so the agent revises the plan in the same
        session and calls `plan_written` again.
      - **Canceled:** return a "control returned to the user" tool result; the active agent stays on the planner so the
        user can resume the conversation.
-     - **Repair required** (PROJECT execution failed to parse the task table): return a "Plan Execution Halted — Task
-       Table Repair Required" message so the agent fixes the table and re-calls `plan_written`.
-- **Tool result `details.outcome`:** one of `executed | saved | feedback | canceled | repair_required`. Callers
-  (currently the resume command and the workflow helper) use `readLatestPlanOutcome(messages)` to drive UI state — for
-  example, switching to the Operator after a successful execution, or skipping the Router restore when the planner is
-  still mid-conversation.
+     - **Readiness repair required:** if project task slicing fails or produces invalid tasks, keep the plan approved
+       and return corrective feedback so the agent can retry the readiness step.
+- **Readiness Gate:** `FEATURE` plans promote from approved to executable without another LLM call. `PROJECT` plans must
+  have a valid task table; if tasks are missing, Harns invokes a Slicer agent on the root session to produce a parseable
+  task DAG before execution can proceed.
+- **Tool result `details.outcome`:** one of
+  `approved_execute | saved | feedback | canceled | repair_required | no_call`. Callers use
+  `readLatestPlanOutcome(messages)` to drive UI state — for example, executing an approved plan, saving for later, or
+  keeping the planner mid-conversation for feedback.
 - **Free-form clarification questions are allowed.** If the planner needs clarification it cannot phrase via
   `user_interview`, it stops without calling any tool. The session ends and control returns to the user; the planner
   remains the active agent and the conversation continues on the user's next message. There is no "agent did not declare
   a plan" hard error — `plan_written` is the lifecycle trigger, not a session terminator.
+
+#### Plan Lifecycle, Validation, and Recovery
+
+Saved plans are governed by an event-driven lifecycle rather than direct status mutation. Workflow code records facts as
+Plan Events, and the Plan Lifecycle decides the durable status and front matter updates.
+
+**Canonical statuses:**
+
+- `draft`: a plan exists but has not completed review.
+- `feedback`: the review loop returned user feedback, or the planning agent was interrupted while handling feedback.
+- `approved`: the user approved the plan, but readiness work may still be unfinished.
+- `ready_for_work`: the only executable status.
+- `in_progress`: execution has started and may have partially changed the worktree.
+- `failed`: execution began but implementation did not finish.
+- `implemented`: implementation finished, but workflow validation has not passed.
+- `verified`: implementation and workflow validation both passed.
+
+**Lifecycle gates:**
+
+- **Review Gate:** Plannotator approval records `review_approved`; feedback records `review_feedback`.
+- **Readiness Gate:** approved `FEATURE` plans promote directly to `ready_for_work`; approved `PROJECT` plans promote
+  only after the Slicer produces a valid task DAG.
+- **Execution Gate:** execution can start only from `ready_for_work`, records `execution_started`, and captures an
+  `executionBaselineTree` for scoped diffs and recovery.
+- **Implementation Gate:** successful implementation records `implementation_finished` and moves the plan to
+  `implemented`.
+- **Workflow Validation Gate:** `FEATURE` and `PROJECT` plans run local validation plus semantic review. Passing
+  validation records `validation_passed` and moves the plan to `verified`; failing validation records
+  `validation_failed` while keeping the implementation state visible.
+
+**Recovery:**
+
+Loading an `in_progress`, `failed`, or `implemented` plan opens a recovery path rather than guessing what happened. The
+user can inspect the scoped diff, continue from the current worktree, reset to the captured execution baseline tree and
+retry, re-open the plan for review, or retry workflow validation when implementation already finished. Baseline-tree
+recovery restores the worktree snapshot captured at execution start and records the corresponding recovery event before
+execution resumes.
 
 ### 3.2 Advanced Memory & Indexing
 
@@ -186,6 +224,8 @@ If bundled `router.md` declares `[read, grep, find, ls, bash, triage_report]` an
 ### 3.5 Skills & Tools
 
 - **Open Standard:** Support for the skill open standard (used by Claude Code/OpenCode).
+- **Layered Skill Discovery:** Load skills from local project, home, bundled, and external-compatible directories, with
+  slash-command expansion that injects the full skill instructions only when explicitly invoked.
 - **CLI Focus:** Favor CLI-based tools (e.g., `gh`, `glab`) over heavy MCP implementations.
 - **MCP Plugin:** MCP support remains an optional, non-default plugin to avoid context pollution.
 
@@ -201,7 +241,9 @@ If bundled `router.md` declares `[read, grep, find, ls, bash, triage_report]` an
 - **CLI Environment:** Deno (for security and native permissions).
 - **Frontend/Dashboard:** Potential Astro integration for visual plan reviews and Plannotator wrapping.
 - **Persistence:** SQLite/LanceDB for local indexing and Mnemosyne storage.
-- **Versioning:** Support for Git Worktrees to isolate agent execution from the primary workspace.
+- **Versioning & Recovery:** Capture git tree snapshots at execution start for scoped diffs, workflow validation, and
+  baseline-tree recovery, with Git Worktree isolation available for separating agent execution from the primary
+  workspace.
 
 ## 5. Success Metrics
 
