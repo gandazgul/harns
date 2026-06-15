@@ -1,0 +1,97 @@
+import { assertEquals, assertStringIncludes } from "@std/assert";
+import {
+    askRetryFailedTasks,
+    buildDependencyOutputsContext,
+    buildEngineerRequest,
+    buildTaskAssignmentRequest,
+    buildTaskResultDisplay,
+    reportExecutionSummary,
+} from "./workflow-prompts.js";
+
+Deno.test("buildDependencyOutputsContext includes only successful dependency displays", () => {
+    const context = buildDependencyOutputsContext(
+        { dependencies: "1, 2, 3" },
+        new Map([
+            [1, { status: "success", display: "Task 1 output" }],
+            [2, { status: "failed", error: "boom" }],
+            [3, { status: "success", output: "raw only" }],
+        ]),
+    );
+
+    assertEquals(context, "Task 1 output");
+});
+
+Deno.test("buildTaskAssignmentRequest includes dependency outputs, write scope, and plan context", () => {
+    const request = buildTaskAssignmentRequest(
+        "project-plan",
+        "Full plan body",
+        {
+            task: 2,
+            dependencies: "1",
+            description: "Verify alpha",
+            writeScope: "none",
+        },
+        new Map([[1, { status: "success", display: "Task 1 (Engineer) — Implement alpha" }]]),
+    );
+
+    assertStringIncludes(request, 'Task 2 from the plan "project-plan"');
+    assertStringIncludes(request, "### Dependency Outputs");
+    assertStringIncludes(request, "Task 1 (Engineer) — Implement alpha");
+    assertStringIncludes(request, "### Write Scope\n\nnone");
+    assertStringIncludes(request, "Full plan body");
+});
+
+Deno.test("buildTaskResultDisplay and buildEngineerRequest preserve workflow completion contract", () => {
+    assertEquals(
+        buildTaskResultDisplay({ task: 1, description: "Implement alpha" }, "engineer", "Done."),
+        "Task 1 (Engineer) — Implement alpha\n\nDone.",
+    );
+
+    const request = buildEngineerRequest("feature-plan", "Plan body");
+    assertStringIncludes(request, "Approved Plan: feature-plan");
+    assertStringIncludes(request, "call task_completed with a concise success or failure summary");
+    assertStringIncludes(request, "Plan body");
+});
+
+Deno.test("askRetryFailedTasks maps prompt choice to boolean", async () => {
+    /** @type {string[]} */
+    const prompts = [];
+    const yes = await askRetryFailedTasks(
+        { failedTasks: [1, 2], results: new Map() },
+        /** @type {any} */ ({
+            promptSelect: (/** @type {string} */ title) => {
+                prompts.push(title);
+                return Promise.resolve("yes");
+            },
+        }),
+    );
+    const no = await askRetryFailedTasks(
+        { failedTasks: [3], results: new Map() },
+        /** @type {any} */ ({
+            promptSelect: () => Promise.resolve("no"),
+        }),
+    );
+
+    assertEquals(yes, true);
+    assertEquals(no, false);
+    assertStringIncludes(prompts[0], "2 task(s) failed");
+});
+
+Deno.test("reportExecutionSummary counts success, failed, and blocked tasks", () => {
+    /** @type {string[]} */
+    const messages = [];
+    reportExecutionSummary(
+        {
+            results: new Map([
+                [1, { status: "success" }],
+                [2, { status: "failed" }],
+                [3, { status: "blocked" }],
+            ]),
+        },
+        /** @type {any} */ ({
+            appendSystemMessage: (/** @type {string} */ message) => messages.push(message),
+        }),
+    );
+
+    assertEquals(messages, ["Execution Summary: 1 success, 1 failed, 1 blocked."]);
+});
