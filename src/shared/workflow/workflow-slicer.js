@@ -34,7 +34,6 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
     const slicerAgentDef = await loadSlicerDef(SLICER_PROMPT_PATH, { agentName: AGENTS.SLICER });
 
     const slicerDisplay = slicerAgentDef.displayName;
-    uiAPI.appendSystemMessage(`=== Running ${slicerDisplay} ===`, false, "Harns");
 
     try {
         await session({

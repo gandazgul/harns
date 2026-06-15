@@ -77,8 +77,6 @@ export { extractAssistantOutput, readLatestPlanOutcome, readLatestTaskCompletedO
  */
 export async function runPlanningAgent({ agentName, initialRequest, triageMeta, uiAPI, sessionManager }) {
     if (!uiAPI) throw new Error("runPlanningAgent: uiAPI is required");
-    uiAPI.appendSystemMessage(`=== Running ${getAgentDisplayName(agentName)} ===`, false, "Harns");
-
     const messages = await runAgentSession({
         agentName,
         userRequest: initialRequest,
@@ -365,12 +363,6 @@ async function recordFailedProjectExecution(planName, triageMeta, failedTasks, r
  * @returns {Promise<{ completed: boolean, messages: import('@earendil-works/pi-agent-core').AgentMessage[] }>}
  */
 async function runEngineerWithPlan(planName, planBody, uiAPI, _sessionManager) {
-    uiAPI.appendSystemMessage(
-        `=== Running ${getAgentDisplayName(AGENTS.ENGINEER)} ===`,
-        false,
-        "Harns",
-    );
-
     const { setActiveAgent, applyPendingRootSwap } = await import("../interactive/chat-session.js");
     const { createDirectAgentHandler } = await import("../session/direct-agent.js");
     setActiveAgent(
