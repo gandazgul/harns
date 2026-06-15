@@ -21,7 +21,10 @@ Deno.test("dispatchPostTriage does not force Engineer after FEATURE/PROJECT vali
 Deno.test("dispatchPostTriage restores plan owner when FEATURE/PROJECT execution is incomplete", async () => {
     const source = await Deno.readTextFile(new URL("./orchestrator.js", import.meta.url));
     assertEquals(source.includes('executionDecision.kind === "stay_with_agent"'), true);
-    assertEquals(source.includes("setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);"), true);
+    assertEquals(
+        source.includes("setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);"),
+        true,
+    );
 });
 
 Deno.test("dispatchPostTriage skips workflow validation for completed QUICK_FIX", async () => {
@@ -64,6 +67,191 @@ Deno.test("dispatchPostTriage skips workflow validation for completed QUICK_FIX"
         uiAPI.messages.some((/** @type {string} */ message) => message.includes("validation is waiting")),
         false,
     );
+});
+
+Deno.test("dispatchPostTriage warns when QUICK_FIX stops without task_completed", async () => {
+    const uiAPI = makeUi();
+
+    await dispatchPostTriage({
+        triage: {
+            classification: "QUICK_FIX",
+            complexity: "LOW",
+            summary: "small fix",
+            affectedPaths: ["src/a.js"],
+        },
+        userRequest: "Fix it",
+        images: [],
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            applyPendingRootSwap: () => Promise.resolve(),
+            createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            readLatestTaskCompletedOutcome: () => null,
+            runRootTurn: () => Promise.resolve([]),
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ message) => message.includes("stopped without task_completed")),
+        true,
+    );
+});
+
+Deno.test("dispatchPostTriage keeps planning agent active on stay/save/halt decisions", async () => {
+    const cases = [
+        { decision: { kind: "stay_with_agent", payload: { reason: "feedback" } }, expectedMessage: null },
+        { decision: { kind: "save_plan", payload: { planName: "saved" } }, expectedMessage: null },
+        { decision: { kind: "halt", payload: { reason: "unknown_plan_outcome" } }, expectedMessage: "Workflow halted" },
+    ];
+
+    for (const item of cases) {
+        const uiAPI = makeUi();
+        /** @type {string[]} */
+        const activeAgents = [];
+        let popped = false;
+
+        await dispatchPostTriage({
+            triage: {
+                classification: "FEATURE",
+                complexity: "MEDIUM",
+                summary: "plan it",
+                affectedPaths: ["src/a.js"],
+            },
+            userRequest: "Build it",
+            images: [],
+            uiAPI,
+            sessionManager: undefined,
+            __deps: /** @type {any} */ ({
+                ensurePlansDir: () => Promise.resolve("/plans"),
+                runPlanningAgent: () => Promise.resolve({ outcome: "feedback" }),
+                consumePendingSwitchHandoff: () => null,
+                decidePostPlanning: () => item.decision,
+                createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+                setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
+                getConfiguredAgentModel: () => "test/model",
+                pushAgentInfo: () => {},
+                popAgentInfo: () => {
+                    popped = true;
+                },
+            }),
+        });
+
+        assertEquals(activeAgents, ["planner"]);
+        assertEquals(popped, false);
+        if (item.expectedMessage) {
+            assertEquals(
+                uiAPI.messages.some((/** @type {string} */ message) => message.includes(item.expectedMessage)),
+                true,
+            );
+        }
+    }
+});
+
+Deno.test("dispatchPostTriage executes approved FEATURE plans and runs validation", async () => {
+    const uiAPI = makeUi();
+    /** @type {unknown[]} */
+    const executed = [];
+    /** @type {unknown[]} */
+    const validations = [];
+    let popped = false;
+
+    await dispatchPostTriage({
+        triage: {
+            classification: "FEATURE",
+            complexity: "MEDIUM",
+            summary: "feature",
+            affectedPaths: ["src/feature.js"],
+        },
+        userRequest: "Make feature",
+        images: [{ base64: "abc", mimeType: "image/png" }],
+        uiAPI,
+        sessionManager: /** @type {any} */ ({ id: "session" }),
+        __deps: /** @type {any} */ ({
+            ensurePlansDir: () => Promise.resolve("/plans"),
+            runPlanningAgent: (/** @type {any} */ args) => {
+                assertEquals(args.agentName, "planner");
+                assertEquals(args.triageMeta.classification, "FEATURE");
+                return Promise.resolve({ outcome: "approved_execute", planName: "feature-plan" });
+            },
+            consumePendingSwitchHandoff: () => null,
+            decidePostPlanning: () => ({
+                kind: "execute_plan",
+                payload: {
+                    planName: "feature-plan",
+                    triageMeta: { classification: "FEATURE", summary: "feature" },
+                    tasks: [{ task: 1 }],
+                },
+            }),
+            executePlan: (/** @type {any[]} */ ...args) => {
+                executed.push(args);
+                return Promise.resolve({ executionComplete: true });
+            },
+            decidePostExecution: () => ({ kind: "run_validation", payload: {} }),
+            loadPlan: () => Promise.resolve(/** @type {any} */ ({ markdown: "plan markdown" })),
+            shouldRunWorkflowValidation: () => true,
+            runValidationLoop: (/** @type {any} */ args) => {
+                validations.push(args);
+                return Promise.resolve();
+            },
+            getConfiguredAgentModel: () => "test/model",
+            pushAgentInfo: () => {},
+            popAgentInfo: () => {
+                popped = true;
+            },
+        }),
+    });
+
+    assertEquals(executed.length, 1);
+    assertEquals(/** @type {any[]} */ (executed[0])[0], "feature-plan");
+    assertEquals(validations.length, 1);
+    assertEquals(/** @type {any} */ (validations[0]).planContent, "plan markdown");
+    assertEquals(/** @type {any} */ (validations[0]).finalAgentName, "planner");
+    assertEquals(popped, true);
+});
+
+Deno.test("dispatchPostTriage restores PROJECT owner after incomplete execution", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const activeAgents = [];
+    let popped = false;
+
+    await dispatchPostTriage({
+        triage: {
+            classification: "PROJECT",
+            complexity: "HIGH",
+            summary: "project",
+            affectedPaths: ["src/project.js"],
+        },
+        userRequest: "Project",
+        images: [],
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            ensurePlansDir: () => Promise.resolve("/plans"),
+            runPlanningAgent: (/** @type {any} */ args) => {
+                assertEquals(args.agentName, "architect");
+                return Promise.resolve({ outcome: "approved_execute", planName: "project-plan" });
+            },
+            consumePendingSwitchHandoff: () => null,
+            decidePostPlanning: () => ({
+                kind: "execute_plan",
+                payload: { planName: "project-plan", triageMeta: { classification: "PROJECT" } },
+            }),
+            executePlan: () => Promise.resolve({ executionComplete: false }),
+            decidePostExecution: () => ({ kind: "stay_with_agent", payload: { reason: "execution_incomplete" } }),
+            createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
+            getConfiguredAgentModel: () => "test/model",
+            pushAgentInfo: () => {},
+            popAgentInfo: () => {
+                popped = true;
+            },
+        }),
+    });
+
+    assertEquals(activeAgents, ["architect"]);
+    assertEquals(popped, true);
 });
 
 Deno.test("readLatestTriageOutcome returns the latest triage_report details", () => {
