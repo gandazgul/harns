@@ -125,8 +125,9 @@ function setupSteeringConsumedListener() {
  * @param {import('../session/types.js').AgentMessageHandler} handler
  * @param {import('../ui/types.js').UiAPI} [uiAPI]
  * @param {string} [agentModel]
+ * @param {{ allowReturnToRouter?: boolean }} [options]
  */
-export function setActiveAgent(agentName, handler, uiAPI, agentModel) {
+export function setActiveAgent(agentName, handler, uiAPI, agentModel, options = {}) {
     setActiveOnMessage(handler);
 
     if (uiAPI) {
@@ -145,11 +146,16 @@ export function setActiveAgent(agentName, handler, uiAPI, agentModel) {
     // by applyPendingRootSwap() — it is unsafe to dispose the root mid-prompt,
     // and updating the footer earlier would let the UI claim a switch that
     // has not yet taken effect.
-    setPendingRootSwap({
+    /** @type {import('../session/session-state.js').PendingRootSwap} */
+    const pendingSwap = {
         agentName,
         displayName: getAgentDisplayName(agentName),
         model: agentModel,
-    });
+    };
+    if (options.allowReturnToRouter !== undefined) {
+        pendingSwap.allowReturnToRouter = options.allowReturnToRouter;
+    }
+    setPendingRootSwap(pendingSwap);
 
     uiAPI?.requestRender();
 }
@@ -182,6 +188,7 @@ export async function applyPendingRootSwap(uiAPI) {
             modelOverride: pending.model,
             uiAPI,
             sessionManager: getRootSessionManager() || undefined,
+            allowReturnToRouter: pending.allowReturnToRouter,
         });
         // Subscribe to the new session's queue_update events
         setupSteeringConsumedListener();

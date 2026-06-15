@@ -71,6 +71,23 @@ import { recordActiveAgent } from "./active-agent-session.js";
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
 
+/**
+ * Resolve the effective tool list for a session, applying runtime-only gates
+ * that should not mutate the agent frontmatter source of truth.
+ *
+ * @param {string[]} agentTools
+ * @param {unknown} toolNames
+ * @param {string[]} customToolNames
+ * @param {{ allowReturnToRouter?: boolean }} [options]
+ * @returns {string[]}
+ */
+export function resolveEffectiveSessionToolNames(agentTools, toolNames, customToolNames, options = {}) {
+    const resolvedTools = resolveSessionToolNames(agentTools, toolNames, customToolNames);
+    return options.allowReturnToRouter === true
+        ? resolvedTools
+        : resolvedTools.filter((toolName) => toolName !== "return_to_router");
+}
+
 /** @typedef {"local" | "home" | "bundled"} PromptTemplateSource */
 
 /** @type {Map<string, string | undefined>} */
@@ -238,8 +255,12 @@ export function extractBundledSkills() {
         } catch {
             // Cache dir may not exist yet — fine.
         }
-        await copyTreeFromBundle(SKILLS_DIR, BUNDLED_SKILLS_CACHE_DIR);
-        return BUNDLED_SKILLS_CACHE_DIR;
+        try {
+            await copyTreeFromBundle(SKILLS_DIR, BUNDLED_SKILLS_CACHE_DIR);
+            return BUNDLED_SKILLS_CACHE_DIR;
+        } catch {
+            return null;
+        }
     })();
     return bundledSkillsExtractionPromise;
 }
@@ -261,8 +282,12 @@ export function extractBundledAgentDefs() {
         } catch {
             // Cache dir may not exist yet — fine.
         }
-        await copyTreeFromBundle(AGENT_DEFS_DIR, BUNDLED_AGENT_DEFS_CACHE_DIR);
-        return BUNDLED_AGENT_DEFS_CACHE_DIR;
+        try {
+            await copyTreeFromBundle(AGENT_DEFS_DIR, BUNDLED_AGENT_DEFS_CACHE_DIR);
+            return BUNDLED_AGENT_DEFS_CACHE_DIR;
+        } catch {
+            return null;
+        }
     })();
     return bundledAgentDefsExtractionPromise;
 }
@@ -723,6 +748,7 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride]
+ * @param {boolean} [opts.allowReturnToRouter]
  *
  * @returns {Promise<{
  *   session: import('@earendil-works/pi-coding-agent').AgentSession,
@@ -742,13 +768,14 @@ export async function buildAgentSession({
     sessionManager,
     triageMeta,
     _agentDefOverride,
+    allowReturnToRouter,
 }) {
     await ensureMnemosyneBinary();
     await ensureCymbalBinary();
     const agentDef = _agentDefOverride || await loadAgentDef(agentName);
 
     const customToolNames = (customTools || []).map((t) => t.name);
-    const tools = resolveSessionToolNames(agentDef.tools, toolNames, customToolNames);
+    const tools = resolveEffectiveSessionToolNames(agentDef.tools, toolNames, customToolNames, { allowReturnToRouter });
 
     const finalCustomTools = [...(customTools || [])];
 
@@ -1277,6 +1304,7 @@ const rootSessionMetadata = new WeakMap();
  * @param {string} [opts.modelOverride]
  * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
+ * @param {boolean} [opts.allowReturnToRouter]
  *
  * @returns {Promise<import('@earendil-works/pi-coding-agent').AgentSession>}
  */
@@ -1295,7 +1323,10 @@ export async function ensureRootAgentSession(opts) {
         setRootAgentName(null);
     }
 
-    const { session, agentDef, promptState, tools, finalCustomTools, resolvedModel } = await buildAgentSession(opts);
+    const { session, agentDef, promptState, tools, finalCustomTools, resolvedModel } = await buildAgentSession({
+        ...opts,
+        allowReturnToRouter: opts.allowReturnToRouter ?? true,
+    });
     const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI);
 
     const finalModelForUi = resolvedModel ? `${resolvedModel.provider}/${resolvedModel.id}` : undefined;
@@ -1377,6 +1408,7 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta] - Optional triage metadata threaded into auto-wired plan_written.
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride] - Internal: skip loadAgentDef() and use this pre-loaded definition.
+ * @param {boolean} [opts.allowReturnToRouter] - Internal: expose return_to_router only for interactive direct/root flows.
  *
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */

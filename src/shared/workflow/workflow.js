@@ -866,7 +866,7 @@ export async function executeProjectTasks(
             const dependencyOutputs = buildDependencyOutputsContext(task, results);
             const taskRequest = [
                 "## Task Assignment",
-                `You are assigned Task ${task.task} from the plan "${planName}". This is a PROJECT plan, only execute the assigned task then halt.`,
+                `You are assigned Task ${task.task} from the plan "${planName}". This is a PROJECT plan; only execute the assigned task, then call task_completed with a concise success or failure summary.`,
                 "### Task Description",
                 task.description,
                 "### Dependencies",
@@ -1118,14 +1118,20 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, _sessionManager, _
     const engineerRequest = [
         `## Approved Plan: ${planName}`,
         "",
-        "Execute the following plan step by step. This is a FEATURE request. Complete all Implementation Steps and the Verification Plan before halting.",
+        "Execute the following plan step by step. This is a FEATURE request. Complete all Implementation Steps and the Verification Plan, then call task_completed with a concise success or failure summary.",
         "",
         planBody,
     ].join("\n");
 
     const { setActiveAgent, applyPendingRootSwap } = await import("../interactive/chat-session.js");
     const { createDirectAgentHandler } = await import("../session/direct-agent.js");
-    setActiveAgent(AGENTS.ENGINEER, createDirectAgentHandler(AGENTS.ENGINEER), uiAPI);
+    setActiveAgent(
+        AGENTS.ENGINEER,
+        createDirectAgentHandler(AGENTS.ENGINEER),
+        uiAPI,
+        undefined,
+        { allowReturnToRouter: false },
+    );
     await applyPendingRootSwap(uiAPI);
 
     const { runRootTurn } = await import("../session/session.js");

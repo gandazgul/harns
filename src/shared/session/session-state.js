@@ -8,6 +8,7 @@
  * @property {string} agentName  Internal agent name (lowercase, matches agent definition filename).
  * @property {string} displayName  Display name as shown in the UI.
  * @property {string} [model]  Optional explicit model in provider/id format.
+ * @property {boolean} [allowReturnToRouter]  Whether the rebuilt root may expose return_to_router.
  */
 
 /**

@@ -249,6 +249,48 @@ Deno.test("selectNonConflictingTasks skips ready tasks that overlap running or s
     ]);
 });
 
+function createWorkflowHarness() {
+    /** @type {string[]} */
+    const systemMessages = [];
+    /** @type {string[]} */
+    const agentOutputs = [];
+    /** @type {Array<{ type: string, content: string, metadata?: Record<string, unknown> }>} */
+    const rootEntries = [];
+    /** @type {Array<Array<{ task: number, assignee: string, description: string }>>} */
+    const runningSnapshots = [];
+    const uiAPI = /** @type {any} */ ({
+        appendSystemMessage: (/** @type {string} */ message) => systemMessages.push(String(message)),
+        appendAgentMessageStart: () => ({
+            appendText: (/** @type {string} */ text) => agentOutputs.push(String(text)),
+        }),
+    });
+    const sessionManager = /** @type {any} */ ({
+        appendCustomMessageEntry: (
+            /** @type {string} */ type,
+            /** @type {string} */ content,
+            /** @type {boolean} */ _visible,
+            /** @type {Record<string, unknown>} */ metadata,
+        ) => rootEntries.push({ type, content, metadata }),
+    });
+    const onRunningTasksChange = (
+        /** @type {Array<{ task: number, assignee: string, description: string }>} */ tasks,
+    ) => {
+        runningSnapshots.push(tasks.map((task) => ({ ...task })));
+    };
+    return { agentOutputs, onRunningTasksChange, rootEntries, runningSnapshots, sessionManager, systemMessages, uiAPI };
+}
+
+/**
+ * @param {string} text
+ * @returns {import('@earendil-works/pi-agent-core').AgentMessage[]}
+ */
+function completedTaskMessages(text) {
+    return /** @type {import('@earendil-works/pi-agent-core').AgentMessage[]} */ ([
+        { role: "assistant", content: [{ type: "text", text }] },
+        { role: "toolResult", toolName: "task_completed", details: { outcome: "task_completed" } },
+    ]);
+}
+
 Deno.test("executeProjectTasks passes successful dependency output to dependent task request", async () => {
     const tasks = [
         { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
@@ -297,6 +339,108 @@ Deno.test("executeProjectTasks passes successful dependency output to dependent 
     assertEquals(rootEntries.length, 2);
     assertStringIncludes(requests[1], "### Dependency Outputs");
     assertStringIncludes(requests[1], rootEntries[0]);
+});
+
+Deno.test("executeProjectTasks records incomplete tasks and blocks dependents", async () => {
+    const tasks = [
+        { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
+        { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
+    ];
+    const harness = createWorkflowHarness();
+
+    const result = await executeProjectTasks(
+        "project-plan",
+        "Full plan body",
+        tasks,
+        harness.uiAPI,
+        [],
+        harness.onRunningTasksChange,
+        harness.sessionManager,
+        undefined,
+        () =>
+            Promise.resolve(
+                /** @type {import('@earendil-works/pi-agent-core').AgentMessage[]} */ ([
+                    { role: "assistant", content: [{ type: "text", text: "I stopped early." }] },
+                ]),
+            ),
+    );
+
+    assertEquals(result.failedTasks, [1, 2]);
+    assertEquals(result.results.get(1)?.status, "failed");
+    assertEquals(result.results.get(2)?.status, "blocked");
+    assertEquals(harness.rootEntries[0].metadata?.status, "failed");
+    assertStringIncludes(harness.rootEntries[0].content, "INCOMPLETE");
+    assertEquals(harness.runningSnapshots.map((snapshot) => snapshot.map((task) => task.task)), [[1], []]);
+});
+
+Deno.test("executeProjectTasks records thrown task errors and blocks dependents", async () => {
+    const tasks = [
+        { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
+        { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
+    ];
+    const harness = createWorkflowHarness();
+
+    const result = await executeProjectTasks(
+        "project-plan",
+        "Full plan body",
+        tasks,
+        harness.uiAPI,
+        [],
+        harness.onRunningTasksChange,
+        harness.sessionManager,
+        undefined,
+        () => {
+            throw new Error("agent crashed");
+        },
+    );
+
+    assertEquals(result.failedTasks, [1, 2]);
+    assertEquals(result.results.get(1)?.error, "agent crashed");
+    assertEquals(result.results.get(2)?.status, "blocked");
+    assertEquals(harness.rootEntries[0].metadata?.error, "agent crashed");
+    assertStringIncludes(harness.systemMessages.join("\n"), "Task 1 failed");
+});
+
+Deno.test("executeProjectTasks retries only failed tasks with seeded dependency context", async () => {
+    const tasks = [
+        { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
+        { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
+    ];
+    /** @type {Map<number, import('./types.js').TaskExecutionResult>} */
+    const seedResults = new Map([
+        [1, {
+            status: "success",
+            output: "Implemented alpha.",
+            display: "Task 1 (Engineer) — Implement alpha\n\nImplemented alpha.",
+        }],
+    ]);
+    /** @type {string[]} */
+    const requests = [];
+    const harness = createWorkflowHarness();
+
+    const result = await executeProjectTasks(
+        "project-plan",
+        "Full plan body",
+        tasks,
+        harness.uiAPI,
+        [2],
+        harness.onRunningTasksChange,
+        harness.sessionManager,
+        seedResults,
+        (/** @type {{ userRequest: string }} */ opts) => {
+            requests.push(opts.userRequest);
+            return Promise.resolve(completedTaskMessages("Verified alpha."));
+        },
+    );
+
+    assertEquals(result.failedTasks, []);
+    assertEquals(requests.length, 1);
+    assertStringIncludes(requests[0], "### Dependency Outputs");
+    assertStringIncludes(requests[0], "Implemented alpha.");
+    assertEquals(result.results.get(1)?.status, "success");
+    assertEquals(result.results.get(2)?.status, "success");
+    assertEquals(harness.rootEntries.length, 1);
+    assertEquals(harness.rootEntries[0].metadata?.taskId, 2);
 });
 
 // ── buildSlicerRequest ─────────────────────────────────────────────

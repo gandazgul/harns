@@ -44,7 +44,8 @@ export function createTriageReportTool({ uiAPI } = {}) {
         name: "triage_report",
         label: "Triage Report",
         description: "Submit your triage classification for the user's request. " +
-            "You MUST call this tool exactly once after exploring the codebase. " +
+            "You MUST call this tool exactly once after enough discovery to classify the request. " +
+            "Clearly operational or informational requests may need no codebase exploration before routing. " +
             "Do not output the classification as freeform text — use this tool.",
         parameters: TOOL_PARAMS,
         // deno-lint-ignore require-await

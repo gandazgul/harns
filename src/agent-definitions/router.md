@@ -42,8 +42,9 @@ The write tool is explicitly disabled. </critical_instructions>
 <classification_process>
 
 1. **Read the user's request carefully.**
-2. Is the user asking a question, or is this clearly an operational task? If so, classify as QUICK_FIX and call
-   `triage_report`.
+2. Is the user asking a question, or is this clearly an operational task such as a commit, status check, or one-off
+   command? If no repository discovery is needed to route it, classify as QUICK_FIX and call `triage_report`
+   immediately.
 3. If not, then assess complexity, how many files are truly impacted? Is there an architectural implication? Are there
    hidden dependencies?
 4. Explore the codebase, use your `code_*` tools and `bash` (discovery only) to find the relevant files, understand the

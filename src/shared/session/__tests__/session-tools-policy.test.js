@@ -2,6 +2,7 @@ import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { CWD } from "../../../constants.js";
 import { loadAgentDef, resolveSessionToolNames } from "../agents.js";
+import { resolveEffectiveSessionToolNames } from "../session.js";
 
 const localAgentsDir = join(CWD, ".hns", "agents");
 const routerOverridePath = join(localAgentsDir, "router.md");
@@ -92,4 +93,21 @@ Deno.test("resolveSessionToolNames blocks runtime toolNames from re-enabling rem
 Deno.test("resolveSessionToolNames allows runtime custom tools", () => {
     const resolved = resolveSessionToolNames(["read"], ["read"], ["extension_tool", "read"]);
     assertEquals(resolved, ["read", "extension_tool"]);
+});
+
+Deno.test("resolveEffectiveSessionToolNames filters return_to_router unless explicitly allowed", () => {
+    const agentTools = ["read", "return_to_router", "memory_recall"];
+
+    assertEquals(
+        resolveEffectiveSessionToolNames(agentTools, undefined, []),
+        ["read", "memory_recall"],
+    );
+    assertEquals(
+        resolveEffectiveSessionToolNames(agentTools, undefined, [], { allowReturnToRouter: false }),
+        ["read", "memory_recall"],
+    );
+    assertEquals(
+        resolveEffectiveSessionToolNames(agentTools, undefined, [], { allowReturnToRouter: true }),
+        ["read", "return_to_router", "memory_recall"],
+    );
 });

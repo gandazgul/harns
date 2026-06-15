@@ -100,9 +100,18 @@ function buildTriageBlock(triage) {
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcome,
  *   decidePostPlanning?: typeof decidePostPlanning,
  *   decidePostExecution?: typeof decidePostExecution,
+ *   ensurePlansDir?: typeof ensurePlansDir,
+ *   executePlan?: typeof executePlan,
+ *   getConfiguredAgentModel?: (agentName: string) => string | undefined,
+ *   loadPlan?: typeof loadPlan,
+ *   pushAgentInfo?: typeof pushAgentInfo,
+ *   popAgentInfo?: typeof popAgentInfo,
+ *   consumePendingSwitchHandoff?: typeof consumePendingSwitchHandoff,
+ *   runPlanningAgent?: typeof runPlanningAgent,
  *   runRootTurn?: typeof runRootTurn,
  *   runValidationLoop?: typeof runValidationLoop,
  *   setActiveAgent?: typeof setActiveAgent,
+ *   shouldRunWorkflowValidation?: typeof shouldRunWorkflowValidation,
  * }} [args.__deps]
  */
 export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, sessionManager, __deps }) {
@@ -110,17 +119,17 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
 
     const triageBlock = buildTriageBlock(triage);
     const decoratedRequest = ["## User Request", userRequest, "", triageBlock].join("\n");
+    const applyPendingRootSwapImpl = __deps?.applyPendingRootSwap || applyPendingRootSwap;
+    const createDirectAgentHandlerImpl = __deps?.createDirectAgentHandler || createDirectAgentHandler;
     const runValidationLoopImpl = __deps?.runValidationLoop || runValidationLoop;
     const decidePostPlanningImpl = __deps?.decidePostPlanning || decidePostPlanning;
     const decidePostExecutionImpl = __deps?.decidePostExecution || decidePostExecution;
+    const setActiveAgentImpl = __deps?.setActiveAgent || setActiveAgent;
 
     if (triage.classification === "QUICK_FIX") {
         const operatorDisplay = getAgentDisplayName(AGENTS.OPERATOR);
         uiAPI.appendSystemMessage(`=== Phase B: ${operatorDisplay} (Execute) ===`);
 
-        const setActiveAgentImpl = __deps?.setActiveAgent || setActiveAgent;
-        const createDirectAgentHandlerImpl = __deps?.createDirectAgentHandler || createDirectAgentHandler;
-        const applyPendingRootSwapImpl = __deps?.applyPendingRootSwap || applyPendingRootSwap;
         const runRootTurnImpl = __deps?.runRootTurn || runRootTurn;
         const readLatestTaskCompletedOutcomeImpl = __deps?.readLatestTaskCompletedOutcome ||
             readLatestTaskCompletedOutcome;
@@ -156,21 +165,31 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         uiAPI.appendSystemMessage(phaseLabel);
         uiAPI.appendSystemMessage(`=== Phase B: ${displayName} ===`);
 
-        const { getConfiguredAgentModel } = await import("../session/session.js");
-        pushAgentInfo(displayName, getConfiguredAgentModel(agentName));
+        const getConfiguredAgentModelImpl = __deps?.getConfiguredAgentModel ||
+            (await import("../session/session.js")).getConfiguredAgentModel;
+        const pushAgentInfoImpl = __deps?.pushAgentInfo || pushAgentInfo;
+        const popAgentInfoImpl = __deps?.popAgentInfo || popAgentInfo;
+        const ensurePlansDirImpl = __deps?.ensurePlansDir || ensurePlansDir;
+        const runPlanningAgentImpl = __deps?.runPlanningAgent || runPlanningAgent;
+        const consumePendingSwitchHandoffImpl = __deps?.consumePendingSwitchHandoff || consumePendingSwitchHandoff;
+        const executePlanImpl = __deps?.executePlan || executePlan;
+        const loadPlanImpl = __deps?.loadPlan || loadPlan;
+        const shouldRunWorkflowValidationImpl = __deps?.shouldRunWorkflowValidation || shouldRunWorkflowValidation;
+
+        pushAgentInfoImpl(displayName, getConfiguredAgentModelImpl(agentName));
 
         let shouldPop = true;
         try {
-            await ensurePlansDir(CWD);
+            await ensurePlansDirImpl(CWD);
 
-            const outcome = await runPlanningAgent({
+            const outcome = await runPlanningAgentImpl({
                 agentName,
                 initialRequest: decoratedRequest,
                 triageMeta: triage,
                 uiAPI,
                 sessionManager,
             });
-            consumePendingSwitchHandoff(); // Drain any switch requests from planner
+            consumePendingSwitchHandoffImpl(); // Drain any switch requests from planner
 
             const decision = decidePostPlanningImpl(outcome, {
                 planningAgentName: agentName,
@@ -178,14 +197,14 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             });
 
             if (decision.kind === "stay_with_agent" || decision.kind === "save_plan") {
-                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);
                 shouldPop = false;
                 return;
             }
 
             if (decision.kind !== "execute_plan") {
                 uiAPI.appendSystemMessage(`Workflow halted: ${String(decision.payload.reason || "unknown reason")}`);
-                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);
                 shouldPop = false;
                 return;
             }
@@ -194,7 +213,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             const decisionTriageMeta = /** @type {TriageOutcome} */ (decision.payload.triageMeta || triage);
             const tasks = /** @type {import('./workflow.js').PlanOutcomeResult["tasks"]} */ (decision.payload.tasks);
 
-            const executionResult = await executePlan(
+            const executionResult = await executePlanImpl(
                 planName,
                 decisionTriageMeta,
                 uiAPI,
@@ -207,8 +226,8 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                 executionAgentName: agentName,
             });
             if (executionDecision.kind === "run_validation") {
-                const plan = await loadPlan(CWD, planName);
-                if (shouldRunWorkflowValidation(decisionTriageMeta)) {
+                const plan = await loadPlanImpl(CWD, planName);
+                if (shouldRunWorkflowValidationImpl(decisionTriageMeta)) {
                     await runValidationLoopImpl({
                         planName,
                         planContent: plan?.markdown || "",
@@ -219,11 +238,11 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                     });
                 }
             } else if (executionDecision.kind === "stay_with_agent") {
-                setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);
             }
         } finally {
             if (shouldPop) {
-                popAgentInfo();
+                popAgentInfoImpl();
             }
         }
     }
