@@ -12,18 +12,34 @@ import { discoverAndRegisterThemes } from "../../shared/ui/theme.js";
  * @param {import('../registry.js').CommandContext} _options
  */
 export async function runInstallCommand(argv, _options = {}) {
+    const deps = /** @type {{
+        PackageManager?: typeof DefaultPackageManager,
+        getSettingsManager?: typeof getSettingsManager,
+        getSettingsDir?: typeof getSettingsDir,
+        discoverAndRegisterThemes?: typeof discoverAndRegisterThemes,
+        cwd?: () => string,
+        log?: typeof console.log,
+        error?: typeof console.error,
+        exit?: typeof Deno.exit,
+    }} */
+        (_options.__testDeps || {});
+    const error = deps.error || console.error;
+    const exit = deps.exit || Deno.exit;
+
     if (argv.length === 0) {
-        console.error("Usage: hns install <source>");
-        console.error("Sources: npm:<spec>, git:<url>, local:<path>");
-        Deno.exit(1);
+        error("Usage: hns install <source>");
+        error("Sources: npm:<spec>, git:<url>, local:<path>");
+        exit(1);
+        return;
     }
 
     const source = argv[0];
     try {
-        const settings = getSettingsManager();
-        const packageManager = new DefaultPackageManager({
-            cwd: Deno.cwd(),
-            agentDir: getSettingsDir("global"),
+        const SettingsPackageManager = deps.PackageManager || DefaultPackageManager;
+        const settings = (deps.getSettingsManager || getSettingsManager)();
+        const packageManager = new SettingsPackageManager({
+            cwd: (deps.cwd || Deno.cwd)(),
+            agentDir: (deps.getSettingsDir || getSettingsDir)("global"),
             settingsManager: settings,
         });
 
@@ -38,16 +54,17 @@ export async function runInstallCommand(argv, _options = {}) {
             resolved.skills.filter(fromSource).length +
             resolved.prompts.filter(fromSource).length;
 
-        await discoverAndRegisterThemes();
+        await (deps.discoverAndRegisterThemes || discoverAndRegisterThemes)();
 
-        console.log(`Installed ${source}`);
-        console.log(`  Themes registered: ${themeCount}`);
+        const log = deps.log || console.log;
+        log(`Installed ${source}`);
+        log(`  Themes registered: ${themeCount}`);
         if (ignoredCount > 0) {
-            console.log(`  Non-theme resources ignored: ${ignoredCount} (Harns only loads themes)`);
+            log(`  Non-theme resources ignored: ${ignoredCount} (Harns only loads themes)`);
         }
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.error(`Installation failed: ${msg}`);
-        Deno.exit(1);
+        error(`Installation failed: ${msg}`);
+        exit(1);
     }
 }

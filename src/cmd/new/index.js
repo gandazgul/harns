@@ -18,14 +18,21 @@ export async function runNewCommand(argv, options = {}) {
         return;
     }
 
+    const deps = /** @type {{
+        createRootSessionManager?: typeof createRootSessionManager,
+        setRootSessionManager?: typeof setRootSessionManager,
+    }} */
+        (options.__testDeps || {});
+    const createRoot = deps.createRootSessionManager || createRootSessionManager;
+    const setRoot = deps.setRootSessionManager || setRootSessionManager;
     const { uiAPI } = options;
     const sessionName = argv.join(" ").trim();
 
-    const rootSessionManager = await createRootSessionManager("new", Deno.cwd());
+    const rootSessionManager = await createRoot("new", Deno.cwd());
     if (sessionName) {
         rootSessionManager.appendSessionInfo(sessionName);
     }
-    setRootSessionManager(rootSessionManager);
+    setRoot(rootSessionManager);
 
     if (uiAPI.clearMessages) {
         uiAPI.clearMessages();

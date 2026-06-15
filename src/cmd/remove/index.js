@@ -14,42 +14,64 @@ const DEFAULT_THEME = "catppuccin-mocha";
  * @param {import('../registry.js').CommandContext} _options
  */
 export async function runRemoveCommand(argv, _options = {}) {
+    const deps = /** @type {{
+        PackageManager?: typeof DefaultPackageManager,
+        getSettingsManager?: typeof getSettingsManager,
+        getSettingsDir?: typeof getSettingsDir,
+        discoverAndRegisterThemes?: typeof discoverAndRegisterThemes,
+        getAvailableThemes?: typeof getAvailableThemes,
+        setTheme?: typeof setTheme,
+        cwd?: () => string,
+        log?: typeof console.log,
+        error?: typeof console.error,
+        exit?: typeof Deno.exit,
+    }} */
+        (_options.__testDeps || {});
+    const error = deps.error || console.error;
+    const exit = deps.exit || Deno.exit;
+
     if (argv.length === 0) {
-        console.error("Usage: hns remove <source>");
-        Deno.exit(1);
+        error("Usage: hns remove <source>");
+        exit(1);
+        return;
     }
 
     const source = argv[0];
     try {
-        const settings = getSettingsManager();
-        const packageManager = new DefaultPackageManager({
-            cwd: Deno.cwd(),
-            agentDir: getSettingsDir("global"),
+        const SettingsPackageManager = deps.PackageManager || DefaultPackageManager;
+        const settings = (deps.getSettingsManager || getSettingsManager)();
+        const packageManager = new SettingsPackageManager({
+            cwd: (deps.cwd || Deno.cwd)(),
+            agentDir: (deps.getSettingsDir || getSettingsDir)("global"),
             settingsManager: settings,
         });
 
         const success = await packageManager.removeAndPersist(source);
+        const log = deps.log || console.log;
         if (!success) {
-            console.log(`Package "${source}" is not currently installed — nothing to remove.`);
+            log(`Package "${source}" is not currently installed — nothing to remove.`);
             return;
         }
 
-        await discoverAndRegisterThemes();
+        await (deps.discoverAndRegisterThemes || discoverAndRegisterThemes)();
 
         // If the active theme came from the package we just removed, reset to embedded.
         const activeTheme = settings.getTheme();
-        if (activeTheme && activeTheme !== DEFAULT_THEME && !getAvailableThemes().includes(activeTheme)) {
+        if (
+            activeTheme && activeTheme !== DEFAULT_THEME &&
+            !(deps.getAvailableThemes || getAvailableThemes)().includes(activeTheme)
+        ) {
             settings.setTheme(DEFAULT_THEME);
-            setTheme(DEFAULT_THEME);
-            console.log(
+            (deps.setTheme || setTheme)(DEFAULT_THEME);
+            log(
                 `Active theme "${activeTheme}" was provided by the removed package — reset to ${DEFAULT_THEME}.`,
             );
         }
 
-        console.log(`Successfully removed ${source}`);
+        log(`Successfully removed ${source}`);
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.error(`Removal failed: ${msg}`);
-        Deno.exit(1);
+        error(`Removal failed: ${msg}`);
+        exit(1);
     }
 }

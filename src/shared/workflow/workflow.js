@@ -9,17 +9,20 @@
  * kicking off a planning agent without an outer review loop.
  */
 
-import { join } from "@std/path";
+import { dirname, fromFileUrl, join } from "@std/path";
 // @ts-ignore — quikdown/ast .d.ts uses export= but ESM runtime has default export
 import quikdownAst from "quikdown/ast";
 import { AGENTS, CWD, MAX_PARALLEL_TASKS } from "../../constants.js";
 import { loadPlan } from "../../plan-store.js";
 import { runAgentSession } from "../session/session.js";
-import { getAgentDisplayName } from "../session/agents.js";
+import { getAgentDisplayName, loadAgentDefFromPath } from "../session/agents.js";
 import { createSilentUiApi } from "../ui/api.js";
 import { captureWorktreeTree } from "./git-snapshot.js";
 import { getActiveExecutionWorkflow, setActiveExecutionWorkflow } from "../session/session-state.js";
 import { isExecutablePlanStatus, recordPlanEvent } from "./plan-lifecycle.js";
+
+export const __dirname = dirname(fromFileUrl(import.meta.url));
+const SLICER_PROMPT_PATH = join(__dirname, "slicer-prompt.md");
 
 /**
  * Extract the last text output from the agent's assistant messages.
@@ -193,14 +196,19 @@ export function buildSlicerRequest(planName, triageMeta) {
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
  * @param {UiAPI} opts.uiAPI
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
- * @param {{ runAgentSession?: typeof runAgentSession }} [opts.__deps] - Test-only injection point.
+ * @param {{
+ *   runAgentSession?: typeof runAgentSession,
+ *   loadAgentDefFromPath?: typeof loadAgentDefFromPath,
+ * }} [opts.__deps] - Test-only injection point.
  * @returns {Promise<{ ok: boolean, error?: string }>}
  */
 export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManager, __deps }) {
     if (!uiAPI) throw new Error("runSlicerAgent: uiAPI is required");
     const session = __deps?.runAgentSession || runAgentSession;
+    const loadSlicerDef = __deps?.loadAgentDefFromPath || loadAgentDefFromPath;
+    const slicerAgentDef = await loadSlicerDef(SLICER_PROMPT_PATH, { agentName: AGENTS.SLICER });
 
-    const slicerDisplay = getAgentDisplayName(AGENTS.SLICER);
+    const slicerDisplay = slicerAgentDef.displayName;
     uiAPI.appendSystemMessage(`=== Running ${slicerDisplay} ===`, false, "Harns");
 
     try {
@@ -210,6 +218,7 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
             triageMeta,
             uiAPI,
             sessionManager,
+            _agentDefOverride: slicerAgentDef,
         });
         return { ok: true };
     } catch (e) {

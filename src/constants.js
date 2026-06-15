@@ -66,15 +66,19 @@ export const COMMAND_NAMES = Object.freeze({
 });
 
 /**
- * Canonical agent identifiers. Each value matches the agent definition's
- * filename (without the `.md` extension) in `src/agent-definitions/`. The
- * display name for each agent is the `name:` field inside that file and must
- * be loaded via `getAgentDisplayName()` from `shared/session/agents.js` —
- * never hardcoded.
+ * Canonical agent identifiers. Most values match an agent definition filename
+ * (without the `.md` extension) in `src/agent-definitions/`. The display name
+ * for standard agents is the `name:` field inside that file and must be loaded
+ * via `getAgentDisplayName()` from `shared/session/agents.js` — never
+ * hardcoded.
  *
  * `INIT` is a special pseudo-agent loaded from `src/cmd/init/init-agent-prompt.md`
  * by path rather than the agent-definitions directory, so it does not appear
  * in `/agent` listings.
+ *
+ * `SLICER` is a workflow-only pseudo-agent loaded from
+ * `src/shared/workflow/slicer-prompt.md`, so it also does not appear in
+ * `/agent` listings or switch_agent targets.
  */
 /** @type {Readonly<{ROUTER: string, OPERATOR: string, PLANNER: string, ARCHITECT: string, ENGINEER: string, REVIEWER: string, SLICER: string, TESTER: string, IDEATOR: string, DOC_WRITER: string, INIT: string}>} */
 export const AGENTS = Object.freeze({

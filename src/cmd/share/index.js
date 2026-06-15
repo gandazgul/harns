@@ -36,6 +36,15 @@ async function runCmd(cmd, args) {
  */
 export async function runShareCommand(_argv, options = {}) {
     const { uiAPI, sessionManager } = options || {};
+    const deps = /** @type {{
+        runCmd?: typeof runCmd,
+        exportRootSessionToHtml?: typeof exportRootSessionToHtml,
+        tmpDir?: () => string | undefined,
+        remove?: typeof Deno.remove,
+        now?: () => number,
+        theme?: typeof theme,
+    }} */
+        (options.__testDeps || {});
 
     if (!uiAPI) {
         throw new Error("UI API is required for the share command.");
@@ -48,28 +57,29 @@ export async function runShareCommand(_argv, options = {}) {
 
     try {
         // 1. Check if gh is installed
-        const ghVersion = await runCmd("gh", ["--version"]);
+        const runCommand = deps.runCmd || runCmd;
+        const ghVersion = await runCommand("gh", ["--version"]);
         if (!ghVersion.success) {
             uiAPI.appendSystemMessage("Error: GitHub CLI ('gh') is not installed. Please install it first.", true);
             return;
         }
 
         // 2. Check if gh is authenticated
-        const ghAuth = await runCmd("gh", ["auth", "status"]);
+        const ghAuth = await runCommand("gh", ["auth", "status"]);
         if (!ghAuth.success) {
             uiAPI.appendSystemMessage("Error: GitHub CLI is not authenticated. Please run 'gh auth login'.", true);
             return;
         }
 
         // 3. Export session to temporary HTML file
-        const tmpDir = Deno.env.get("TMPDIR") || "/tmp";
+        const tmpDir = (deps.tmpDir || (() => Deno.env.get("TMPDIR")))() || "/tmp";
         const sessionId = /** @type {{ getSessionId?: () => string }} */ (sessionManager).getSessionId?.() ||
-            String(Date.now());
+            String((deps.now || Date.now)());
         const tmpFile = join(tmpDir, `harns-session-${sessionId}.html`);
-        await exportRootSessionToHtml(sessionManager, tmpFile);
+        await (deps.exportRootSessionToHtml || exportRootSessionToHtml)(sessionManager, tmpFile);
 
         // 4. Upload to secret Gist
-        const ghGist = await runCmd("gh", ["gist", "create", "--public=false", tmpFile]);
+        const ghGist = await runCommand("gh", ["gist", "create", "--public=false", tmpFile]);
         if (!ghGist.success) {
             throw new Error(`gh gist create failed: ${ghGist.stderr}`);
         }
@@ -79,11 +89,12 @@ export async function runShareCommand(_argv, options = {}) {
             throw new Error("Failed to get Gist URL from gh output.");
         }
 
-        uiAPI.appendSystemMessage(`${theme.fg("success", `Session shared successfully!`)}\n${url}`);
+        const themeApi = deps.theme || theme;
+        uiAPI.appendSystemMessage(`${themeApi.fg("success", `Session shared successfully!`)}\n${url}`);
 
         // 5. Cleanup
         try {
-            await Deno.remove(tmpFile);
+            await (deps.remove || Deno.remove)(tmpFile);
         } catch (_e) {
             // Ignore cleanup errors
         }

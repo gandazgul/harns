@@ -1,8 +1,8 @@
 /**
  * @module task-completed
- * Custom tool for executing agents (Engineer/Operator) to declare they have
- * finished their current execution task. This returns a terminal outcome
- * that lets the orchestrator advance the active workflow.
+ * Custom tool for execution agents to declare they have finished their current
+ * task. This returns a terminal outcome that lets the orchestrator advance the
+ * active workflow.
  */
 
 import { Type } from "@earendil-works/pi-ai";
@@ -11,7 +11,7 @@ import { appendTaskCompletedMessage } from "../shared/ui/task-completed-message.
 
 const TOOL_PARAMS = Type.Object({
     message: Type.Optional(Type.String({
-        description: "Optional final message or summary of what was completed.",
+        description: "Concise success, failure, or blocked summary for the completed task.",
     })),
 });
 
@@ -29,12 +29,14 @@ export function createTaskCompletedTool({ uiAPI, agentName = "agent" } = /** @ty
     return defineTool({
         name: "task_completed",
         label: "Task Completed",
-        description: "Declare that you have finished your assigned execution task. " +
+        description: "Declare that you have finished your assigned execution task, whether it succeeded, failed, " +
+            "or is blocked. " +
             "For FEATURE and PROJECT workflows, this signals the orchestrator to begin validation. " +
             "For QUICK_FIX work, verify your own work before calling this tool. " +
-            "Call this exactly once when you are completely finished with your work. " +
+            "Call this exactly once when you are completely finished with your assigned work and include a concise " +
+            "summary in the message. " +
             "If you need to ask the user a clarifying question before finishing, DO NOT call this tool — " +
-            "just output the question in text. Only call this tool when your code changes are done.",
+            "just output the question in text.",
         parameters: TOOL_PARAMS,
         async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
             await Promise.resolve();
