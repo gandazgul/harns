@@ -23,11 +23,49 @@ export function getSettingsDir(scope) {
  *
  * Implementation Details:
  * - Global Scope:
- *     - Read: prioritizes ~/.hns/settings.json, falls back to ~/.pi/agent/settings.json.
+ *     - Read: uses ~/.hns/settings.json only.
+ *     - Migration: if ~/.hns/settings.json is missing, copies once from ~/.pi/agent/settings.json.
  *     - Write: always writes to ~/.hns/settings.json.
  * - Project Scope:
  *     - Read/Write: use <cwd>/.hns/settings.json.
  */
+/**
+ * @param {string} path
+ * @returns {boolean}
+ */
+function fileExists(path) {
+    try {
+        return Deno.statSync(path).isFile;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * One-time import of legacy Pi settings into Harns-owned settings.
+ * Existing Harns settings always win; Pi is never used as a runtime fallback.
+ *
+ * @param {{ homeDir?: string, harnsPath?: string, piPath?: string }} [options]
+ * @returns {{ copied: boolean, skipped: boolean, error?: string }}
+ */
+export function migratePiSettingsOnce(options = {}) {
+    const homeDir = options.homeDir ?? Deno.env.get("HOME") ?? "";
+    const harnsPath = options.harnsPath ?? join(homeDir, ".hns", "settings.json");
+    const piPath = options.piPath ?? join(homeDir, ".pi", "agent", "settings.json");
+
+    if (fileExists(harnsPath) || !fileExists(piPath)) {
+        return { copied: false, skipped: true };
+    }
+
+    try {
+        Deno.mkdirSync(dirname(harnsPath), { recursive: true });
+        Deno.copyFileSync(piPath, harnsPath);
+        return { copied: true, skipped: false };
+    } catch (error) {
+        return { copied: false, skipped: false, error: error instanceof Error ? error.message : String(error) };
+    }
+}
+
 class HarnsSettingsStorage {
     /** @type {string} */
     #cwd;
@@ -46,15 +84,6 @@ class HarnsSettingsStorage {
     }
 
     /**
-     * Fallback path for global settings.
-     * @returns {string}
-     */
-    #getGlobalFallbackPath() {
-        const homeDir = Deno.env.get("HOME") || "";
-        return join(homeDir, ".pi", "agent", "settings.json");
-    }
-
-    /**
      * Read settings file content, stripping JSONC comments/trailing commas
      * so callers (Pi's SettingsManager, custom setters) receive valid JSON.
      * @param {"global" | "project"} scope
@@ -62,19 +91,13 @@ class HarnsSettingsStorage {
      */
     #readSettings(scope) {
         const path = this.#resolvePath(scope);
+        if (scope === "global") {
+            migratePiSettingsOnce({ harnsPath: path });
+        }
         try {
             const raw = Deno.readTextFileSync(path);
             return stripJsoncComments(raw);
         } catch (_e) {
-            if (scope === "global") {
-                try {
-                    const fallbackPath = this.#getGlobalFallbackPath();
-                    const raw = Deno.readTextFileSync(fallbackPath);
-                    return stripJsoncComments(raw);
-                } catch (_e2) {
-                    return undefined;
-                }
-            }
             return undefined;
         }
     }

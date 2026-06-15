@@ -148,21 +148,13 @@ hns agent                           # list available agents
 hns agent engineer "implement X"    # bypass router and talk to one agent
 hns plans                           # list saved plans
 hns load-plan <name-or-path>        # review, execute, or continue a plan
-hns sleep                           # run memory optimization
 hns init                            # bootstrap project context
-hns install <source>                # install a theme package
-hns remove <source>                 # remove a theme package
 hns --help
 hns help <command>
 ```
 
-Inside the TUI, built-in slash commands include:
-
-```text
-/agent      /compact    /exit       /export     /init
-/load-plan  /model      /new        /quit       /reload
-/resume     /session    /share      /sleep      /theme
-```
+`hns --help` and `hns help <command>` are generated from the command registry. Inside the TUI, `/` autocomplete is built
+from the same registry plus installed prompt templates and skills.
 
 Prompt templates from `src/prompt-templates/`, `~/.hns/prompts/`, and `.hns/prompts/` also become slash commands when
 they do not collide with built-ins. Bundled skills can be invoked as `/skill:<name>`.

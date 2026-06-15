@@ -62,10 +62,10 @@ Deno.test("runInitCommand definition has correct flags", async () => {
     const mod = await import("./index.js");
     assertEquals(mod.runInitCommand.name, "runInitCommand");
     // Verify the command is registered with correct flags
-    const { getCommandDefinition } = await import("../registry.js");
+    const { getCommandDefinition, hasCommandSurface } = await import("../registry.js");
     const cmd = getCommandDefinition("init");
-    assertEquals(cmd?.isSlash, true);
-    assertEquals(cmd?.isCli, true);
+    assertEquals(cmd ? hasCommandSurface(cmd, "slash") : false, true);
+    assertEquals(cmd ? hasCommandSurface(cmd, "cli") : false, true);
     assertEquals(cmd?.name, "init");
     assertEquals(cmd?.displayName, "Init");
     assertStringIncludes(cmd?.description ?? "", "Initialize");

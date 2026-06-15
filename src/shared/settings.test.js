@@ -4,6 +4,7 @@
 
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
+import { migratePiSettingsOnce } from "./settings.js";
 
 // Use a temp dir for isolated file-based tests
 const TEMP_DIR = await Deno.makeTempDir({ prefix: "harns-settings-test-" });
@@ -119,6 +120,42 @@ Deno.test({
         // Project wins for scalar
         assertEquals(projectVal, "project-value");
     },
+});
+
+Deno.test("migratePiSettingsOnce copies legacy Pi settings when Harns settings are missing", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "harns-settings-migration-" });
+    try {
+        const piPath = join(tempDir, ".pi", "agent", "settings.json");
+        const harnsPath = join(tempDir, ".hns", "settings.json");
+        await Deno.mkdir(join(tempDir, ".pi", "agent"), { recursive: true });
+        await Deno.writeTextFile(piPath, '{"theme":"legacy-pi"}');
+
+        const result = migratePiSettingsOnce({ harnsPath, piPath });
+
+        assertEquals(result, { copied: true, skipped: false });
+        assertEquals(await Deno.readTextFile(harnsPath), '{"theme":"legacy-pi"}');
+    } finally {
+        await Deno.remove(tempDir, { recursive: true });
+    }
+});
+
+Deno.test("migratePiSettingsOnce leaves existing Harns settings untouched", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "harns-settings-migration-" });
+    try {
+        const piPath = join(tempDir, ".pi", "agent", "settings.json");
+        const harnsPath = join(tempDir, ".hns", "settings.json");
+        await Deno.mkdir(join(tempDir, ".pi", "agent"), { recursive: true });
+        await Deno.mkdir(join(tempDir, ".hns"), { recursive: true });
+        await Deno.writeTextFile(piPath, '{"theme":"legacy-pi"}');
+        await Deno.writeTextFile(harnsPath, '{"theme":"harns"}');
+
+        const result = migratePiSettingsOnce({ harnsPath, piPath });
+
+        assertEquals(result, { copied: false, skipped: true });
+        assertEquals(await Deno.readTextFile(harnsPath), '{"theme":"harns"}');
+    } finally {
+        await Deno.remove(tempDir, { recursive: true });
+    }
 });
 
 // Cleanup temp dirs

@@ -16,7 +16,13 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { COMMAND_NAMES } from "./constants.js";
-import { commandRegistry, getCliCommandDefinitions } from "./cmd/registry.js";
+import {
+    commandRegistry,
+    findCliFlagCommand,
+    getCliParseConfig,
+    getCommandDefinition,
+    hasCommandSurface,
+} from "./cmd/registry.js";
 import { printGlobalHelp } from "./cmd/help/index.js";
 import { stopTUI } from "./shared/ui/tui.js";
 
@@ -46,63 +52,41 @@ function stripLeadingGlobalFlags(argv) {
  */
 async function main() {
     const args = Deno.args;
+    const commandParseConfig = getCliParseConfig();
 
     const parsed = parseArgs(args, {
         stopEarly: true,
-        string: ["agent", "agents", "load-plan", "install", "remove"],
-        boolean: ["help", "continue", "plans", "sleep", "init", "initialize", "router"],
-        alias: { h: "help", c: "continue", a: "agent" },
+        string: commandParseConfig.string,
+        boolean: ["help", "continue", ...commandParseConfig.boolean],
+        alias: { h: "help", c: "continue", ...commandParseConfig.alias },
     });
 
     const normalizedArgs = stripLeadingGlobalFlags(args);
     const [firstPositional] = parsed._.map(String);
 
-    /**
-     * @param {unknown} val
-     * @returns {boolean}
-     */
-    const isFlagPassed = (val) => val === true || typeof val === "string";
-    for (const command of getCliCommandDefinitions()) {
-        // Skip the default router command from flag matching because it is the fallback
-        if (command.name === COMMAND_NAMES.ROUTER) {
-            continue;
-        }
+    const flagCommand = findCliFlagCommand(parsed);
+    if (flagCommand && flagCommand.command.name !== COMMAND_NAMES.ROUTER) {
+        const commandArgs = typeof flagCommand.flagValue === "string" && flagCommand.flagValue
+            ? [flagCommand.flagValue, ...parsed._.map(String)]
+            : [...parsed._.map(String)];
 
-        let matchedKey = null;
-        if (isFlagPassed(parsed[command.name])) {
-            matchedKey = command.name;
-        } else if (command.aliases) {
-            for (const alias of command.aliases) {
-                if (isFlagPassed(parsed[alias])) {
-                    matchedKey = alias;
-                    break;
-                }
-            }
-        }
-
-        if (matchedKey !== null) {
-            const flagValue = parsed[matchedKey];
-            const commandArgs = typeof flagValue === "string" && flagValue
-                ? [flagValue, ...parsed._.map(String)]
-                : [...parsed._.map(String)];
-
-            await commandRegistry[command.name].execute(commandArgs, {
-                sessionStartMode: parsed.continue ? "continue" : "new",
-            });
-            return;
-        }
+        await flagCommand.command.execute(commandArgs, {
+            sessionStartMode: parsed.continue ? "continue" : "new",
+        });
+        return;
     }
 
     // Explicit command dispatch: `cli.js <command> ...`
-    if (commandRegistry[firstPositional]) {
-        if (!commandRegistry[firstPositional].isCli) {
+    const positionalCommand = getCommandDefinition(firstPositional);
+    if (positionalCommand) {
+        if (!hasCommandSurface(positionalCommand, "cli")) {
             console.error(
                 `[Harns] Command '${firstPositional}' is only available inside interactive chat as /${firstPositional}.`,
             );
             Deno.exit(1);
         }
         const [, ...commandArgs] = normalizedArgs;
-        await commandRegistry[firstPositional].execute(commandArgs);
+        await positionalCommand.execute(commandArgs);
         return;
     }
 
