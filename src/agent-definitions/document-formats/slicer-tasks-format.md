@@ -15,21 +15,22 @@ Tasks must form a Directed Acyclic Graph (DAG). Each row is a vertical slice (or
 horizontal layer. Numeric task IDs, `none` or comma-separated IDs in Dependencies, comma-separated repo-relative paths
 in Write Scope, and an assignee from `engineer | tester | doc-writer`.
 
-| Task | Assignee   | Dependencies | Write Scope       | Description                                                                                          |
-| ---- | ---------- | ------------ | ----------------- | ---------------------------------------------------------------------------------------------------- |
-| 1    | engineer   | none         | src/auth, src/api | One-line summary of slice 1 (full detail in the per-slice block below).                              |
-| 2    | engineer   | none         | src/ui            | One-line summary of slice 2.                                                                         |
-| 3    | doc-writer | none         | README.md         | One-line summary of doc work (only if there's user-facing surface).                                  |
-| 4    | tester     | 1, 2, 3      | none              | Run the project's full verification command. Report failures explicitly so a follow-up task can fix. |
+| Task | Assignee   | Dependencies | Write Scope       | Description                                                                             |
+| ---- | ---------- | ------------ | ----------------- | --------------------------------------------------------------------------------------- |
+| 1    | engineer   | none         | src/auth, src/api | One-line summary of slice 1 (full detail in the per-slice block below).                 |
+| 2    | engineer   | none         | src/ui            | One-line summary of slice 2.                                                            |
+| 3    | doc-writer | none         | README.md         | One-line summary of doc work (only if there's user-facing surface).                     |
+| 4    | tester     | 1, 2, 3      | none              | Integration Point: run the project's validation command and report failures explicitly. |
 
-The final row is the **mandatory cross-slice verification task**: assignee `tester`, dependencies list every prior task
-ID, write scope `none` unless it edits tests, and description directs the tester to run the project's full verification
-command.
+The final row is the **mandatory Integration Point**: assignee `tester`, dependencies list every prior task ID, write
+scope `none` unless it edits tests, and description names it as the Integration Point. It should direct the tester to
+run the project's validation command and report failures. This is an intra-DAG check before Workflow Validation, not the
+independent acceptance gate that marks a Plan verified.
 
 The Write Scope column controls Harns' shared-worktree scheduler:
 
 - Use the narrowest honest repo-relative file or directory paths, comma-separated.
-- Use `none` for read-only verification tasks.
+- Use `none` for read-only validation or Integration Point tasks.
 - Use `unknown` only when the task cannot be scoped; Harns treats it as broad and will not run it concurrently with
   other writer tasks.
 - Dependencies still describe semantic ordering. Write Scope only describes whether dependency-ready tasks can safely
@@ -64,8 +65,7 @@ specifies a precise shape (state machine, schema, type) that prose can't capture
   - **doc-writer** only when the change has user-facing surface (new command, flag, error message, README-relevant
     behavior) — not for internal refactors, bug fixes without behavior change, or test-only work.
   - **tester** appears in slice rows only if a slice has net-new test infrastructure to build. Slice-level acceptance is
-    the engineer's responsibility. The mandatory final tester row is always present and is the only cross-slice
-    verification task.
+    the engineer's responsibility. The mandatory final tester row is always present as the Integration Point.
 - Engineer slices are vertical (cut through every layer they touch). Doc-writer tasks usually have no engineer
   dependency — they read finished or near-finished code in parallel. Mark them with `none` in Dependencies when truly
   parallel, and declare the exact docs they edit in Write Scope.

@@ -145,6 +145,11 @@ history. _Avoid_: Run, interaction, conversation
 **Workflow Orchestrator**: The runtime coordinator that consumes tool outcomes and starts the next Agent Session.
 _Avoid_: Router, dispatcher agent
 
+**Workflow Decision**: An ephemeral runtime instruction with `kind` and `payload` fields that tells workflow callers
+what to do next after interpreting tool outcomes, Agent Session results, or Plan Status; it does not change Plan Status
+directly and carries semantic reason codes rather than user-facing text. _Avoid_: Workflow Outcome, status update,
+lifecycle event
+
 **Task**: A numbered, assignable unit of work inside a `PROJECT` Plan with an assignee and dependency list. _Avoid_:
 Step, subtask, work item
 
@@ -156,8 +161,12 @@ execution, orchestration
 **Task Completion**: The `task_completed` signal an execution Agent emits when its assigned work is complete. _Avoid_:
 Done message, final response
 
-**Workflow Validation**: Harns' independent verification pass after a completed workflow loop. _Avoid_: Agent
-self-check, final summary
+**Integration Point**: The final tester-owned Task in a `PROJECT` Task graph that depends on every prior Task and checks
+cross-slice integration before Workflow Validation. _Avoid_: Final verification task, cross-slice verification task,
+acceptance gate
+
+**Workflow Validation**: Harns' independent validation pass after a completed workflow loop. _Avoid_: Agent self-check,
+final summary
 
 **Toolset**: A named bundle of tool names granted to an Agent Session. _Avoid_: Tool list, capabilities
 
@@ -224,6 +233,7 @@ command definition, prompt command
 - A denied **Plan** produces **Feedback**, and each **Feedback** response triggers one **Revision**.
 - A **Task** has exactly one **Assignee** and may depend on zero or more other **Tasks**.
 - **Task Dispatch** sends each ready **Task** to an **Agent Session** for its **Assignee**.
+- A `PROJECT` Task graph ends with exactly one **Integration Point** before Workflow Validation can begin.
 - An execution **Agent Session** must emit **Task Completion** before the workflow can proceed to **Workflow
   Validation**.
 - **Workflow Validation** runs only after completed `FEATURE` and `PROJECT` Plan execution loops.
@@ -232,6 +242,11 @@ command definition, prompt command
 - Every **Agent Session** loads exactly one **Agent Definition** after bundled, home, and local layers are merged.
 - **Core Memories** are injected into every **Agent Session** by the **Mnemosyne** extension.
 - **Prompt Templates** become slash commands in the **TUI**.
+- A **Workflow Decision** may cause workflow code to record a **Plan Event**, but it is not itself durable state.
+- A **Workflow Decision** describes the caller's next runtime action; the phase function that reaches a durable
+  lifecycle moment records the corresponding **Plan Event**.
+- A **Workflow Decision** reason code describes workflow semantics such as missing Plan declaration or canceled Review
+  Loop, not raw tool outcome names.
 
 ## Example dialogue
 
@@ -266,3 +281,5 @@ command definition, prompt command
 - "completed" can describe either a Plan lifecycle state or an execution signal; resolved: use **Implemented Plan** for
   finished work, **Verified Plan** for proven work, and **Task Completion** for the `task_completed` tool outcome.
 - "approved" previously meant both user-approved and executable; resolved: only **Ready For Work** means executable.
+- "workflow outcome" sounded durable and overlapped with **Plan Event** and **Plan Status**; resolved: use **Workflow
+  Decision** for ephemeral routing instructions after interpreting runtime results.

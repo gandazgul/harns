@@ -15,6 +15,10 @@ import {
     executePlan as executePlanFn,
     runPlanningAgent as runPlanningAgentFn,
 } from "../../shared/workflow/workflow.js";
+import {
+    decidePostExecution as decidePostExecutionFn,
+    decidePostPlanning as decidePostPlanningFn,
+} from "../../shared/workflow/decisions.js";
 import { isExecutablePlanStatus, recordPlanEvent as recordPlanEventFn } from "../../shared/workflow/plan-lifecycle.js";
 import {
     getWorkflowDiff as getWorkflowDiffFn,
@@ -43,6 +47,8 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof resolvePlanFn} [resolvePlan]
  * @property {typeof executePlanFn} [executePlan]
  * @property {typeof runPlanningAgentFn} [runPlanningAgent]
+ * @property {typeof decidePostPlanningFn} [decidePostPlanning]
+ * @property {typeof decidePostExecutionFn} [decidePostExecution]
  * @property {typeof submitPlanForReviewFn} [submitPlanForReview]
  * @property {typeof askPostApprovalFn} [askPostApproval]
  * @property {typeof askApprovalWithTasksFn} [askApprovalWithTasks]
@@ -249,6 +255,95 @@ async function validateCompletedExecution(
 }
 
 /**
+ * @param {Object} opts
+ * @param {import('../../shared/workflow/decisions.js').WorkflowDecision} opts.executionDecision
+ * @param {string} opts.fallbackPlanContent
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof runValidationLoopFn} opts.runValidationLoop
+ * @param {typeof loadPlanFn} opts.loadPlan
+ * @returns {Promise<void>}
+ */
+async function validatePostExecutionDecision({
+    executionDecision,
+    fallbackPlanContent,
+    uiAPI,
+    runValidationLoop,
+    loadPlan,
+}) {
+    if (executionDecision.kind !== "run_validation") return;
+
+    const planName = /** @type {string} */ (executionDecision.payload.planName);
+    const triageMeta = /** @type {import('../../plan-store.js').PlanFrontMatter} */ (
+        executionDecision.payload.triageMeta
+    );
+
+    await validateCompletedExecution(
+        { executionComplete: true },
+        planName,
+        fallbackPlanContent,
+        triageMeta,
+        uiAPI,
+        runValidationLoop,
+        loadPlan,
+    );
+}
+
+/**
+ * Execute an approved post-planning decision and run validation when execution
+ * completes. Returns true when the decision was handled as execution.
+ *
+ * @param {Object} opts
+ * @param {import('../../shared/workflow/decisions.js').WorkflowDecision} opts.decision
+ * @param {string} opts.fallbackPlanContent
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof executePlanFn} opts.executePlan
+ * @param {typeof decidePostExecutionFn} opts.decidePostExecution
+ * @param {typeof runValidationLoopFn} opts.runValidationLoop
+ * @param {typeof loadPlanFn} opts.loadPlan
+ * @returns {Promise<boolean>}
+ */
+async function executePostPlanningDecision({
+    decision,
+    fallbackPlanContent,
+    uiAPI,
+    executePlan,
+    decidePostExecution,
+    runValidationLoop,
+    loadPlan,
+}) {
+    if (decision.kind !== "execute_plan") return false;
+
+    const planName = /** @type {string} */ (decision.payload.planName);
+    const triageMeta = /** @type {import('../../plan-store.js').PlanFrontMatter} */ (decision.payload.triageMeta);
+    const tasks = /** @type {import('../../shared/workflow/workflow.js').PlanOutcomeResult["tasks"]} */ (
+        decision.payload.tasks
+    );
+
+    const execRes = await executePlan(planName, triageMeta, uiAPI, tasks);
+    const executionDecision = decidePostExecution(execRes, {
+        planName,
+        triageMeta,
+        executionAgentName: AGENTS.ENGINEER,
+    });
+    await validatePostExecutionDecision({
+        executionDecision,
+        fallbackPlanContent,
+        uiAPI,
+        runValidationLoop,
+        loadPlan,
+    });
+    return true;
+}
+
+/**
+ * @param {import('../../shared/workflow/decisions.js').WorkflowDecision} decision
+ * @returns {boolean}
+ */
+function shouldKeepPlanningAgentActive(decision) {
+    return decision.kind === "stay_with_agent" || decision.kind === "halt";
+}
+
+/**
  * Run the Readiness Gate for an approved Plan.
  *
  * @param {{ planName: string, path: string, attrs: import('../../plan-store.js').PlanFrontMatter }} plan
@@ -295,6 +390,8 @@ async function prepareApprovedPlanForWork(plan, uiAPI, ensureSlicerTasks, record
  * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
  * @param {typeof executePlanFn} opts.executePlan
  * @param {typeof runPlanningAgentFn} opts.runPlanningAgent
+ * @param {typeof decidePostPlanningFn} opts.decidePostPlanning
+ * @param {typeof decidePostExecutionFn} opts.decidePostExecution
  * @param {typeof runValidationLoopFn} opts.runValidationLoop
  * @param {typeof loadPlanFn} opts.loadPlan
  * @param {typeof setActiveAgentFn} opts.setActiveAgent
@@ -307,6 +404,8 @@ async function executeReadyPlanWithRepair({
     uiAPI,
     executePlan,
     runPlanningAgent,
+    decidePostPlanning,
+    decidePostExecution,
     runValidationLoop,
     loadPlan,
     setActiveAgent,
@@ -321,16 +420,19 @@ async function executeReadyPlanWithRepair({
 
     for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
         const execRes = await executePlan(currentPlanName, currentMeta, uiAPI, currentTasks);
-        if (!execRes || !execRes.repairRequired) {
-            await validateCompletedExecution(
-                execRes,
-                currentPlanName,
-                plan.markdown || plan.body || "",
-                /** @type {import('../../plan-store.js').PlanFrontMatter} */ (currentMeta),
+        const executionDecision = decidePostExecution(execRes, {
+            planName: currentPlanName,
+            triageMeta: /** @type {import('../../tools/plan-written.js').TriageMeta} */ (currentMeta),
+            executionAgentName: agentName,
+        });
+        if (executionDecision.kind !== "repair_plan") {
+            await validatePostExecutionDecision({
+                executionDecision,
+                fallbackPlanContent: plan.markdown || plan.body || "",
                 uiAPI,
                 runValidationLoop,
                 loadPlan,
-            );
+            });
             break;
         }
 
@@ -357,20 +459,24 @@ async function executeReadyPlanWithRepair({
                 `## Plan Execution Halted — Task Table Repair Required`,
                 "",
                 `The plan "${currentPlanName}" had a malformed Tasks table: ${
-                    execRes.error || "Unknown task table error"
+                    String(executionDecision.payload.error || "Unknown task table error")
                 }.`,
                 "",
                 "Fix the markdown Tasks table to follow:",
                 "",
                 "| Task | Assignee | Dependencies | Write Scope | Description |",
                 "",
-                "Use numeric task IDs, valid assignees, numeric dependency IDs or `none`, narrow repo-relative write scopes, and a final tester verification task that depends on every prior task.",
+                "Use numeric task IDs, valid assignees, numeric dependency IDs or `none`, narrow repo-relative write scopes, and a final tester Integration Point that depends on every prior task.",
                 "Then call plan_written again with the plan name.",
             ].join("\n"),
             triageMeta: currentMeta,
             uiAPI,
         });
-        if (repairOutcome.outcome !== "approved_execute" || !repairOutcome.planName) {
+        const repairDecision = decidePostPlanning(repairOutcome, {
+            planningAgentName: agentName,
+            fallbackTriageMeta: currentMeta,
+        });
+        if (repairDecision.kind !== "execute_plan") {
             uiAPI.appendSystemMessage(
                 "Repair did not produce an approved plan. Aborting.",
                 false,
@@ -378,9 +484,14 @@ async function executeReadyPlanWithRepair({
             );
             break;
         }
-        currentPlanName = repairOutcome.planName;
-        currentMeta = repairOutcome.triageMeta || currentMeta;
-        currentTasks = repairOutcome.tasks;
+        currentPlanName = /** @type {string} */ (repairDecision.payload.planName);
+        currentMeta = /** @type {Partial<import('../../plan-store.js').PlanFrontMatter>} */ (
+            repairDecision.payload.triageMeta || currentMeta
+        );
+        currentTasks =
+            /** @type {Array<{ task: number, assignee: string, dependencies: string, description: string, writeScope?: string }> | undefined} */ (
+                repairDecision.payload.tasks
+            );
     }
 }
 
@@ -439,6 +550,8 @@ async function confirmBaselineReset(planName, uiAPI) {
  * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
  * @param {typeof executePlanFn} opts.executePlan
  * @param {typeof runPlanningAgentFn} opts.runPlanningAgent
+ * @param {typeof decidePostPlanningFn} opts.decidePostPlanning
+ * @param {typeof decidePostExecutionFn} opts.decidePostExecution
  * @param {typeof runValidationLoopFn} opts.runValidationLoop
  * @param {typeof loadPlanFn} opts.loadPlan
  * @param {typeof getWorkflowDiffFn} opts.getWorkflowDiff
@@ -454,6 +567,8 @@ async function handlePlanRecovery({
     uiAPI,
     executePlan,
     runPlanningAgent,
+    decidePostPlanning,
+    decidePostExecution,
     runValidationLoop,
     loadPlan,
     getWorkflowDiff,
@@ -515,6 +630,8 @@ async function handlePlanRecovery({
                 uiAPI,
                 executePlan,
                 runPlanningAgent,
+                decidePostPlanning,
+                decidePostExecution,
                 runValidationLoop,
                 loadPlan,
                 setActiveAgent,
@@ -548,6 +665,8 @@ async function handlePlanRecovery({
                 uiAPI,
                 executePlan,
                 runPlanningAgent,
+                decidePostPlanning,
+                decidePostExecution,
                 runValidationLoop,
                 loadPlan,
                 setActiveAgent,
@@ -586,6 +705,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
         resolvePlan: resolvePlanDep,
         executePlan: executePlanDep,
         runPlanningAgent: runPlanningAgentDep,
+        decidePostPlanning: decidePostPlanningDep,
+        decidePostExecution: decidePostExecutionDep,
         submitPlanForReview: submitPlanForReviewDep,
         askPostApproval: askPostApprovalDep,
         askApprovalWithTasks: askApprovalWithTasksDep,
@@ -607,6 +728,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const resolvePlan = resolvePlanDep || resolvePlanFn;
     const executePlan = executePlanDep || executePlanFn;
     const runPlanningAgent = runPlanningAgentDep || runPlanningAgentFn;
+    const decidePostPlanning = decidePostPlanningDep || decidePostPlanningFn;
+    const decidePostExecution = decidePostExecutionDep || decidePostExecutionFn;
     const submitPlanForReview = submitPlanForReviewDep || submitPlanForReviewFn;
     const askPostApproval = askPostApprovalDep || askPostApprovalFn;
     const askApprovalWithTasks = askApprovalWithTasksDep || askApprovalWithTasksFn;
@@ -703,6 +826,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 uiAPI,
                 executePlan,
                 runPlanningAgent,
+                decidePostPlanning,
+                decidePostExecution,
                 runValidationLoop,
                 loadPlan,
                 getWorkflowDiff,
@@ -782,6 +907,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
                         uiAPI,
                         executePlan,
                         runPlanningAgent,
+                        decidePostPlanning,
+                        decidePostExecution,
                         runValidationLoop,
                         loadPlan,
                         setActiveAgent,
@@ -837,15 +964,18 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             : await askPostApproval(plan.planName, uiAPI);
                         if (action === "proceed") {
                             const execRes = await executePlan(plan.planName, plan.attrs, uiAPI);
-                            await validateCompletedExecution(
-                                execRes,
-                                plan.planName,
-                                plan.markdown || plan.body || "",
-                                plan.attrs,
+                            const executionDecision = decidePostExecution(execRes, {
+                                planName: plan.planName,
+                                triageMeta: plan.attrs,
+                                executionAgentName: agentName,
+                            });
+                            await validatePostExecutionDecision({
+                                executionDecision,
+                                fallbackPlanContent: plan.markdown || plan.body || "",
                                 uiAPI,
                                 runValidationLoop,
                                 loadPlan,
-                            );
+                            });
                         } else {
                             uiAPI.appendSystemMessage(
                                 `Plan saved. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
@@ -865,27 +995,20 @@ export async function runLoadPlanCommand(argv, options = {}) {
                         uiAPI,
                     });
 
-                    if (outcome.outcome === "approved_execute" && outcome.planName) {
-                        const execRes = await executePlan(
-                            outcome.planName,
-                            outcome.triageMeta || plan.attrs,
-                            uiAPI,
-                            outcome.tasks,
-                        );
-                        await validateCompletedExecution(
-                            execRes,
-                            outcome.planName,
-                            plan.markdown || plan.body || "",
-                            /** @type {import('../../plan-store.js').PlanFrontMatter} */ (outcome.triageMeta ||
-                                plan.attrs),
-                            uiAPI,
-                            runValidationLoop,
-                            loadPlan,
-                        );
-                    } else if (
-                        outcome.outcome === "canceled" || outcome.outcome === "no_call" ||
-                        outcome.outcome === "feedback" || outcome.outcome === "repair_required"
-                    ) {
+                    const planningDecision = decidePostPlanning(outcome, {
+                        planningAgentName: agentName,
+                        fallbackTriageMeta: plan.attrs,
+                    });
+                    await executePostPlanningDecision({
+                        decision: planningDecision,
+                        fallbackPlanContent: plan.markdown || plan.body || "",
+                        uiAPI,
+                        executePlan,
+                        decidePostExecution,
+                        runValidationLoop,
+                        loadPlan,
+                    });
+                    if (shouldKeepPlanningAgentActive(planningDecision)) {
                         skipRouterRestore = true;
                     }
                     return;
@@ -908,26 +1031,20 @@ export async function runLoadPlanCommand(argv, options = {}) {
             uiAPI,
         });
 
-        if (outcome.outcome === "approved_execute" && outcome.planName) {
-            const execRes = await executePlan(
-                outcome.planName,
-                outcome.triageMeta || plan.attrs,
-                uiAPI,
-                outcome.tasks,
-            );
-            await validateCompletedExecution(
-                execRes,
-                outcome.planName,
-                plan.markdown || plan.body || "",
-                /** @type {import('../../plan-store.js').PlanFrontMatter} */ (outcome.triageMeta || plan.attrs),
-                uiAPI,
-                runValidationLoop,
-                loadPlan,
-            );
-        } else if (
-            outcome.outcome === "canceled" || outcome.outcome === "no_call" ||
-            outcome.outcome === "feedback" || outcome.outcome === "repair_required"
-        ) {
+        const planningDecision = decidePostPlanning(outcome, {
+            planningAgentName: agentName,
+            fallbackTriageMeta: plan.attrs,
+        });
+        await executePostPlanningDecision({
+            decision: planningDecision,
+            fallbackPlanContent: plan.markdown || plan.body || "",
+            uiAPI,
+            executePlan,
+            decidePostExecution,
+            runValidationLoop,
+            loadPlan,
+        });
+        if (shouldKeepPlanningAgentActive(planningDecision)) {
             skipRouterRestore = true;
         }
     } finally {

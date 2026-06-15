@@ -23,15 +23,15 @@ import { recordPlanEvent } from "./plan-lifecycle.js";
  *
  * @returns {Promise<string>}
  */
-async function getOrAskForVerificationCommand(uiAPI) {
+async function getOrAskForValidationCommand(uiAPI) {
     const existingCommand = getCustomSetting("verification_command", "project");
     if (existingCommand) {
         return /** @type {string} */ (existingCommand);
     }
 
-    uiAPI.appendSystemMessage("No verification command found in project settings.");
+    uiAPI.appendSystemMessage("No validation command found in project settings.");
     const userInput = await uiAPI.promptText(
-        "Enter the command to verify this project (e.g., 'deno task ci', 'npm test'): ",
+        "Enter the command to validate this project (e.g., 'deno task ci', 'npm test'): ",
         { allowEmpty: false },
     );
 
@@ -42,25 +42,25 @@ async function getOrAskForVerificationCommand(uiAPI) {
     const newCommand = userInput.trim();
     await setCustomSetting("verification_command", newCommand, "project");
 
-    uiAPI.appendSystemMessage(`Saved verification command: '${newCommand}'`);
+    uiAPI.appendSystemMessage(`Saved validation command: '${newCommand}'`);
     return newCommand;
 }
 
 /**
- * Spawns the local verification step.
+ * Spawns the local validation step.
  *
  * @param {import('./workflow.js').UiAPI} uiAPI
  *
  * @returns {Promise<{ exitCode: number, output: string }>}
  */
 export async function runLocalCI(uiAPI) {
-    const cmdArgs = await getOrAskForVerificationCommand(uiAPI);
+    const cmdArgs = await getOrAskForValidationCommand(uiAPI);
 
     if (!cmdArgs) {
         return {
             exitCode: 1,
             output:
-                "Harns could not auto-detect a build or test command for this repository. Please explore the project and manually run the appropriate compilation or linting commands to verify your changes.",
+                "Harns could not auto-detect a build or test command for this repository. Please explore the project and manually run the appropriate compilation or linting commands to validate your changes.",
         };
     }
 
@@ -86,7 +86,7 @@ export async function runLocalCI(uiAPI) {
     } catch (/** @type {any} */ error) {
         return {
             exitCode: 1,
-            output: `Failed to spawn verification process: ${error.message}`,
+            output: `Failed to spawn validation process: ${error.message}`,
         };
     }
 }
@@ -197,7 +197,7 @@ export function shouldRunWorkflowValidation(triageMeta) {
 }
 
 /**
- * Unified validation loop. Runs local verification and semantic code review.
+ * Unified validation loop. Runs local validation and semantic code review.
  *
  * @param {Object} args
  * @param {string} args.planName
