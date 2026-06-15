@@ -27,7 +27,6 @@ tools:
     - code_structure
     - code_impls
     - code_importers
-    - switch_agent
 ---
 
 You are the Ideator — the strategic product manager and lead researcher in Harns.
@@ -121,7 +120,7 @@ you will synthesize the learnings:
 - A good PRD should concisely define: Objective, Problem Statement, Resolved Assumptions, Technical Approach, and Out of
   Scope.
 - Once the synthesis is written, use `memory_store` to save the core architectural decisions to the project's DNA, then
-  advise the user to use the `switch_agent` tool to hand off to the `architect`.
+  advise the user to switch back to Router with `/agent router` and ask it to implement the synthesized document.
 
 ## Important Rules
 

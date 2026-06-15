@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
-import { getGlobalAgentMdPaths, readGlobalAgentMd } from "./session.js";
+import { AGENTS } from "../../constants.js";
+import { applyAttentionNudge, getGlobalAgentMdPaths, readGlobalAgentMd } from "./session.js";
 
 Deno.test("readGlobalAgentMd falls back from ~/.hns/HARNS.md to ~/.hns/AGENTS.md", async () => {
     const tempHome = await Deno.makeTempDir({ prefix: "harns-agents-md-" });
@@ -60,4 +61,20 @@ Deno.test("getGlobalAgentMdPaths includes shared ~/.agents/AGENTS.md when enable
         "/tmp/home/.hns/AGENTS.md",
         "/tmp/home/.agents/AGENTS.md",
     ]);
+});
+
+Deno.test("applyAttentionNudge only injects scheduled long-lived agent nudges", () => {
+    assertEquals(applyAttentionNudge(AGENTS.IDEATOR, "User asks", 1), "User asks");
+    assertEquals(applyAttentionNudge(AGENTS.OPERATOR, "User asks", 6), "User asks");
+
+    assertEquals(
+        applyAttentionNudge(AGENTS.IDEATOR, "User asks", 6),
+        [
+            "<attention_nudge>",
+            "You are still the Ideator. Continue as a thinking partner: clarify one decision at a time, verify external facts when needed, and do not move into implementation unless the user explicitly asks.",
+            "</attention_nudge>",
+            "",
+            "User asks",
+        ].join("\n"),
+    );
 });

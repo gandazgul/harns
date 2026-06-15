@@ -59,7 +59,8 @@ import {
 } from "./session-state.js";
 import { directoryExists, fileExists } from "../helpers.js";
 import {
-    _AGENT_REMINDERS,
+    _AGENT_ATTENTION_NUDGES,
+    ATTENTION_NUDGE_TURN_INTERVAL,
     loadAgentDef,
     resolveAgentDefsDir as _resolveAgentDefsDir,
     resolveSessionToolNames,
@@ -1242,7 +1243,27 @@ async function runPrompt({
     return session.agent.state.messages;
 }
 
-/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, promptState: { text: string }, subscriberState: SubscriberState, agentName: string, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[] }>} */
+/**
+ * @param {string} agentName
+ * @param {string} userRequest
+ * @param {number} rootTurnCount
+ * @returns {string}
+ */
+export function applyAttentionNudge(agentName, userRequest, rootTurnCount) {
+    const nudge = _AGENT_ATTENTION_NUDGES[agentName];
+    if (!nudge) return userRequest;
+    if (rootTurnCount <= 1 || rootTurnCount % ATTENTION_NUDGE_TURN_INTERVAL !== 0) return userRequest;
+
+    return [
+        "<attention_nudge>",
+        nudge,
+        "</attention_nudge>",
+        "",
+        userRequest,
+    ].join("\n");
+}
+
+/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, promptState: { text: string }, subscriberState: SubscriberState, agentName: string, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[], rootTurnCount: number }>} */
 const rootSessionMetadata = new WeakMap();
 
 /**
@@ -1290,6 +1311,7 @@ export async function ensureRootAgentSession(opts) {
         agentName: opts.agentName,
         tools,
         finalCustomTools,
+        rootTurnCount: 0,
     });
 
     return session;
@@ -1324,11 +1346,14 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
         );
     }
 
+    meta.rootTurnCount += 1;
+    const finalRequest = applyAttentionNudge(agentName, userRequest, meta.rootTurnCount);
+
     return await runPrompt({
         session,
         agentDef: meta.agentDef,
         agentName,
-        userRequest,
+        userRequest: finalRequest,
         finalSystemPrompt: meta.promptState.text,
         images,
         uiAPI,
@@ -1367,15 +1392,12 @@ export async function runAgentSession(opts) {
         opts.uiAPI?.requestRender?.();
     }
 
-    const reminder = _AGENT_REMINDERS[opts.agentName] || "";
-    const finalRequest = reminder ? `${opts.userRequest}${reminder}` : opts.userRequest;
-
     try {
         return await runPrompt({
             session,
             agentDef,
             agentName: opts.agentName,
-            userRequest: finalRequest,
+            userRequest: opts.userRequest,
             finalSystemPrompt: promptState.text,
             images: opts.images,
             uiAPI: opts.uiAPI,

@@ -37,6 +37,11 @@ function toUserFacingAgentMdPath(file) {
  *   invokablePromptTemplates: PromptTemplate[],
  *   blockedPromptTemplates: PromptTemplate[],
  *   chatPromptAgentName: string,
+ *   __deps?: {
+ *     listSkills?: typeof listSkills,
+ *     listLoadedAgentMdFiles?: typeof listLoadedAgentMdFiles,
+ *     getSettingsManager?: () => { getTheme: () => string | undefined },
+ *   },
  * }} deps
  */
 export async function renderBootBanner({
@@ -44,7 +49,10 @@ export async function renderBootBanner({
     invokablePromptTemplates,
     blockedPromptTemplates,
     chatPromptAgentName,
+    __deps,
 }) {
+    const listSkillsImpl = __deps?.listSkills || listSkills;
+    const listLoadedAgentMdFilesImpl = __deps?.listLoadedAgentMdFiles || listLoadedAgentMdFiles;
     const headerStyle = { headingColor: "mdHeading" };
 
     if (invokablePromptTemplates.length > 0) {
@@ -59,7 +67,7 @@ export async function renderBootBanner({
         uiAPI.appendSystemMessage("none", false, "Loaded Prompt Templates:", headerStyle);
     }
 
-    const skills = await listSkills();
+    const skills = await listSkillsImpl();
     if (skills && skills.length > 0) {
         const skillNames = skills.map((s) => s.name).join(", ");
         uiAPI.appendSystemMessage(skillNames, false, `Loaded Skills (${skills.length}):`, headerStyle);
@@ -68,11 +76,11 @@ export async function renderBootBanner({
     }
 
     // Report the active theme
-    const { getSettingsManager } = await import("../settings.js");
-    const activeTheme = getSettingsManager().getTheme() || "catppuccin-mocha";
+    const getSettingsManagerImpl = __deps?.getSettingsManager || (await import("../settings.js")).getSettingsManager;
+    const activeTheme = getSettingsManagerImpl().getTheme() || "catppuccin-mocha";
     uiAPI.appendSystemMessage(activeTheme, false, "Loaded Theme:", headerStyle);
 
-    const agentMdFiles = await listLoadedAgentMdFiles();
+    const agentMdFiles = await listLoadedAgentMdFilesImpl();
     if (agentMdFiles.length > 0) {
         const lines = agentMdFiles
             .map((file) => `- ${toUserFacingAgentMdPath(file)}`)
