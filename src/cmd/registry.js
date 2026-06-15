@@ -60,8 +60,6 @@ const bin = (...parts) => [CLI_BIN, ...parts].join(" ");
  * @property {string[]} [notes]
  * @property {CommandHandler} execute
  * @property {("cli" | "slash")[]} surfaces
- * @property {"boolean" | "string"} [cliFlag]
- * @property {string[]} [cliFlagAliases]
  * @property {(argumentPrefix: string) => Promise<CommandCompletionItem[]>} [getArgumentCompletions]
  */
 
@@ -89,7 +87,7 @@ export const commandRegistry = {
         aliases: ["agents"],
         displayName: "Agent",
         description: "Switch active agent",
-        summary: "List available agents or talk directly to one (--agent shorthand).",
+        summary: "List available agents or talk directly to one.",
         usage: [
             `${bin("agent")}                            List available agents`,
             `${bin("agent <name>")}                     Talk directly to an agent`,
@@ -101,8 +99,6 @@ export const commandRegistry = {
         ],
         execute: runAgentsCommand,
         surfaces: ["cli", "slash"],
-        cliFlag: "string",
-        cliFlagAliases: ["a"],
         getArgumentCompletions: getAgentCompletions,
     },
     [COMMAND_NAMES.MODEL]: {
@@ -121,7 +117,6 @@ export const commandRegistry = {
         ],
         execute: runModelsCommand,
         surfaces: ["cli", "slash"],
-        cliFlag: "string",
         getArgumentCompletions: getModelCompletions,
     },
     [COMMAND_NAMES.LOGIN]: {
@@ -185,7 +180,6 @@ export const commandRegistry = {
         ],
         execute: runLoadPlanCommand,
         surfaces: ["cli", "slash"],
-        cliFlag: "string",
         getArgumentCompletions: getLoadPlanCompletions,
     },
     [COMMAND_NAMES.RESUME]: {
@@ -277,7 +271,6 @@ export const commandRegistry = {
         ],
         execute: runPlansCommand,
         surfaces: ["cli"],
-        cliFlag: "boolean",
     },
     [COMMAND_NAMES.SLEEP]: {
         name: COMMAND_NAMES.SLEEP,
@@ -295,7 +288,6 @@ export const commandRegistry = {
         ],
         execute: runSleepCommand,
         surfaces: ["cli", "slash"],
-        cliFlag: "boolean",
     },
     [COMMAND_NAMES.HELP]: {
         name: COMMAND_NAMES.HELP,
@@ -347,7 +339,6 @@ export const commandRegistry = {
         ],
         execute: runInitCommand,
         surfaces: ["cli", "slash"],
-        cliFlag: "boolean",
     },
     [COMMAND_NAMES.THEME]: {
         name: COMMAND_NAMES.THEME,
@@ -364,7 +355,6 @@ export const commandRegistry = {
         ],
         execute: runThemeCommand,
         surfaces: ["cli", "slash"],
-        cliFlag: "string",
     },
     [COMMAND_NAMES.INSTALL]: {
         name: COMMAND_NAMES.INSTALL,
@@ -381,7 +371,6 @@ export const commandRegistry = {
         ],
         execute: runInstallCommand,
         surfaces: ["cli"],
-        cliFlag: "string",
     },
     [COMMAND_NAMES.REMOVE]: {
         name: COMMAND_NAMES.REMOVE,
@@ -394,7 +383,6 @@ export const commandRegistry = {
         notes: [],
         execute: runRemoveCommand,
         surfaces: ["cli"],
-        cliFlag: "string",
     },
     [COMMAND_NAMES.COMPACT]: {
         name: COMMAND_NAMES.COMPACT,
@@ -486,53 +474,4 @@ export function getSlashCommandDefinition(commandName) {
     const command = getCommandDefinition(commandName);
     if (!command || !hasCommandSurface(command, "slash")) return undefined;
     return command;
-}
-
-/**
- * @param {CommandDefinition} command
- * @returns {string[]}
- */
-function getCliFlagNames(command) {
-    return [...getCommandInvocationNames(command), ...(command.cliFlagAliases || [])];
-}
-
-/**
- * @returns {{ string: string[], boolean: string[], alias: Record<string, string> }}
- */
-export function getCliParseConfig() {
-    /** @type {string[]} */
-    const string = [];
-    /** @type {string[]} */
-    const boolean = [];
-    /** @type {Record<string, string>} */
-    const alias = {};
-
-    for (const command of getCliCommandDefinitions()) {
-        if (!command.cliFlag) continue;
-        const target = command.cliFlag === "string" ? string : boolean;
-        const [canonical, ...aliases] = getCliFlagNames(command);
-        target.push(canonical, ...aliases);
-        for (const name of aliases) {
-            alias[name] = canonical;
-        }
-    }
-
-    return { string, boolean, alias };
-}
-
-/**
- * @param {Record<string, unknown>} parsed
- * @returns {{ command: CommandDefinition, flagValue: unknown } | null}
- */
-export function findCliFlagCommand(parsed) {
-    for (const command of getCliCommandDefinitions()) {
-        if (!command.cliFlag) continue;
-        for (const name of getCliFlagNames(command)) {
-            const value = parsed[name] ?? parsed[command.name];
-            if (value === true || typeof value === "string") {
-                return { command, flagValue: value };
-            }
-        }
-    }
-    return null;
 }

@@ -1,9 +1,6 @@
 import { assertEquals } from "@std/assert";
-import { parseArgs } from "@std/cli/parse-args";
 import {
-    findCliFlagCommand,
     getCliCommandDefinitions,
-    getCliParseConfig,
     getCommandDefinition,
     getSlashCommandDefinition,
     getSlashCommandDefinitions,
@@ -34,34 +31,6 @@ Deno.test("registry surfaces capture theme and model CLI support", () => {
     assertEquals(theme ? hasCommandSurface(theme, "slash") : false, true);
     assertEquals(model ? hasCommandSurface(model, "cli") : false, true);
     assertEquals(model ? hasCommandSurface(model, "slash") : false, true);
-});
-
-Deno.test("getCliParseConfig is derived from command definitions", () => {
-    const config = getCliParseConfig();
-    assertEquals(config.string.includes("agent"), true);
-    assertEquals(config.string.includes("theme"), true);
-    assertEquals(config.boolean.includes("plans"), true);
-    assertEquals(config.alias.a, "agent");
-});
-
-Deno.test("findCliFlagCommand resolves aliases", () => {
-    const match = findCliFlagCommand({ agent: "engineer" });
-    assertEquals(match?.command.name, "agent");
-    assertEquals(match?.flagValue, "engineer");
-});
-
-Deno.test("derived CLI parse config works with parseArgs", () => {
-    const config = getCliParseConfig();
-    const parsed = parseArgs(["--agents", "engineer", "build", "thing"], {
-        stopEarly: true,
-        string: config.string,
-        boolean: ["help", "continue", ...config.boolean],
-        alias: { h: "help", c: "continue", ...config.alias },
-    });
-    const match = findCliFlagCommand(parsed);
-    assertEquals(match?.command.name, "agent");
-    assertEquals(match?.flagValue, "engineer");
-    assertEquals(parsed._.map(String), ["build", "thing"]);
 });
 
 Deno.test("getSlashCommandDefinition resolves slash aliases", () => {
