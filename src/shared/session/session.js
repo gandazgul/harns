@@ -38,7 +38,8 @@ import cymbalExtension, {
     codeStructureToolDef,
     codeTraceToolDef,
 } from "../../extensions/cymbal/index.js";
-import { ensureCymbalBinary, ensureMnemosyneBinary } from "../runtime-preflight.js";
+import rtkExtension from "../../extensions/rtk/index.js";
+import { ensureCymbalBinary, ensureMnemosyneBinary, hasRtkBinary } from "../runtime-preflight.js";
 import { executeReturnToRouter, returnToRouterTool } from "../../tools/return-to-router.js";
 import { createUserInterviewTool } from "../../tools/user-interview.js";
 import { getModelRegistry } from "../models/model-registry.js";
@@ -824,12 +825,16 @@ export async function buildAgentSession({
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools);
     const promptState = { text: finalSystemPrompt };
+    const extensionFactories = [mnemosyneExtension, cymbalExtension];
+    if (await hasRtkBinary()) {
+        extensionFactories.push(rtkExtension);
+    }
 
     const loader = new DefaultResourceLoader({
         cwd: CWD,
         agentDir: getSettingsDir("global"),
         systemPromptOverride: () => promptState.text,
-        extensionFactories: [mnemosyneExtension, cymbalExtension],
+        extensionFactories,
         additionalPromptTemplatePaths: getPromptTemplatePaths(),
         noContextFiles: true,
         noPromptTemplates: true,

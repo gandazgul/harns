@@ -35,6 +35,7 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
             listLoadedAgentMdFiles: () =>
                 Promise.resolve([{ path: "/repo/HARNS.md", source: /** @type {"local"} */ ("local") }]),
             getSettingsManager: () => ({ getTheme: () => "catppuccin-mocha" }),
+            hasRtkBinary: () => Promise.resolve(true),
         },
     });
 
@@ -73,8 +74,69 @@ Deno.test("renderBootBanner reports no prompt templates when none are invokable"
             listSkills: () => Promise.resolve([]),
             listLoadedAgentMdFiles: () => Promise.resolve([]),
             getSettingsManager: () => ({ getTheme: () => undefined }),
+            hasRtkBinary: () => Promise.resolve(true),
         },
     });
 
     assertEquals(messages[0], { text: "none", header: "Loaded Prompt Templates:" });
+});
+
+Deno.test("renderBootBanner warns about missing RTK for the first project boots", async () => {
+    /** @type {Array<{ text: string, isError: boolean }>} */
+    const messages = [];
+    let recorded = 0;
+
+    await renderBootBanner({
+        uiAPI: /** @type {any} */ ({
+            appendSystemMessage: (
+                /** @type {string} */ text,
+                /** @type {boolean} */ isError = false,
+            ) => {
+                messages.push({ text, isError });
+            },
+        }),
+        invokablePromptTemplates: [],
+        blockedPromptTemplates: [],
+        chatPromptAgentName: "operator",
+        __deps: {
+            listSkills: () => Promise.resolve([]),
+            listLoadedAgentMdFiles: () => Promise.resolve([]),
+            getSettingsManager: () => ({ getTheme: () => undefined }),
+            hasRtkBinary: () => Promise.resolve(false),
+            shouldShowRtkMissingWarning: () => Promise.resolve(true),
+            recordRtkMissingWarningShown: () => {
+                recorded++;
+                return Promise.resolve();
+            },
+        },
+    });
+
+    assertEquals(messages.some((message) => message.isError && message.text.includes("RTK is not installed")), true);
+    assertEquals(recorded, 1);
+});
+
+Deno.test("renderBootBanner does not warn when RTK is installed or warning limit is reached", async () => {
+    /** @type {string[]} */
+    const messages = [];
+
+    await renderBootBanner({
+        uiAPI: /** @type {any} */ ({
+            appendSystemMessage: (/** @type {string} */ text) => messages.push(text),
+        }),
+        invokablePromptTemplates: [],
+        blockedPromptTemplates: [],
+        chatPromptAgentName: "operator",
+        __deps: {
+            listSkills: () => Promise.resolve([]),
+            listLoadedAgentMdFiles: () => Promise.resolve([]),
+            getSettingsManager: () => ({ getTheme: () => undefined }),
+            hasRtkBinary: () => Promise.resolve(false),
+            shouldShowRtkMissingWarning: () => Promise.resolve(false),
+            recordRtkMissingWarningShown: () => {
+                throw new Error("should not record");
+            },
+        },
+    });
+
+    assertEquals(messages.some((message) => message.includes("RTK is not installed")), false);
 });

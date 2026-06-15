@@ -1,7 +1,12 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { __resetRuntimePreflightForTest, ensureCymbalBinary, ensureMnemosyneBinary } from "./runtime-preflight.js";
+import {
+    __resetRuntimePreflightForTest,
+    ensureCymbalBinary,
+    ensureMnemosyneBinary,
+    hasRtkBinary,
+} from "./runtime-preflight.js";
 
-Deno.test("runtime preflight caches successful binary probes", async () => {
+Deno.test("runtime preflight caches required binaries and probes optional RTK live", async () => {
     /** @type {string[]} */
     const probes = [];
     __resetRuntimePreflightForTest((binary) => {
@@ -13,11 +18,13 @@ Deno.test("runtime preflight caches successful binary probes", async () => {
         await ensureMnemosyneBinary();
         await ensureCymbalBinary();
         await ensureCymbalBinary();
+        assertEquals(await hasRtkBinary(), true);
+        assertEquals(await hasRtkBinary(), true);
     } finally {
         __resetRuntimePreflightForTest();
     }
 
-    assertEquals(probes, ["mnemosyne", "cymbal"]);
+    assertEquals(probes, ["mnemosyne", "cymbal", "rtk", "rtk"]);
 });
 
 Deno.test("runtime preflight reports install guidance when binaries are missing", async () => {

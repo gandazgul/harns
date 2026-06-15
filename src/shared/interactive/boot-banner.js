@@ -7,6 +7,8 @@
  */
 
 import { CWD, HOME_DIR } from "../../constants.js";
+import { recordRtkMissingWarningShown, shouldShowRtkMissingWarning } from "../../cmd/init/init-state.js";
+import { hasRtkBinary } from "../runtime-preflight.js";
 import { listLoadedAgentMdFiles, listSkills } from "../session/session.js";
 
 /**
@@ -44,6 +46,9 @@ function toUserFacingAgentMdPath(file) {
  *     listSkills?: typeof listSkills,
  *     listLoadedAgentMdFiles?: typeof listLoadedAgentMdFiles,
  *     getSettingsManager?: () => { getTheme: () => string | undefined },
+ *     hasRtkBinary?: typeof hasRtkBinary,
+ *     shouldShowRtkMissingWarning?: typeof shouldShowRtkMissingWarning,
+ *     recordRtkMissingWarningShown?: typeof recordRtkMissingWarningShown,
  *   },
  * }} deps
  */
@@ -56,6 +61,9 @@ export async function renderBootBanner({
 }) {
     const listSkillsImpl = __deps?.listSkills || listSkills;
     const listLoadedAgentMdFilesImpl = __deps?.listLoadedAgentMdFiles || listLoadedAgentMdFiles;
+    const hasRtkBinaryImpl = __deps?.hasRtkBinary || hasRtkBinary;
+    const shouldShowRtkMissingWarningImpl = __deps?.shouldShowRtkMissingWarning || shouldShowRtkMissingWarning;
+    const recordRtkMissingWarningShownImpl = __deps?.recordRtkMissingWarningShown || recordRtkMissingWarningShown;
     const headerStyle = { headingColor: "mdHeading" };
 
     if (invokablePromptTemplates.length > 0) {
@@ -98,5 +106,16 @@ export async function renderBootBanner({
             `Warning: ${userPath} command can't be invoked because it would override Harns built-in commands. Please rename it.`,
             true,
         );
+    }
+
+    if (!(await hasRtkBinaryImpl()) && await shouldShowRtkMissingWarningImpl()) {
+        uiAPI.appendSystemMessage(
+            [
+                "[Harns] RTK is not installed. Harns will still work, but agent shell command output will be noisier.",
+                "Install RTK with `brew install rtk` or see https://github.com/rtk-ai/rtk#installation.",
+            ].join("\n"),
+            true,
+        );
+        await recordRtkMissingWarningShownImpl();
     }
 }

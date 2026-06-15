@@ -98,6 +98,11 @@ Interactive agent workflows require these binaries in `PATH`:
 - `mnemosyne` for project/global memory
 - `cymbal` for code search, symbol lookup, impact analysis, and tracing
 
+Harns also uses [RTK](https://github.com/rtk-ai/rtk) when `rtk` is available in `PATH`. RTK rewrites eligible
+agent-initiated shell commands before execution so agents see compact command output. RTK is optional and fail-open: if
+it is missing, Harns skips the rewrite hook and shows a short warning on the first few boots for each project. Manual
+`!` and `!!` shell commands are never rewritten. Manage command exclusions in RTK's own configuration.
+
 Harns stores its own data under `~/.hns/`:
 
 - `~/.hns/sessions/` for session history

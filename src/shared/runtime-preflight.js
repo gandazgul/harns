@@ -12,16 +12,19 @@ let mnemosyneAvailable = false;
 let cymbalChecked = false;
 let cymbalAvailable = false;
 
-/** @type {null | ((binary: "mnemosyne" | "cymbal") => Promise<boolean>)} */
+/** @typedef {"mnemosyne" | "cymbal" | "rtk"} RuntimeBinary */
+
+/** @type {null | ((binary: RuntimeBinary) => Promise<boolean>)} */
 let binaryProbeOverride = null;
 
 /**
+ * @param {RuntimeBinary} binary
  * @returns {Promise<boolean>}
  */
-async function hasMnemosyneBinary() {
-    if (binaryProbeOverride) return await binaryProbeOverride("mnemosyne");
+async function hasBinary(binary) {
+    if (binaryProbeOverride) return await binaryProbeOverride(binary);
     try {
-        const proc = new Deno.Command("mnemosyne", {
+        const proc = new Deno.Command(binary, {
             args: ["--help"],
             stdout: "null",
             stderr: "null",
@@ -32,6 +35,13 @@ async function hasMnemosyneBinary() {
     } catch {
         return false;
     }
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function hasMnemosyneBinary() {
+    return await hasBinary("mnemosyne");
 }
 
 /**
@@ -61,19 +71,7 @@ export async function ensureMnemosyneBinary() {
  * @returns {Promise<boolean>}
  */
 async function hasCymbalBinary() {
-    if (binaryProbeOverride) return await binaryProbeOverride("cymbal");
-    try {
-        const proc = new Deno.Command("cymbal", {
-            args: ["--help"],
-            stdout: "null",
-            stderr: "null",
-        }).spawn();
-
-        const status = await proc.status;
-        return status.success;
-    } catch {
-        return false;
-    }
+    return await hasBinary("cymbal");
 }
 
 /**
@@ -98,9 +96,21 @@ export async function ensureCymbalBinary() {
 }
 
 /**
+ * Check whether RTK is available in PATH.
+ *
+ * RTK is optional: Harns registers its command-rewrite extension only when
+ * this returns true.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function hasRtkBinary() {
+    return await hasBinary("rtk");
+}
+
+/**
  * Reset cached runtime preflight state for tests.
  *
- * @param {null | ((binary: "mnemosyne" | "cymbal") => Promise<boolean>)} [probe]
+ * @param {null | ((binary: RuntimeBinary) => Promise<boolean>)} [probe]
  */
 export function __resetRuntimePreflightForTest(probe = null) {
     mnemosyneChecked = false;

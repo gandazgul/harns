@@ -16,6 +16,8 @@ import {
     isInitOffered,
     recordInitDone,
     recordInitOffered,
+    recordRtkMissingWarningShown,
+    shouldShowRtkMissingWarning,
 } from "./init-state.js";
 
 // Isolate all state operations to a temp directory so we never touch
@@ -69,6 +71,8 @@ Deno.test("recordInitDone creates state file with correct structure", async () =
     assertEquals(raw[cwdHash].path, Deno.cwd());
     assertEquals(typeof raw[cwdHash].offeredAt, "string");
     assertEquals(typeof raw[cwdHash].doneAt, "string");
+    assertEquals(raw[cwdHash].rtkMissingWarningCount, 0);
+    assertEquals(raw[cwdHash].rtkMissingWarningLastShownAt, null);
 
     await cleanupState();
 });
@@ -182,6 +186,25 @@ Deno.test("recordInitDone preserves other CWD entries (no overwrite)", async () 
     const updated = await getInitState();
     assertExists(updated["abcdef0123456789"]);
     assertEquals(updated["abcdef0123456789"].initOffered, true);
+
+    await cleanupState();
+});
+
+Deno.test("RTK missing warning counter is capped by limit", async () => {
+    await cleanupState();
+
+    assertEquals(await shouldShowRtkMissingWarning(2), true);
+    await recordRtkMissingWarningShown();
+    assertEquals(await shouldShowRtkMissingWarning(2), true);
+    await recordRtkMissingWarningShown();
+    assertEquals(await shouldShowRtkMissingWarning(2), false);
+
+    const cwdHash = await getCwdHash();
+    const state = await getInitState();
+    assertEquals(state[cwdHash].rtkMissingWarningCount, 2);
+    assertEquals(typeof state[cwdHash].rtkMissingWarningLastShownAt, "string");
+    assertEquals(state[cwdHash].initOffered, false);
+    assertEquals(state[cwdHash].initDone, false);
 
     await cleanupState();
 });

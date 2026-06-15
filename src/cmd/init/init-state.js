@@ -54,6 +54,8 @@ async function sha256(input) {
  * @property {boolean} initDone
  * @property {string | null} offeredAt - ISO timestamp when init was offered (or declined), or null.
  * @property {string | null} doneAt - ISO timestamp when init was completed, or null.
+ * @property {number} [rtkMissingWarningCount] - Number of missing-RTK boot warnings shown for this project.
+ * @property {string | null} [rtkMissingWarningLastShownAt] - ISO timestamp of the last missing-RTK warning, or null.
  */
 
 /**
@@ -122,7 +124,32 @@ export async function getCwdInitState() {
  * @returns {InitStateEntry}
  */
 function newEntry(path) {
-    return { path, initOffered: false, initDone: false, offeredAt: null, doneAt: null };
+    return {
+        path,
+        initOffered: false,
+        initDone: false,
+        offeredAt: null,
+        doneAt: null,
+        rtkMissingWarningCount: 0,
+        rtkMissingWarningLastShownAt: null,
+    };
+}
+
+/**
+ * Read or create the current CWD state entry.
+ *
+ * @param {Record<string, InitStateEntry>} state
+ * @returns {Promise<InitStateEntry>}
+ */
+async function ensureCwdEntry(state) {
+    const cwd = Deno.cwd();
+    const cwdHash = await getCwdHash();
+    if (!state[cwdHash]) {
+        state[cwdHash] = newEntry(cwd);
+    } else {
+        state[cwdHash].path = cwd;
+    }
+    return state[cwdHash];
 }
 
 /**
@@ -130,16 +157,10 @@ function newEntry(path) {
  * @returns {Promise<void>}
  */
 export async function recordInitOffered() {
-    const cwd = Deno.cwd();
-    const cwdHash = await getCwdHash();
     const state = await readState();
-    if (!state[cwdHash]) {
-        state[cwdHash] = newEntry(cwd);
-    } else {
-        state[cwdHash].path = cwd;
-    }
-    state[cwdHash].initOffered = true;
-    state[cwdHash].offeredAt = new Date().toISOString();
+    const entry = await ensureCwdEntry(state);
+    entry.initOffered = true;
+    entry.offeredAt = new Date().toISOString();
     writeStateSync(state);
 }
 
@@ -149,19 +170,13 @@ export async function recordInitOffered() {
  * @returns {Promise<void>}
  */
 export async function recordInitDone() {
-    const cwd = Deno.cwd();
-    const cwdHash = await getCwdHash();
     const state = await readState();
-    if (!state[cwdHash]) {
-        state[cwdHash] = newEntry(cwd);
-    } else {
-        state[cwdHash].path = cwd;
-    }
+    const entry = await ensureCwdEntry(state);
     const now = new Date().toISOString();
-    state[cwdHash].initOffered = true;
-    state[cwdHash].initDone = true;
-    if (!state[cwdHash].offeredAt) state[cwdHash].offeredAt = now;
-    state[cwdHash].doneAt = now;
+    entry.initOffered = true;
+    entry.initDone = true;
+    if (!entry.offeredAt) entry.offeredAt = now;
+    entry.doneAt = now;
     writeStateSync(state);
 }
 
@@ -181,4 +196,28 @@ export async function isInitDone() {
 export async function isInitOffered() {
     const entry = await getCwdInitState();
     return entry?.initOffered === true;
+}
+
+/**
+ * Check whether Harns should show the missing-RTK boot warning for this CWD.
+ *
+ * @param {number} [limit]
+ * @returns {Promise<boolean>}
+ */
+export async function shouldShowRtkMissingWarning(limit = 3) {
+    const entry = await getCwdInitState();
+    return (entry?.rtkMissingWarningCount || 0) < limit;
+}
+
+/**
+ * Record that Harns showed the missing-RTK boot warning for this CWD.
+ *
+ * @returns {Promise<void>}
+ */
+export async function recordRtkMissingWarningShown() {
+    const state = await readState();
+    const entry = await ensureCwdEntry(state);
+    entry.rtkMissingWarningCount = (entry.rtkMissingWarningCount || 0) + 1;
+    entry.rtkMissingWarningLastShownAt = new Date().toISOString();
+    writeStateSync(state);
 }
