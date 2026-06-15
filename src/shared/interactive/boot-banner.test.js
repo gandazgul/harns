@@ -45,6 +45,10 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
     assertEquals(messages.some((message) => message.header.startsWith("Loaded Skills")), true);
     assertEquals(messages.some((message) => message.header === "Loaded Theme:"), true);
     assertEquals(
+        messages.some((message) => message.header === "Loaded Runtime Optimizers:" && message.text === "RTK"),
+        true,
+    );
+    assertEquals(
         messages.some((message) =>
             message.isError && message.text.includes("./.hns/prompts/help.md command can't be invoked")
         ),
