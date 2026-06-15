@@ -65,6 +65,7 @@ export async function renderBootBanner({
     const shouldShowRtkMissingWarningImpl = __deps?.shouldShowRtkMissingWarning || shouldShowRtkMissingWarning;
     const recordRtkMissingWarningShownImpl = __deps?.recordRtkMissingWarningShown || recordRtkMissingWarningShown;
     const headerStyle = { headingColor: "mdHeading" };
+    const rtkAvailable = await hasRtkBinaryImpl();
 
     if (invokablePromptTemplates.length > 0) {
         const names = invokablePromptTemplates.map((template) => `/${template.name}`).join(", ");
@@ -91,6 +92,10 @@ export async function renderBootBanner({
     const activeTheme = getSettingsManagerImpl().getTheme() || "catppuccin-mocha";
     uiAPI.appendSystemMessage(activeTheme, false, "Loaded Theme:", headerStyle);
 
+    if (rtkAvailable) {
+        uiAPI.appendSystemMessage("RTK", false, "Loaded Runtime Optimizers:", headerStyle);
+    }
+
     const agentMdFiles = await listLoadedAgentMdFilesImpl();
     if (agentMdFiles.length > 0) {
         const lines = agentMdFiles
@@ -108,7 +113,7 @@ export async function renderBootBanner({
         );
     }
 
-    if (!(await hasRtkBinaryImpl()) && await shouldShowRtkMissingWarningImpl()) {
+    if (!rtkAvailable && await shouldShowRtkMissingWarningImpl()) {
         uiAPI.appendSystemMessage(
             [
                 "[Harns] RTK is not installed. Harns will still work, but agent shell command output will be noisier.",
