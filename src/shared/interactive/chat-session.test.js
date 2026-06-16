@@ -1,5 +1,7 @@
 import { assertEquals } from "@std/assert";
 import {
+    __resetPendingSteeringForTests,
+    __setSteeringUiRefsForTests,
     applyPendingRootSwap,
     collectFooterUsage,
     getActiveModel,
@@ -8,6 +10,7 @@ import {
     resolveTemplateModel,
     setActiveAgent,
     setActiveModel,
+    trackPendingSteeringMessage,
 } from "./chat-session.js";
 import {
     addSubAgentSession,
@@ -221,4 +224,81 @@ Deno.test("persistThinkingLevel stores the selected level without throwing", asy
     await withTempHome("harns-thinking-level-", async () => {
         await persistThinkingLevel("high");
     });
+});
+
+function makeSteeringSession() {
+    /** @type {((event: any) => void) | null} */
+    let subscriber = null;
+    return /** @type {any} */ ({
+        /** @param {(event: any) => void} fn */
+        subscribe(fn) {
+            subscriber = fn;
+            return () => {
+                subscriber = null;
+            };
+        },
+        /** @param {any} event */
+        emit(event) {
+            subscriber?.(event);
+        },
+    });
+}
+
+Deno.test("trackPendingSteeringMessage only consumes queue updates from the session that accepted steering", () => {
+    const sessionA = makeSteeringSession();
+    const sessionB = makeSteeringSession();
+    const blockA = {};
+    const spacerA = {};
+    const blockB = {};
+    const spacerB = {};
+    /** @type {unknown[]} */
+    const removed = [];
+    /** @type {string[]} */
+    const userMessages = [];
+    let renders = 0;
+
+    try {
+        __setSteeringUiRefsForTests(
+            /** @type {any} */ ({
+                removeChild: (/** @type {unknown} */ child) => removed.push(child),
+            }),
+            /** @type {any} */ ({
+                appendUserMessage: (/** @type {string} */ text) => userMessages.push(text),
+            }),
+            /** @type {any} */ ({
+                requestRender: () => {
+                    renders++;
+                },
+            }),
+        );
+
+        trackPendingSteeringMessage(
+            sessionA,
+            "same text",
+            [],
+            /** @type {any} */ (blockA),
+            /** @type {any} */ (spacerA),
+        );
+        trackPendingSteeringMessage(
+            sessionB,
+            "same text",
+            [],
+            /** @type {any} */ (blockB),
+            /** @type {any} */ (spacerB),
+        );
+
+        sessionB.emit({ type: "queue_update", steering: [] });
+        assertEquals(userMessages, ["same text"]);
+        assertEquals(removed, [blockB, spacerB]);
+
+        sessionA.emit({ type: "queue_update", steering: ["same text"] });
+        assertEquals(userMessages, ["same text"]);
+
+        sessionA.emit({ type: "queue_update", steering: [] });
+        assertEquals(userMessages, ["same text", "same text"]);
+        assertEquals(removed, [blockB, spacerB, blockA, spacerA]);
+        assertEquals(renders, 2);
+    } finally {
+        __resetPendingSteeringForTests();
+    }
 });

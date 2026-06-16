@@ -555,18 +555,30 @@ export function abortActiveSession() {
  * @returns {Promise<boolean>} true when the root session was steered
  */
 export async function steerRootSession(text, images) {
+    return Boolean(await steerRootSessionWithTarget(text, images));
+}
+
+/**
+ * Steer the root session and return the exact AgentSession that accepted the
+ * message, so UI callers can track queue consumption on the right session.
+ *
+ * @param {string} text
+ * @param {import('./types.js').ImageAttachment[]} [images]
+ * @returns {Promise<import('@earendil-works/pi-coding-agent').AgentSession | null>}
+ */
+export async function steerRootSessionWithTarget(text, images) {
     const session = getRootAgentSession();
-    if (!session) return false;
+    if (!session) return null;
     // If the session is not actively streaming, queuing a steering message
     // on the agent would be lost — the agent loop has already exited.
-    // Return false so the caller queues it for the next submission instead.
-    if (!session.isStreaming) return false;
+    // Return null so the caller queues it for the next submission instead.
+    if (!session.isStreaming) return null;
     /** @type {Array<{type: "image", data: string, mimeType: string}>} */
     const imageContent = images && images.length > 0
         ? images.map((img) => ({ type: /** @type {"image"} */ ("image"), data: img.base64, mimeType: img.mimeType }))
         : [];
     await session.steer(text, imageContent.length > 0 ? imageContent : undefined);
-    return true;
+    return session;
 }
 
 /**
@@ -1559,6 +1571,9 @@ const rootSessionMetadata = new WeakMap();
  * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
  * @param {boolean} [opts.allowReturnToRouter]
+ * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride]
+ * @param {string} [opts.cwd]
+ * @param {boolean} [opts.includeEditFallback]
  *
  * @returns {Promise<import('@earendil-works/pi-coding-agent').AgentSession>}
  */
@@ -1666,10 +1681,24 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
  * @param {string} [opts.cwd] - Execution cwd for file tools and agent operations.
  * @param {string} [opts.debugLogPath] - Optional DEBUG log destination for this invocation.
  * @param {boolean} [opts.includeEditFallback] - Internal: whether to register the edit fallback custom tool.
+ * @param {boolean} [opts.useRootSession] - Run this invocation as the root session so interactive steering reaches it.
  *
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */
 export async function runAgentSession(opts) {
+    if (opts.useRootSession) {
+        await ensureRootAgentSession({
+            ...opts,
+            allowReturnToRouter: opts.allowReturnToRouter ?? false,
+        });
+        return await runRootTurn({
+            agentName: opts.agentName,
+            userRequest: opts.userRequest,
+            images: opts.images,
+            uiAPI: opts.uiAPI,
+        });
+    }
+
     const { session, agentDef, promptState, resolvedModel, resolvedThinkingLevel } = await buildAgentSession(opts);
     const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI, opts.debugLogPath);
     addSubAgentSession(session);

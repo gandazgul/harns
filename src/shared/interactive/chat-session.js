@@ -11,7 +11,12 @@ import { HNS_VERSION } from "../version.js";
 import { endBlink, renderBootLogo } from "../ui/boot-logo.js";
 import { createUiApi } from "../ui/api.js";
 import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
-import { ensureRootAgentSession, listPromptTemplates, listSkills, steerRootSession } from "../session/session.js";
+import {
+    ensureRootAgentSession,
+    listPromptTemplates,
+    listSkills,
+    steerRootSessionWithTarget,
+} from "../session/session.js";
 import { ensureMnemosyneBinary } from "../runtime-preflight.js";
 import { commandRegistry, getCommandInvocationNames, getSlashCommandDefinitions } from "../../cmd/registry.js";
 import { AGENTS, COMMAND_NAMES } from "../../constants.js";
@@ -166,54 +171,143 @@ function getMostRecentSessionModelParts(sessions) {
 }
 
 /**
- * @type {Map<string, { text: string, images: import('../session/types.js').ImageAttachment[], systemBlock: SystemMessageBlock, spacer: Spacer }>}
- * Tracks steering messages that have been queued on the agent but not yet consumed by the LLM.
- * Keyed by message text (consistent with AgentSession._steeringMessages matching by text).
+ * @type {Map<number, { session: import('@earendil-works/pi-coding-agent').AgentSession, text: string, images: import('../session/types.js').ImageAttachment[], systemBlock: SystemMessageBlock, spacer: Spacer }>}
+ * Tracks steering messages that have been queued on an agent but not yet consumed by the LLM.
  */
 const pendingSteeringMessages = new Map();
 
-/** @type {(() => void) | null} */
-let pendingSteeringUnsub = null;
+/** @type {Map<import('@earendil-works/pi-coding-agent').AgentSession, () => void>} */
+const pendingSteeringUnsubs = new Map();
+
+let nextPendingSteeringId = 1;
 
 // References needed by setupSteeringConsumedListener, stored at module level
-// so applyPendingRootSwap can re-subscribe after session rebuild.
-/** @type {import('@earendil-works/pi-tui').Container} */
+// so accepted steering messages can be rewritten when their owning session
+// emits queue updates.
+/** @type {import('@earendil-works/pi-tui').Container | undefined} */
 let _messageList;
-/** @type {import('@earendil-works/pi-tui').TUI} */
+/** @type {import('@earendil-works/pi-tui').TUI | undefined} */
 let _tui;
-/** @type {import('../ui/types.js').UiAPI} */
+/** @type {import('../ui/types.js').UiAPI | undefined} */
 let _uiAPI;
 
 /**
- * Subscribe to the current root session's queue_update events.
- * When a tracked steering message is consumed by the LLM (no longer in event.steering),
- * transition from "Steering:" system block to proper UserPromptBlock.
+ * @param {readonly string[] | undefined} steering
+ * @returns {Map<string, number>}
  */
-function setupSteeringConsumedListener() {
-    if (pendingSteeringUnsub) {
-        pendingSteeringUnsub();
-        pendingSteeringUnsub = null;
+function countQueuedSteeringByText(steering) {
+    /** @type {Map<string, number>} */
+    const counts = new Map();
+    for (const text of steering || []) {
+        counts.set(text, (counts.get(text) || 0) + 1);
     }
-    const session = getRootAgentSession();
-    if (!session) return;
-    pendingSteeringUnsub = session.subscribe((event) => {
-        if (event.type !== "queue_update") return;
-        if (!_messageList || !_uiAPI || !_tui) return;
-        const activeSteering = new Set(event.steering);
-        for (const [text, entry] of pendingSteeringMessages) {
-            if (activeSteering.has(text)) continue;
-            _messageList.removeChild(entry.systemBlock);
-            _messageList.removeChild(entry.spacer);
-            _uiAPI.appendUserMessage?.(text);
-            if (entry.images.length > 0) {
-                for (const img of entry.images) {
-                    _uiAPI.appendImage?.(img.base64, img.mimeType);
-                }
-            }
-            pendingSteeringMessages.delete(text);
-            _tui.requestRender();
+    return counts;
+}
+
+/**
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
+ */
+function cleanupSteeringSubscriptionIfIdle(session) {
+    for (const entry of pendingSteeringMessages.values()) {
+        if (entry.session === session) return;
+    }
+    const unsubscribe = pendingSteeringUnsubs.get(session);
+    if (unsubscribe) {
+        unsubscribe();
+        pendingSteeringUnsubs.delete(session);
+    }
+}
+
+/**
+ * @param {number} id
+ * @param {{ session: import('@earendil-works/pi-coding-agent').AgentSession, text: string, images: import('../session/types.js').ImageAttachment[], systemBlock: SystemMessageBlock, spacer: Spacer }} entry
+ */
+function transitionSteeringToUserMessage(id, entry) {
+    if (!_messageList || !_uiAPI || !_tui) return;
+    _messageList.removeChild(entry.systemBlock);
+    _messageList.removeChild(entry.spacer);
+    _uiAPI.appendUserMessage?.(entry.text);
+    if (entry.images.length > 0) {
+        for (const img of entry.images) {
+            _uiAPI.appendImage?.(img.base64, img.mimeType);
         }
+    }
+    pendingSteeringMessages.delete(id);
+    cleanupSteeringSubscriptionIfIdle(entry.session);
+    _tui.requestRender();
+}
+
+/**
+ * Subscribe to the exact session that accepted a steering message. When the
+ * message is consumed by the LLM (no longer in that session's queue_update
+ * steering list), transition from "Steering:" to a proper UserPromptBlock.
+ *
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
+ */
+function setupSteeringConsumedListener(session) {
+    if (pendingSteeringUnsubs.has(session)) return;
+    pendingSteeringUnsubs.set(
+        session,
+        session.subscribe((event) => {
+            if (event.type !== "queue_update") return;
+            if (!_messageList || !_uiAPI || !_tui) return;
+            const activeSteeringCounts = countQueuedSteeringByText(event.steering);
+            for (const [id, entry] of pendingSteeringMessages) {
+                if (entry.session !== session) continue;
+                const activeCount = activeSteeringCounts.get(entry.text) || 0;
+                if (activeCount > 0) {
+                    activeSteeringCounts.set(entry.text, activeCount - 1);
+                    continue;
+                }
+                transitionSteeringToUserMessage(id, entry);
+            }
+        }),
+    );
+}
+
+/**
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
+ * @param {string} text
+ * @param {import('../session/types.js').ImageAttachment[]} images
+ * @param {SystemMessageBlock} systemBlock
+ * @param {Spacer} spacer
+ */
+export function trackPendingSteeringMessage(session, text, images, systemBlock, spacer) {
+    setupSteeringConsumedListener(session);
+    const id = nextPendingSteeringId++;
+    pendingSteeringMessages.set(id, {
+        session,
+        text,
+        images: [...images],
+        systemBlock,
+        spacer,
     });
+    return id;
+}
+
+/**
+ * Test-only hook for exercising steering queue consumption without booting the TUI.
+ *
+ * @param {import('@earendil-works/pi-tui').Container} messageList
+ * @param {import('../ui/types.js').UiAPI} uiAPI
+ * @param {import('@earendil-works/pi-tui').TUI} tui
+ */
+export function __setSteeringUiRefsForTests(messageList, uiAPI, tui) {
+    _messageList = messageList;
+    _uiAPI = uiAPI;
+    _tui = tui;
+}
+
+export function __resetPendingSteeringForTests() {
+    pendingSteeringMessages.clear();
+    for (const unsubscribe of pendingSteeringUnsubs.values()) {
+        unsubscribe();
+    }
+    pendingSteeringUnsubs.clear();
+    nextPendingSteeringId = 1;
+    _messageList = undefined;
+    _uiAPI = undefined;
+    _tui = undefined;
 }
 
 /**
@@ -298,8 +392,6 @@ export async function applyPendingRootSwap(uiAPI) {
             sessionManager: getRootSessionManager() || undefined,
             allowReturnToRouter: pending.allowReturnToRouter,
         });
-        // Subscribe to the new session's queue_update events
-        setupSteeringConsumedListener();
         const modelText = pending.model ? ` (model: ${pending.model})` : "";
         uiAPI.appendSystemMessage(`Switched to ${pending.displayName}${modelText}.`);
         uiAPI.requestRender();
@@ -685,8 +777,8 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
 
     // Expose a UI API for agents to append to the message list
     const uiAPI = createUiApi(tui, messageList, runningTasksComponent);
-    // Store module-level refs so setupSteeringConsumedListener (called from
-    // module-level functions like applyPendingRootSwap) has access.
+    // Store module-level refs so setupSteeringConsumedListener can rewrite
+    // accepted steering blocks when their owning session emits queue updates.
     _messageList = messageList;
     _tui = tui;
     _uiAPI = uiAPI;
@@ -712,12 +804,6 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         const msg = err instanceof Error ? err.message : String(err);
         uiAPI.appendSystemMessage(`Failed to initialize root agent "${initialAgentInternalName}": ${msg}`);
     }
-
-    // ── Steering message consumption tracker ──
-    // Subscribe to queue_update events so we can transition "Steering:" blocks
-    // to proper user messages when the LLM consumes them.
-    // Subscribe for the initial root session
-    setupSteeringConsumedListener();
 
     // ── Init auto-offer: conditionally offer /init on first TUI visit ──
     if (!initDone) {
@@ -1075,20 +1161,15 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 return;
             }
 
-            steerRootSession(userRequest, images).then((steered) => {
-                if (steered) {
+            steerRootSessionWithTarget(userRequest, images).then((steeredSession) => {
+                if (steeredSession) {
                     // Phase 1: Show "Steering:" system block immediately
                     const block = new SystemMessageBlock(userRequest, false, "Steering:");
                     const spacer = new Spacer(1);
                     messageList.addChild(block);
                     messageList.addChild(spacer);
                     // Track for phase 2 transition when consumed by LLM
-                    pendingSteeringMessages.set(userRequest, {
-                        text: userRequest,
-                        images: [...images],
-                        systemBlock: block,
-                        spacer,
-                    });
+                    trackPendingSteeringMessage(steeredSession, userRequest, images, block, spacer);
                 } else {
                     // Add the visual block manually (bypassing appendSystemMessage's coalescing)
                     // so we can remove this exact block if the user dequeues with up-arrow.
@@ -1180,10 +1261,10 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         cycleThinkingLevel,
         clearPendingSteeringMessages: () => {
             pendingSteeringMessages.clear();
-            if (pendingSteeringUnsub) {
-                pendingSteeringUnsub();
-                pendingSteeringUnsub = null;
+            for (const unsubscribe of pendingSteeringUnsubs.values()) {
+                unsubscribe();
             }
+            pendingSteeringUnsubs.clear();
             // Also flush any stale steering messages from the agent's queue
             const session = getRootAgentSession();
             if (session) {
