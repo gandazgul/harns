@@ -111,6 +111,236 @@ Deno.test("runLoadPlanCommand approved plan proceed path", async () => {
     assertEquals(executed, true);
 });
 
+Deno.test("runLoadPlanCommand Epic with no children opens Slicer", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("slicer");
+    let slicerPlanName = "";
+    let executed = false;
+
+    await runLoadPlanCommand(["epic-a"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "epic-a",
+                    path: "plans/epic-a.md",
+                    body: "## Context\nEpic context",
+                    markdown: "## Context\nEpic context",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_decomposition",
+                    },
+                }),
+            findPlansByParent: () => Promise.resolve([]),
+            runSlicerAgent: (/** @type {{ planName: string }} */ opts) => {
+                slicerPlanName = opts.planName;
+                return Promise.resolve({ ok: true });
+            },
+            executePlan: () => {
+                executed = true;
+                return Promise.resolve(undefined);
+            },
+            createDirectAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(messages.some((m) => m.includes("no child FEATURE plans")), true);
+    assertEquals(slicerPlanName, "epic-a");
+    assertEquals(executed, false);
+});
+
+Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", async () => {
+    const { uiAPI, selections, prompts } = makeUi();
+    selections.push("pick_child", null);
+
+    await runLoadPlanCommand(["epic-b"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "epic-b",
+                    path: "plans/epic-b.md",
+                    body: "body",
+                    markdown: "body",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_work",
+                    },
+                }),
+            findPlansByParent: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-b/01-first",
+                        path: "plans/epic-b/01-first.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "First child",
+                            affectedPaths: [],
+                            status: "approved",
+                        },
+                    },
+                    {
+                        name: "epic-b/02-second",
+                        path: "plans/epic-b/02-second.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Second child",
+                            affectedPaths: [],
+                            status: "draft",
+                        },
+                    },
+                ]),
+            createDirectAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(prompts[0].options.some((option) => option.value === "pick_child"), true);
+    assertEquals(prompts[1].options[0].label, "epic-b/01-first [approved] — First child");
+    assertEquals(prompts[1].options[1].label, "epic-b/02-second [draft] — Second child");
+});
+
+Deno.test("runLoadPlanCommand Epic child selection can be canceled", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("pick_child", null);
+    let executed = false;
+
+    await runLoadPlanCommand(["epic-c"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "epic-c",
+                    path: "plans/epic-c.md",
+                    body: "body",
+                    markdown: "body",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_work",
+                    },
+                }),
+            findPlansByParent: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-c/01-child",
+                        path: "plans/epic-c/01-child.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Child",
+                            affectedPaths: [],
+                            status: "approved",
+                        },
+                    },
+                ]),
+            executePlan: () => {
+                executed = true;
+                return Promise.resolve(undefined);
+            },
+            createDirectAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(executed, false);
+});
+
+Deno.test("runLoadPlanCommand Epic child selection delegates to FEATURE load behavior", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("pick_child", "epic-d/01-child", "proceed");
+    /** @type {string[]} */
+    const resolved = [];
+    let executedPlanName = "";
+
+    await runLoadPlanCommand(["epic-d"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ planName) => {
+                resolved.push(planName);
+                if (planName === "epic-d/01-child") {
+                    return Promise.resolve({
+                        planName,
+                        path: "plans/epic-d/01-child.md",
+                        body: "child body",
+                        markdown: "child body",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Child",
+                            affectedPaths: [],
+                            status: "ready_for_work",
+                        },
+                    });
+                }
+                return Promise.resolve({
+                    planName: "epic-d",
+                    path: "plans/epic-d.md",
+                    body: "epic body",
+                    markdown: "epic body",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_work",
+                    },
+                });
+            },
+            findPlansByParent: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-d/01-child",
+                        path: "plans/epic-d/01-child.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Child",
+                            affectedPaths: [],
+                            status: "ready_for_work",
+                        },
+                    },
+                ]),
+            executePlan: (/** @type {string} */ planName) => {
+                executedPlanName = planName;
+                return Promise.resolve(undefined);
+            },
+            createDirectAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(resolved, ["epic-d", "epic-d/01-child"]);
+    assertEquals(executedPlanName, "epic-d/01-child");
+});
+
 Deno.test("runLoadPlanCommand warns and cancels execution when affected paths changed since updatedAt", async () => {
     const { uiAPI, selections, messages } = makeUi();
     selections.push("proceed", "cancel");
@@ -436,10 +666,10 @@ Deno.test("runLoadPlanCommand approved PROJECT review runs slicer before proceed
     assertEquals(validated, true);
 });
 
-Deno.test("runLoadPlanCommand approved PROJECT Epic marks decomposition readiness without executing", async () => {
+Deno.test("runLoadPlanCommand approved PROJECT Epic opens Slicer without executing", async () => {
     const { uiAPI, selections, messages } = makeUi();
-    selections.push("review");
-    let sliced = false;
+    selections.push("slicer");
+    let slicerOpened = false;
     let askedWithTasks = false;
     let executed = false;
     /** @type {Array<{ event: string, currentStatus: string }>} */
@@ -465,10 +695,14 @@ Deno.test("runLoadPlanCommand approved PROJECT Epic marks decomposition readines
                         status: "approved",
                     },
                 }),
+            findPlansByParent: () => Promise.resolve([]),
+            runSlicerAgent: () => {
+                slicerOpened = true;
+                return Promise.resolve({ ok: true });
+            },
             submitPlanForReview: () => Promise.resolve({ approved: true }),
             ensureSlicerTasks: () => {
-                sliced = true;
-                return Promise.resolve({ ok: true, slicerInvoked: true });
+                throw new Error("Legacy task slicer should not run for Epics");
             },
             askApprovalWithTasks: () => {
                 askedWithTasks = true;
@@ -488,11 +722,11 @@ Deno.test("runLoadPlanCommand approved PROJECT Epic marks decomposition readines
         }),
     });
 
-    assertEquals(sliced, false);
+    assertEquals(slicerOpened, true);
     assertEquals(askedWithTasks, false);
     assertEquals(executed, false);
-    assertEquals(events, [{ event: "epic_readiness_passed", currentStatus: "approved" }]);
-    assertEquals(messages.some((message) => message.includes("ready for decomposition")), true);
+    assertEquals(events, []);
+    assertEquals(messages.some((message) => message.includes("not executable")), true);
 });
 
 Deno.test("runLoadPlanCommand ready_for_decomposition PROJECT Epic does not execute", async () => {
@@ -519,6 +753,7 @@ Deno.test("runLoadPlanCommand ready_for_decomposition PROJECT Epic does not exec
                         status: "ready_for_decomposition",
                     },
                 }),
+            findPlansByParent: () => Promise.resolve([]),
             executePlan: () => {
                 executed = true;
                 return Promise.resolve({ repairRequired: false, executionComplete: true });
@@ -530,7 +765,7 @@ Deno.test("runLoadPlanCommand ready_for_decomposition PROJECT Epic does not exec
     });
 
     assertEquals(executed, false);
-    assertEquals(messages.some((message) => message.includes("ready for decomposition")), true);
+    assertEquals(messages.some((message) => message.includes("no child FEATURE plans")), true);
 });
 
 Deno.test("runLoadPlanCommand approved review proceed restores initial agent without transient operator switch", async () => {
