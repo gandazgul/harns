@@ -18,6 +18,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { COMMAND_NAMES } from "./constants.js";
 import { commandRegistry, getCommandDefinition, hasCommandSurface } from "./cmd/registry.js";
 import { printCommandHelp, printGlobalHelp } from "./cmd/help/index.js";
+import { runVersionCommand } from "./cmd/version/index.js";
 import { stopTUI } from "./shared/ui/tui.js";
 
 /**
@@ -31,7 +32,11 @@ function stripLeadingGlobalFlags(argv) {
     let stillInGlobalPrefix = true;
 
     for (const arg of argv) {
-        if (stillInGlobalPrefix && (arg === "--help" || arg === "-h" || arg === "--continue" || arg === "-c")) {
+        if (
+            stillInGlobalPrefix &&
+            (arg === "--help" || arg === "-h" || arg === "--continue" || arg === "-c" || arg === "--version" ||
+                arg === "-v")
+        ) {
             continue;
         }
         stillInGlobalPrefix = false;
@@ -88,12 +93,18 @@ async function main() {
 
     const parsed = parseArgs(args, {
         stopEarly: true,
-        boolean: ["help", "continue"],
-        alias: { h: "help", c: "continue" },
+        boolean: ["help", "continue", "version"],
+        alias: { h: "help", c: "continue", v: "version" },
     });
 
     const normalizedArgs = stripLeadingGlobalFlags(args);
     const [firstPositional] = parsed._.map(String);
+
+    // Version flag: `cli.js --version` or `cli.js -v`
+    if (parsed.version) {
+        await runVersionCommand();
+        return;
+    }
 
     const helpRequest = resolveHelpRequest(args);
     if (helpRequest.requested) {

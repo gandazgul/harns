@@ -35,7 +35,7 @@ jobs:
                   deno-version: v2.x
 
             - name: Generate version file
-              run: deno run --allow-run --allow-read --allow-write scripts/write-version.js
+              run: deno run --allow-run --allow-read --allow-write --allow-env=GITHUB_REF_TYPE,GITHUB_REF_NAME,GITHUB_REF scripts/write-version.js
 
             - name: Cache dependencies
               run: deno cache src/cli.js

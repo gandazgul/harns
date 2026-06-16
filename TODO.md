@@ -33,6 +33,10 @@ Refactor-first (before testing) candidates:
 
 ## Roadmap / Backlog
 
+### Project level plans breakdown
+
+[PRD](./plans/prd/project-decomposition-PRD.md)
+
 ### Concurrent Worktrees & Execution Isolation
 
 - [ ] Use git worktrees to let multiple Harns instances execute plans or sessions concurrently without stepping on each

@@ -74,7 +74,6 @@ flowchart TD
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gandazgul/harns/main/install.sh | bash
-hns help
 ```
 
 The installer downloads the latest release binary for macOS or Linux, verifies checksums, and installs `hns`. By default
@@ -296,8 +295,8 @@ docs/                  ADRs, PRDs, and feature docs
 
 Interactive agent workflows require both binaries in `PATH`.
 
-- Mnemosyne: https://github.com/gandazgul/mnemosyne#quick-start
-- Cymbal: https://github.com/1broseidon/cymbal#install
+- Mnemosyne: [https://github.com/gandazgul/mnemosyne#quick-start]
+- Cymbal: [https://github.com/1broseidon/cymbal#install]
 
 ### Plan Review UI Does Not Open
 
