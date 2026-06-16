@@ -38,6 +38,40 @@ export async function ensurePlansDir(cwd) {
     return dir;
 }
 
+/**
+ * Canonicalize a stored plan name relative to plans/.
+ * @param {string} planName
+ * @returns {{ name: string, segments: string[] }}
+ */
+function canonicalizeStoredPlanName(planName) {
+    let normalized = String(planName || "").trim().replaceAll("\\", "/");
+    if (normalized.toLowerCase().endsWith(".md")) {
+        normalized = normalized.slice(0, -3);
+    }
+
+    if (!normalized) throw new Error("Plan name cannot be empty");
+    if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) {
+        throw new Error(`Plan name must be relative to ${PLANS_DIR_NAME}/: ${planName}`);
+    }
+
+    const segments = normalized.split("/");
+    if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+        throw new Error(`Plan name cannot escape ${PLANS_DIR_NAME}/: ${planName}`);
+    }
+
+    return { name: segments.join("/"), segments };
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} planName
+ * @returns {{ name: string, segments: string[], filePath: string }}
+ */
+function getStoredPlanLocation(cwd, planName) {
+    const { name, segments } = canonicalizeStoredPlanName(planName);
+    return { name, segments, filePath: join(getPlansDir(cwd), ...segments) + ".md" };
+}
+
 // ─── Front Matter ─────────────────────────────────────────────────────
 
 /**
@@ -50,6 +84,9 @@ export async function ensurePlansDir(cwd) {
  * @property {string} [updatedAt] - ISO timestamp (set on revision)
  * @property {"draft"|"feedback"|"approved"|"ready_for_work"|"in_progress"|"failed"|"implemented"|"verified"} status
  * @property {"internal"|"external"} [origin] - "internal" = created by a Harns agent; "external" = a pre-existing markdown file loaded from an arbitrary path and resumed with Harns
+ * @property {string} [type] - Optional plan subtype, e.g. "epic" for PROJECT Epic containers
+ * @property {string} [parentPlan] - Canonical parent plan name for child FEATURE plans
+ * @property {string[]} [dependencies] - Sibling FEATURE plan identifiers that should be completed first
  * @property {string|null} [failureReason] - Concise durable failure detail for failed or unverified implemented plans
  * @property {string|null} [failedAt] - ISO timestamp when execution failed
  * @property {string|null} [implementedAt] - ISO timestamp when execution finished
@@ -77,6 +114,29 @@ const DEFAULT_FRONT_MATTER = {
     origin: "internal",
 };
 
+const KNOWN_FRONT_MATTER_KEYS = new Set([
+    "classification",
+    "complexity",
+    "summary",
+    "affectedPaths",
+    "createdAt",
+    "updatedAt",
+    "status",
+    "origin",
+    "type",
+    "parentPlan",
+    "dependencies",
+    "failureReason",
+    "failedAt",
+    "implementedAt",
+    "verifiedAt",
+    "executionBaselineTree",
+    "worktreeId",
+    "worktreePath",
+    "worktreeBranch",
+    "worktreeStatus",
+]);
+
 /**
  * Escape a scalar for YAML double-quoted style.
  * @param {unknown} value
@@ -87,40 +147,76 @@ function escapeYamlDoubleQuoted(value) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isSupportedYamlValue(value) {
+    if (value === null) return true;
+    if (["string", "number", "boolean"].includes(typeof value)) return true;
+    if (Array.isArray(value)) return value.every(isSupportedYamlValue);
+    return false;
+}
+
+/**
+ * @param {string[]} lines
+ * @param {string} key
+ * @param {unknown} value
+ */
+function appendYamlField(lines, key, value) {
+    if (value === undefined) return;
+    if (!isSupportedYamlValue(value)) return;
+
+    if (Array.isArray(value)) {
+        lines.push(`${key}:`);
+        if (value.length === 0) {
+            lines.push(`  []`);
+        } else {
+            for (const item of value) {
+                if (typeof item === "string") lines.push(`  - "${escapeYamlDoubleQuoted(item)}"`);
+                else if (item === null) lines.push("  - null");
+                else lines.push(`  - ${String(item)}`);
+            }
+        }
+        return;
+    }
+
+    if (typeof value === "string") lines.push(`${key}: "${escapeYamlDoubleQuoted(value)}"`);
+    else if (value === null) lines.push(`${key}: null`);
+    else lines.push(`${key}: ${String(value)}`);
+}
+
+/**
  * Build YAML front matter string from a PlanFrontMatter object.
  * @param {PlanFrontMatter} fm
  * @returns {string}
  */
 function formatFrontMatter(fm) {
     const lines = ["---"];
-    lines.push(`classification: "${escapeYamlDoubleQuoted(fm.classification)}"`);
-    lines.push(`complexity: "${escapeYamlDoubleQuoted(fm.complexity)}"`);
-    lines.push(`summary: "${escapeYamlDoubleQuoted(fm.summary)}"`);
-    lines.push(`affectedPaths:`);
-    if (fm.affectedPaths.length === 0) {
-        lines.push(`  []`);
-    } else {
-        for (const p of fm.affectedPaths) {
-            lines.push(`  - "${escapeYamlDoubleQuoted(p)}"`);
-        }
+    appendYamlField(lines, "classification", fm.classification);
+    appendYamlField(lines, "complexity", fm.complexity);
+    appendYamlField(lines, "summary", fm.summary);
+    appendYamlField(lines, "affectedPaths", fm.affectedPaths);
+    appendYamlField(lines, "createdAt", fm.createdAt);
+    appendYamlField(lines, "updatedAt", fm.updatedAt);
+    appendYamlField(lines, "status", fm.status);
+    appendYamlField(lines, "origin", fm.origin);
+    appendYamlField(lines, "type", fm.type);
+    appendYamlField(lines, "parentPlan", fm.parentPlan);
+    appendYamlField(lines, "dependencies", fm.dependencies);
+    appendYamlField(lines, "failureReason", fm.failureReason);
+    appendYamlField(lines, "failedAt", fm.failedAt);
+    appendYamlField(lines, "implementedAt", fm.implementedAt);
+    appendYamlField(lines, "verifiedAt", fm.verifiedAt);
+    appendYamlField(lines, "executionBaselineTree", fm.executionBaselineTree);
+    appendYamlField(lines, "worktreeId", fm.worktreeId);
+    appendYamlField(lines, "worktreePath", fm.worktreePath);
+    appendYamlField(lines, "worktreeBranch", fm.worktreeBranch);
+    appendYamlField(lines, "worktreeStatus", fm.worktreeStatus);
+
+    for (const key of Object.keys(fm).filter((key) => !KNOWN_FRONT_MATTER_KEYS.has(key)).sort()) {
+        appendYamlField(lines, key, /** @type {Record<string, unknown>} */ (fm)[key]);
     }
-    lines.push(`createdAt: "${escapeYamlDoubleQuoted(fm.createdAt)}"`);
-    if (fm.updatedAt) {
-        lines.push(`updatedAt: "${escapeYamlDoubleQuoted(fm.updatedAt)}"`);
-    }
-    lines.push(`status: "${escapeYamlDoubleQuoted(fm.status)}"`);
-    if (fm.origin) lines.push(`origin: "${escapeYamlDoubleQuoted(fm.origin)}"`);
-    if (fm.failureReason) lines.push(`failureReason: "${escapeYamlDoubleQuoted(fm.failureReason)}"`);
-    if (fm.failedAt) lines.push(`failedAt: "${escapeYamlDoubleQuoted(fm.failedAt)}"`);
-    if (fm.implementedAt) lines.push(`implementedAt: "${escapeYamlDoubleQuoted(fm.implementedAt)}"`);
-    if (fm.verifiedAt) lines.push(`verifiedAt: "${escapeYamlDoubleQuoted(fm.verifiedAt)}"`);
-    if (fm.executionBaselineTree) {
-        lines.push(`executionBaselineTree: "${escapeYamlDoubleQuoted(fm.executionBaselineTree)}"`);
-    }
-    if (fm.worktreeId) lines.push(`worktreeId: "${escapeYamlDoubleQuoted(fm.worktreeId)}"`);
-    if (fm.worktreePath) lines.push(`worktreePath: "${escapeYamlDoubleQuoted(fm.worktreePath)}"`);
-    if (fm.worktreeBranch) lines.push(`worktreeBranch: "${escapeYamlDoubleQuoted(fm.worktreeBranch)}"`);
-    if (fm.worktreeStatus) lines.push(`worktreeStatus: "${escapeYamlDoubleQuoted(fm.worktreeStatus)}"`);
+
     lines.push("---");
     return lines.join("\n");
 }
@@ -166,6 +262,29 @@ function optionalFrontMatterValue(overrides, existingFm, key) {
 }
 
 /**
+ * @param {Partial<PlanFrontMatter>} overrides
+ * @param {Partial<PlanFrontMatter>} existingFm
+ * @param {keyof PlanFrontMatter} key
+ * @returns {string | undefined}
+ */
+function optionalStringValue(overrides, existingFm, key) {
+    if (Object.hasOwn(overrides, key)) {
+        const value = overrides[key];
+        return typeof value === "string" ? value : undefined;
+    }
+    const value = existingFm[key];
+    return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string[] | undefined}
+ */
+function normalizeStringList(value) {
+    return Array.isArray(value) ? value.map(String) : undefined;
+}
+
+/**
  * @param {unknown} status
  * @returns {PlanFrontMatter["worktreeStatus"]}
  */
@@ -206,6 +325,8 @@ export function injectFrontMatter(markdown, overrides = {}) {
     }
 
     const fm = {
+        ...existingFm,
+        ...overrides,
         classification: overrides.classification ??
             existingFm.classification ??
             DEFAULT_FRONT_MATTER.classification,
@@ -222,6 +343,11 @@ export function injectFrontMatter(markdown, overrides = {}) {
         updatedAt: overrides.updatedAt ?? existingFm.updatedAt ?? new Date().toISOString(),
         status: normalizePlanStatus(overrides.status ?? existingFm.status),
         origin: overrides.origin ?? existingFm.origin ?? "internal",
+        type: optionalStringValue(overrides, existingFm, "type"),
+        parentPlan: optionalStringValue(overrides, existingFm, "parentPlan"),
+        dependencies: Object.hasOwn(overrides, "dependencies")
+            ? normalizeStringList(overrides.dependencies)
+            : normalizeStringList(existingFm.dependencies),
         failureReason: optionalFrontMatterValue(overrides, existingFm, "failureReason"),
         failedAt: optionalFrontMatterValue(overrides, existingFm, "failedAt"),
         implementedAt: optionalFrontMatterValue(overrides, existingFm, "implementedAt"),
@@ -261,14 +387,18 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
     const { attrs, body } = extractYaml(markdown);
     return {
         attrs: {
+            ...attrs,
             classification: attrs.classification || DEFAULT_FRONT_MATTER.classification,
             complexity: attrs.complexity || DEFAULT_FRONT_MATTER.complexity,
             summary: attrs.summary || DEFAULT_FRONT_MATTER.summary,
-            affectedPaths: attrs.affectedPaths || DEFAULT_FRONT_MATTER.affectedPaths,
+            affectedPaths: normalizeStringList(attrs.affectedPaths) || DEFAULT_FRONT_MATTER.affectedPaths,
             createdAt: attrs.createdAt || DEFAULT_FRONT_MATTER.createdAt,
             updatedAt: attrs.updatedAt,
             status: normalizePlanStatus(attrs.status),
             origin: attrs.origin || missingOrigin,
+            type: typeof attrs.type === "string" ? attrs.type : undefined,
+            parentPlan: typeof attrs.parentPlan === "string" ? attrs.parentPlan : undefined,
+            dependencies: normalizeStringList(attrs.dependencies),
             failureReason: attrs.failureReason,
             failedAt: attrs.failedAt,
             implementedAt: attrs.implementedAt,
@@ -296,8 +426,11 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
  */
 export async function savePlan(cwd, planName, content, fmOverrides = {}) {
     const dir = await ensurePlansDir(cwd);
+    const { filePath, segments } = getStoredPlanLocation(cwd, planName);
+    if (segments.length > 1) {
+        await Deno.mkdir(join(dir, ...segments.slice(0, -1)), { recursive: true });
+    }
     const withFm = injectFrontMatter(content, fmOverrides);
-    const filePath = join(dir, `${planName}.md`);
     await Deno.writeTextFile(filePath, withFm);
     return filePath;
 }
@@ -310,7 +443,7 @@ export async function savePlan(cwd, planName, content, fmOverrides = {}) {
  * @returns {Promise<{ path: string, markdown: string, attrs: PlanFrontMatter, body: string } | null>}
  */
 export async function loadPlan(cwd, planName) {
-    const filePath = join(getPlansDir(cwd), `${planName}.md`);
+    const { filePath } = getStoredPlanLocation(cwd, planName);
     try {
         const markdown = await Deno.readTextFile(filePath);
         const { attrs, body } = parsePlanFrontMatter(markdown);
@@ -340,14 +473,6 @@ export async function loadExternalPlan(absolutePath) {
     return { path: absolutePath, markdown, attrs, body };
 }
 
-/**
- * Update the status field in a plan's front matter.
- *
- * @param {string} cwd
- * @param {string} planName
- * @param {string} status
- * @returns {Promise<void>}
- */
 /**
  * Remove a leading front matter block if present, even if malformed.
  * @param {string} markdown
@@ -388,7 +513,7 @@ export async function updatePlanStatus(
         return;
     }
 
-    const filePath = join(getPlansDir(cwd), `${planName}.md`);
+    const { filePath } = getStoredPlanLocation(cwd, planName);
     let markdown;
     try {
         markdown = await Deno.readTextFile(filePath);
@@ -429,7 +554,7 @@ export async function updatePlanFrontMatter(
         return parsePlanFrontMatter(withFm).attrs;
     }
 
-    const filePath = join(getPlansDir(cwd), `${planName}.md`);
+    const { filePath } = getStoredPlanLocation(cwd, planName);
     let markdown;
     try {
         markdown = await Deno.readTextFile(filePath);
@@ -445,6 +570,31 @@ export async function updatePlanFrontMatter(
 }
 
 /**
+ * @param {string} dir
+ * @param {string[]} prefix
+ * @param {Array<{ name: string, path: string, attrs: PlanFrontMatter }>} results
+ * @returns {Promise<void>}
+ */
+async function collectPlans(dir, prefix, results) {
+    for await (const entry of Deno.readDir(dir)) {
+        const entryPath = join(dir, entry.name);
+        if (entry.isDirectory) {
+            await collectPlans(entryPath, [...prefix, entry.name], results);
+            continue;
+        }
+        if (!entry.isFile || !entry.name.endsWith(".md")) continue;
+        const name = [...prefix, entry.name.replace(/\.md$/, "")].join("/");
+        try {
+            const markdown = await Deno.readTextFile(entryPath);
+            const { attrs } = parsePlanFrontMatter(markdown);
+            results.push({ name, path: entryPath, attrs });
+        } catch {
+            // skip unreadable or malformed files
+        }
+    }
+}
+
+/**
  * List all saved plans in the project's plans directory.
  *
  * @param {string} cwd
@@ -452,37 +602,51 @@ export async function updatePlanFrontMatter(
  */
 export async function listPlans(cwd) {
     const dir = getPlansDir(cwd);
+    /** @type {Array<{ name: string, path: string, attrs: PlanFrontMatter }>} */
     const results = [];
     try {
-        for await (const entry of Deno.readDir(dir)) {
-            if (!entry.isFile || !entry.name.endsWith(".md")) continue;
-            const name = entry.name.replace(/\.md$/, "");
-            const filePath = join(dir, entry.name);
-            try {
-                const markdown = await Deno.readTextFile(filePath);
-                const { attrs } = parsePlanFrontMatter(markdown);
-                results.push({ name, path: filePath, attrs });
-            } catch {
-                // skip unreadable files
-            }
-        }
+        await collectPlans(dir, [], results);
     } catch {
         // plans dir doesn't exist yet
     }
-    return results;
+    return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Find child plans by their loose parentPlan pointer.
+ *
+ * @param {string} cwd
+ * @param {string} parentPlan
+ * @returns {Promise<Array<{ name: string, path: string, attrs: PlanFrontMatter }>>}
+ */
+export async function findPlansByParent(cwd, parentPlan) {
+    const { name } = canonicalizeStoredPlanName(parentPlan);
+    const plans = await listPlans(cwd);
+    return plans.filter((plan) => plan.attrs.parentPlan === name).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
  * Resolve a plan name or path argument to a loadable plan.
- * If the argument looks like an absolute/relative path (contains / or \),
- * treat it as an external plan. Otherwise, look in the project plans dir.
+ * Stored plans are tried first, including nested names such as
+ * `project-breakdown-epic/feature1`. If no stored plan matches and the
+ * argument looks like a path (contains / or \, or ends with .md), load it as
+ * an external markdown file.
  *
  * @param {string} cwd
- * @param {string} arg - Plan name (e.g., "add-dark-mode") or file path
+ * @param {string} arg - Plan name (e.g., "add-dark-mode" or "epic/feature1") or file path
  * @returns {Promise<{ path: string, markdown: string, attrs: PlanFrontMatter, body: string, planName: string }>}
  */
 export async function resolvePlan(cwd, arg) {
-    // Check if it's a path (absolute or relative with separators)
+    try {
+        const plan = await loadPlan(cwd, arg);
+        if (plan) {
+            const { name } = canonicalizeStoredPlanName(arg);
+            return { ...plan, planName: name };
+        }
+    } catch {
+        // Not a valid stored plan name. Fall through to external path handling.
+    }
+
     const isPath = arg.includes("/") || arg.includes("\\") || arg.endsWith(".md");
 
     if (isPath) {
@@ -492,11 +656,7 @@ export async function resolvePlan(cwd, arg) {
         return { ...plan, planName };
     }
 
-    const plan = await loadPlan(cwd, arg);
-    if (!plan) {
-        throw new Error(
-            `Plan not found: ${arg}. Use '${CLI_BIN} plans' to list available plans.`,
-        );
-    }
-    return { ...plan, planName: arg };
+    throw new Error(
+        `Plan not found: ${arg}. Use '${CLI_BIN} plans' to list available plans.`,
+    );
 }

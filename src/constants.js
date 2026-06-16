@@ -50,7 +50,21 @@ export const WORKTREE_BRANCH_PREFIX = "harns/worktree/";
 /** Path infix for adjacent isolated execution worktree directories. */
 export const WORKTREE_PATH_PREFIX = "harns-";
 
-export const HOME_DIR = Deno.env.get("HOME") || "";
+/**
+ * Read an environment variable when permission is available.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function readOptionalEnv(name) {
+    try {
+        return Deno.env.get(name) || "";
+    } catch {
+        return "";
+    }
+}
+
+export const HOME_DIR = readOptionalEnv("HOME");
 
 /** Known CLI command names. */
 /** @type {Readonly<{ROUTER: string, AGENT: string, MODEL: string, LOGIN: string, LOGOUT: string, STATUS: string, EXPORT: string, SHARE: string, LOAD_PLAN: string, RESUME: string, NEW: string, SESSION: string, PLANS: string, SLEEP: string, HELP: string, VERSION: string, QUIT: string, EXIT: string, INIT: string, THEME: string, INSTALL: string, REMOVE: string, COMPACT: string, RELOAD: string}>} */
