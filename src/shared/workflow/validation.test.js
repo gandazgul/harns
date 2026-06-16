@@ -3,14 +3,32 @@ import { loadReviewerPrompt, runValidationLoop } from "./validation.js";
 import { getActiveExecutionWorkflow, setActiveExecutionWorkflow } from "../session/session-state.js";
 
 /**
- * @returns {any & { messages: string[] }}
+ * @returns {any & { messages: string[], systemCalls: Array<{ message: string, isError: boolean, style: any }>, promptSelections: string[] }}
  */
 function makeUi() {
     /** @type {string[]} */
     const messages = [];
+    /** @type {Array<{ message: string, isError: boolean, style: any }>} */
+    const systemCalls = [];
+    /** @type {string[]} */
+    const promptSelections = [];
     return /** @type {any} */ ({
         messages,
-        appendSystemMessage: (/** @type {string} */ msg) => messages.push(String(msg)),
+        systemCalls,
+        promptSelections,
+        appendSystemMessage: (
+            /** @type {string} */ msg,
+            /** @type {boolean} */ isError = false,
+            /** @type {string} */ _header = "",
+            /** @type {any} */ style = {},
+        ) => {
+            messages.push(String(msg));
+            systemCalls.push({ message: String(msg), isError, style });
+        },
+        promptSelect: () => {
+            promptSelections.push("prompted");
+            return Promise.resolve("stop");
+        },
         promptText: () => Promise.resolve("deno task test"),
     });
 }
@@ -68,6 +86,42 @@ Deno.test("runValidationLoop does not switch active agent unless finalAgentName 
 
     assertEquals(
         uiAPI.messages.some((/** @type {string} */ m) => m.includes("execution and validation complete")),
+        true,
+    );
+});
+
+Deno.test("runValidationLoop marks validation progress and success messages with status styling", async () => {
+    const uiAPI = makeUi();
+    await runValidationLoop({
+        planName: "p",
+        planContent: "",
+        triageMeta: { classification: "QUICK_FIX" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve(""),
+            recordPlanEvent: noOpRecordPlanEvent,
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(
+        uiAPI.systemCalls.some((/** @type {{ message: string }} */ call) =>
+            call.message.includes("[spinner] Running CI Validation (Attempt 1/3)...")
+        ),
+        true,
+    );
+    assertEquals(
+        uiAPI.systemCalls.some((/** @type {{ message: string }} */ call) =>
+            call.message.includes("[spinner] Running Semantic Code Review...")
+        ),
+        true,
+    );
+    assertEquals(
+        uiAPI.systemCalls.some((/** @type {{ message: string, style: any }} */ call) =>
+            call.message === "Build and tests passed." && call.style.bodyColor === "success"
+        ),
         true,
     );
 });
@@ -474,10 +528,88 @@ Deno.test("runValidationLoop records worktree_merge_failed when merge-back fails
     });
 
     assertEquals(actions, ["registry:merge_conflict", "event:worktree_merge_failed:conflict"]);
+    assertEquals(uiAPI.promptSelections, ["prompted"]);
     assertEquals(
         uiAPI.messages.some((/** @type {string} */ message) => message.includes("Worktree merge failed: conflict")),
         true,
     );
+    assertEquals(
+        uiAPI.systemCalls.some((/** @type {{ message: string, isError: boolean }} */ call) =>
+            call.message.includes("Worktree merge failed: conflict") && call.isError
+        ),
+        true,
+    );
+});
+
+Deno.test("runValidationLoop retries worktree merge after user fixes primary checkout", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const actions = [];
+    let mergeAttempts = 0;
+    uiAPI.promptSelect = () => {
+        uiAPI.promptSelections.push("retry");
+        return Promise.resolve("retry");
+    };
+
+    setActiveExecutionWorkflow({
+        planName: "p",
+        triageMeta: { classification: "FEATURE" },
+        baselineTree: "baseline-tree",
+        projectRoot: "/primary",
+        executionCwd: "/worktree",
+        worktreeId: "wt1",
+        worktreeBranch: "harns/worktree/p-wt1",
+    });
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve("diff --git a/file.js b/file.js\n+change\n"),
+            runAgentSession: () =>
+                Promise.resolve(
+                    /** @type {any} */ ([{
+                        role: "assistant",
+                        content: [{ type: "text", text: "APPROVED" }],
+                    }]),
+                ),
+            mergeExecutionWorktree: () => {
+                mergeAttempts++;
+                actions.push(`merge:${mergeAttempts}`);
+                if (mergeAttempts === 1) return Promise.reject(new Error("primary dirty"));
+                return Promise.resolve();
+            },
+            updateWorktreeRegistryEntry: (
+                /** @type {string} */ _projectRoot,
+                /** @type {string} */ _id,
+                /** @type {{ status: string }} */ updates,
+            ) => {
+                actions.push(`registry:${updates.status}`);
+                return Promise.resolve({});
+            },
+            recordPlanEvent: (/** @type {any} */ event) => {
+                actions.push(
+                    `event:${event.event}:${event.details.failureReason || event.details.worktreeStatus || ""}`,
+                );
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(actions, [
+        "merge:1",
+        "registry:merge_conflict",
+        "event:worktree_merge_failed:primary dirty",
+        "merge:2",
+        "registry:merged",
+        "event:validation_passed:merged",
+    ]);
+    assertEquals(uiAPI.promptSelections, ["retry"]);
 });
 
 Deno.test("runValidationLoop marks active worktree validation_failed when validation fails", async () => {
