@@ -3,7 +3,7 @@
  * Parallel PROJECT task execution against transient sub-sessions.
  */
 
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import { AGENTS, MAX_PARALLEL_TASKS } from "../../constants.js";
 import { runAgentSession } from "../session/session.js";
 import { getAgentDisplayName } from "../session/agents.js";
@@ -11,6 +11,63 @@ import { createSilentUiApi } from "../ui/api.js";
 import { selectNonConflictingTasks } from "./task-scheduling.js";
 import { extractAssistantOutput, readLatestTaskCompletedOutcome } from "./workflow-results.js";
 import { buildTaskAssignmentRequest, buildTaskResultDisplay } from "./workflow-prompts.js";
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function sanitizeLogPathPart(value) {
+    const cleaned = value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+    return cleaned || "agent";
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatDebugJson(value) {
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+}
+
+/**
+ * @param {string} path
+ * @param {string} text
+ */
+function appendDebugLog(path, text) {
+    try {
+        Deno.mkdirSync(dirname(path), { recursive: true });
+        Deno.writeTextFileSync(path, text.endsWith("\n") ? text : `${text}\n`, { append: true });
+    } catch (_e) {
+        // Debug logging must never fail task execution.
+    }
+}
+
+/**
+ * @param {string} root
+ * @param {{ task: number }} task
+ * @param {string} agentName
+ * @returns {string}
+ */
+function getTaskDebugLogPath(root, task, agentName) {
+    return join(root, "debug-agents", `task-${task.task}-${sanitizeLogPathPart(agentName)}.log`);
+}
+
+/**
+ * @param {import('@earendil-works/pi-agent-core').AgentMessage[]} messages
+ * @returns {string}
+ */
+function formatAgentTranscript(messages) {
+    return messages.map((message, index) =>
+        [
+            `--- Message ${index + 1} ---`,
+            formatDebugJson(message),
+        ].join("\n")
+    ).join("\n\n");
+}
 
 /**
  * Execute project tasks in parallel against in-memory sub-sessions. Each task
@@ -26,6 +83,7 @@ import { buildTaskAssignmentRequest, buildTaskResultDisplay } from "./workflow-p
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
  * @param {Map<number, import('./types.js').TaskExecutionResult>} [seedResults]
  * @param {typeof runAgentSession} [agentSessionRunner]
+ * @param {{ executionCwd?: string }} [options]
  */
 export async function executeProjectTasks(
     planName,
@@ -37,6 +95,7 @@ export async function executeProjectTasks(
     sessionManager,
     seedResults = new Map(),
     agentSessionRunner = runAgentSession,
+    options = {},
 ) {
     /** @type {Map<number, import('./types.js').TaskExecutionResult>} */
     const results = new Map();
@@ -84,37 +143,71 @@ export async function executeProjectTasks(
             pending.delete(task.task);
 
             const agentName = task.assignee || AGENTS.ENGINEER;
+            const debugRoot = options.executionCwd || Deno.cwd();
+            const taskDebugLogPath = options.executionCwd ? getTaskDebugLogPath(debugRoot, task, agentName) : undefined;
 
             const taskHeader = `--- Task ${task.task}: ${task.description} (→ ${getAgentDisplayName(agentName)}) ---`;
             uiAPI.appendSystemMessage(taskHeader, false, "Harns");
 
             try {
+                if (taskDebugLogPath) {
+                    appendDebugLog(
+                        taskDebugLogPath,
+                        [
+                            `Event: HEADLESS TASK START`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Plan: ${planName}`,
+                            `Task: ${task.task}`,
+                            `Assignee: ${agentName}`,
+                            `Display Name: ${getAgentDisplayName(agentName)}`,
+                            `Description: ${task.description}`,
+                            `Dependencies: ${task.dependencies || "none"}`,
+                            `Write Scope: ${task.writeScope || "unknown"}`,
+                            `Execution CWD: ${debugRoot}`,
+                            "",
+                        ].join("\n"),
+                    );
+                    appendDebugLog(
+                        join(debugRoot, "debug.log"),
+                        [
+                            `Event: HEADLESS TASK LOG`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Task: ${task.task}`,
+                            `Assignee: ${agentName}`,
+                            `Log: ${taskDebugLogPath}`,
+                            "",
+                        ].join("\n"),
+                    );
+                }
+
                 const sessionMessages = await agentSessionRunner({
                     agentName,
                     userRequest: buildTaskAssignmentRequest(planName, planBody, task, results),
                     uiAPI: createSilentUiApi(),
+                    cwd: options.executionCwd,
+                    debugLogPath: taskDebugLogPath,
                 });
 
                 const outputText = extractAssistantOutput(sessionMessages);
                 const completed = readLatestTaskCompletedOutcome(sessionMessages);
 
-                if (Deno.env.get("DEBUG") === "1") {
+                if (taskDebugLogPath) {
                     const debugEntry = [
-                        `=== TASK ${task.task} (${agentName}) AGENT RESPONSE ===`,
-                        `=== Output text: ${outputText ? outputText.slice(0, 500) : "(empty)"} ===`,
-                        `=== Total messages: ${sessionMessages.length} ===`,
-                        `=== Assistant messages: ${
+                        `Event: HEADLESS TASK RESULT`,
+                        `Timestamp: ${new Date().toISOString()}`,
+                        `Status: ${completed ? "COMPLETED" : "MISSING task_completed"}`,
+                        `Output Text:`,
+                        outputText || "(empty)",
+                        `Total Messages: ${sessionMessages.length}`,
+                        `Assistant Messages: ${
                             sessionMessages.filter((message) => "role" in message && message.role === "assistant")
                                 .length
-                        } ===`,
-                        `===========================================`,
+                        }`,
+                        `Transcript:`,
+                        formatAgentTranscript(sessionMessages),
                         "",
                     ].join("\n");
-                    try {
-                        Deno.writeTextFileSync(join(Deno.cwd(), "debug.log"), debugEntry, { append: true });
-                    } catch (_e) {
-                        // Debug logging must never fail task execution.
-                    }
+                    appendDebugLog(taskDebugLogPath, debugEntry);
                 }
 
                 const block = uiAPI.appendAgentMessageStart(
@@ -124,6 +217,17 @@ export async function executeProjectTasks(
 
                 if (!completed) {
                     const error = "Task ended without calling task_completed.";
+                    if (taskDebugLogPath) {
+                        appendDebugLog(
+                            taskDebugLogPath,
+                            [
+                                `Event: HEADLESS TASK INCOMPLETE`,
+                                `Timestamp: ${new Date().toISOString()}`,
+                                `Error: ${error}`,
+                                "",
+                            ].join("\n"),
+                        );
+                    }
                     uiAPI.appendSystemMessage(
                         `Task ${task.task} incomplete (${getAgentDisplayName(agentName)}): ${error}`,
                         false,
@@ -162,6 +266,19 @@ export async function executeProjectTasks(
                 }
             } catch (e) {
                 const error = e instanceof Error ? e : new Error(String(e));
+                if (taskDebugLogPath) {
+                    appendDebugLog(
+                        taskDebugLogPath,
+                        [
+                            `Event: HEADLESS TASK ERROR`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Error: ${error.message}`,
+                            `Stack:`,
+                            error.stack || "(no stack)",
+                            "",
+                        ].join("\n"),
+                    );
+                }
                 uiAPI.appendSystemMessage(
                     `❌ Task ${task.task} failed (${getAgentDisplayName(agentName)}): ${error.message}`,
                     false,

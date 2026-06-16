@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { attachUiSubscribers } from "./session.js";
 
 /**
@@ -161,6 +161,30 @@ Deno.test("attachUiSubscribers renders assistant text, thinking, retries, compac
     );
 
     state.endThinking();
+});
+
+Deno.test("attachUiSubscribers streams assistant deltas to debug log path immediately", async () => {
+    const { session, emit } = makeSubscribableSession();
+    const ui = makeUi();
+    const debugLogPath = await Deno.makeTempFile({ prefix: "harns-subscriber-log-test-", suffix: ".log" });
+    try {
+        attachUiSubscribers(session, agentDef, ui, debugLogPath);
+
+        emit({ type: "message_start", message: { role: "assistant" } });
+        emit({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "thinking live" } });
+
+        const afterThinking = await Deno.readTextFile(debugLogPath);
+        assertStringIncludes(afterThinking, "Event: ASSISTANT THINKING DELTA");
+        assertStringIncludes(afterThinking, "thinking live");
+
+        emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "writing live" } });
+
+        const afterText = await Deno.readTextFile(debugLogPath);
+        assertStringIncludes(afterText, "Event: ASSISTANT TEXT DELTA");
+        assertStringIncludes(afterText, "writing live");
+    } finally {
+        await Deno.remove(debugLogPath);
+    }
 });
 
 Deno.test("attachUiSubscribers reports assistant error when the stream ends before text", () => {

@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createEditWithFallbackToolDefinition } from "../../tools/edit-with-fallback.js";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
 import mnemosyneExtension, {
     memoryDeleteToolDef,
@@ -71,6 +71,40 @@ import { recordActiveAgent } from "./active-agent-session.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
+
+/**
+ * @param {string | undefined} debugLogPath
+ * @param {string} text
+ */
+function appendDebugLog(debugLogPath, text) {
+    const path = debugLogPath || join(Deno.cwd(), "debug.log");
+    try {
+        Deno.mkdirSync(dirname(path), { recursive: true });
+        Deno.writeTextFileSync(path, text.endsWith("\n") ? text : `${text}\n`, { append: true });
+    } catch (_e) {
+        // Debug logging must never affect agent execution.
+    }
+}
+
+/**
+ * @param {string | undefined} debugLogPath
+ * @returns {boolean}
+ */
+function shouldWriteDebugLog(debugLogPath) {
+    return Boolean(debugLogPath) || Deno.env.get("DEBUG") === "1";
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatDebugJson(value) {
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+}
 
 /**
  * Resolve the effective tool list for a session, applying runtime-only gates
@@ -789,6 +823,8 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride]
  * @param {boolean} [opts.allowReturnToRouter]
+ * @param {string} [opts.cwd] - Execution cwd for file tools and agent operations. Defaults to primary project root.
+ * @param {string} [opts.debugLogPath] - Optional DEBUG log destination for this invocation.
  *
  * @returns {Promise<{
  *   session: import('@earendil-works/pi-coding-agent').AgentSession,
@@ -796,7 +832,8 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  *   promptState: { text: string },
  *   tools: string[],
  *   finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[],
- *   resolvedModel: import('../models/types.js').ModelInfo | undefined
+ *   resolvedModel: any,
+ *   resolvedThinkingLevel: string | undefined
  * }>}
  */
 export async function buildAgentSession({
@@ -809,7 +846,10 @@ export async function buildAgentSession({
     triageMeta,
     _agentDefOverride,
     allowReturnToRouter,
+    cwd,
+    debugLogPath,
 }) {
+    const sessionCwd = cwd || CWD;
     await ensureMnemosyneBinary();
     await ensureCymbalBinary();
     const agentDef = _agentDefOverride || await loadAgentDef(agentName);
@@ -855,11 +895,11 @@ export async function buildAgentSession({
     }
 
     // Override the built-in edit tool to return file contents on failure.
-    finalCustomTools.push(createEditWithFallbackToolDefinition(CWD));
+    finalCustomTools.push(createEditWithFallbackToolDefinition(sessionCwd));
 
     if (tools.includes("multi_file_edit") && !finalCustomTools.find((t) => t.name === "multi_file_edit")) {
         const { createMultiFileEditTool } = await import("../../tools/multi_file_edit.js");
-        finalCustomTools.push(createMultiFileEditTool(CWD));
+        finalCustomTools.push(createMultiFileEditTool(sessionCwd));
     }
 
     // Resolve system prompt placeholders
@@ -871,7 +911,7 @@ export async function buildAgentSession({
     }
 
     const loader = new DefaultResourceLoader({
-        cwd: CWD,
+        cwd: sessionCwd,
         agentDir: getSettingsDir("global"),
         systemPromptOverride: () => promptState.text,
         extensionFactories,
@@ -884,16 +924,14 @@ export async function buildAgentSession({
     const modelRegistry = getModelRegistry();
     const resolvedModel = resolveModel(modelOverride, agentDef, agentName, modelRegistry);
 
-    if (!sessionManager && Deno.env.get("DEBUG") === "1") {
+    if (!sessionManager && shouldWriteDebugLog(debugLogPath)) {
         const debugMsg =
             `[Harns] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
-        try {
-            Deno.writeTextFileSync(join(Deno.cwd(), "debug.log"), debugMsg + "\n", { append: true });
-        } catch (_e) { /* ignore */ }
+        appendDebugLog(debugLogPath, debugMsg);
     }
 
     const { session, extensionsResult } = await createAgentSession({
-        cwd: CWD,
+        cwd: sessionCwd,
         agentDir: getSettingsDir("global"),
         authStorage: modelRegistry.authStorage,
         modelRegistry,
@@ -933,7 +971,7 @@ export async function buildAgentSession({
     // Ensure extension lifecycle hooks (e.g. session_start) are activated for this agent invocation.
     await session.bindExtensions({});
 
-    return { session, agentDef, promptState, tools, finalCustomTools, resolvedModel };
+    return { session, agentDef, promptState, tools, finalCustomTools, resolvedModel, resolvedThinkingLevel };
 }
 
 /**
@@ -955,10 +993,11 @@ export async function buildAgentSession({
  * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
  * @param {import('./types.js').AgentDefinition} agentDef
  * @param {import('../workflow/workflow.js').UiAPI | undefined} uiAPI
+ * @param {string} [debugLogPath]
  *
  * @returns {SubscriberState}
  */
-export function attachUiSubscribers(session, agentDef, uiAPI) {
+export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
     /** @type {{ appendText: (delta: string) => void } | null} */
     let currentMarkdownBlock = null;
     /** @type {string[]} */
@@ -987,6 +1026,18 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
             }
             case "message_update": {
                 if (event.assistantMessageEvent.type === "thinking_delta") {
+                    if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                        appendDebugLog(
+                            debugLogPath,
+                            [
+                                `Event: ASSISTANT THINKING DELTA`,
+                                `Timestamp: ${new Date().toISOString()}`,
+                                `Delta:`,
+                                event.assistantMessageEvent.delta,
+                                "",
+                            ].join("\n"),
+                        );
+                    }
                     if (!currentThinkingStream && uiAPI) {
                         currentThinkingStream = uiAPI.appendThinkingStart?.() ?? null;
                     }
@@ -999,11 +1050,33 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
                 }
 
                 if (event.assistantMessageEvent.type === "thinking_end") {
+                    if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                        appendDebugLog(
+                            debugLogPath,
+                            [
+                                `Event: ASSISTANT THINKING END`,
+                                `Timestamp: ${new Date().toISOString()}`,
+                                "",
+                            ].join("\n"),
+                        );
+                    }
                     endThinking();
                     break;
                 }
 
                 if (event.assistantMessageEvent.type === "text_delta") {
+                    if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                        appendDebugLog(
+                            debugLogPath,
+                            [
+                                `Event: ASSISTANT TEXT DELTA`,
+                                `Timestamp: ${new Date().toISOString()}`,
+                                `Delta:`,
+                                event.assistantMessageEvent.delta,
+                                "",
+                            ].join("\n"),
+                        );
+                    }
                     endThinking();
                     if (uiAPI) {
                         if (!currentMarkdownBlock) {
@@ -1030,6 +1103,17 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
                     event.message.role === "assistant" && event.message.stopReason === "error" &&
                     uiAPI
                 ) {
+                    if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                        appendDebugLog(
+                            debugLogPath,
+                            [
+                                `Event: ASSISTANT MESSAGE ERROR`,
+                                `Timestamp: ${new Date().toISOString()}`,
+                                `Error: ${event.message.errorMessage || "Unknown LLM error"}`,
+                                "",
+                            ].join("\n"),
+                        );
+                    }
                     if (!currentMarkdownBlock) {
                         currentMarkdownBlock = uiAPI.appendAgentMessageStart(agentDef.displayName);
                     }
@@ -1060,6 +1144,21 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
             case "tool_execution_start": {
                 currentMarkdownBlock = null;
                 invokedToolNames.push(event.toolName);
+
+                if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                    appendDebugLog(
+                        debugLogPath,
+                        [
+                            `Event: TOOL START`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Tool Call ID: ${event.toolCallId}`,
+                            `Tool: ${event.toolName}`,
+                            `Args:`,
+                            formatDebugJson(event.args),
+                            "",
+                        ].join("\n"),
+                    );
+                }
 
                 if (event.toolName === "task_completed") {
                     break;
@@ -1121,6 +1220,20 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
                 break;
             }
             case "tool_execution_update": {
+                if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                    appendDebugLog(
+                        debugLogPath,
+                        [
+                            `Event: TOOL UPDATE`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Tool Call ID: ${event.toolCallId}`,
+                            `Tool: ${event.toolName}`,
+                            `Partial Result:`,
+                            formatDebugJson(event.partialResult),
+                            "",
+                        ].join("\n"),
+                    );
+                }
                 if (uiAPI && uiAPI.getActiveToolBlock) {
                     const block = uiAPI.getActiveToolBlock(event.toolCallId);
                     if (block && event.partialResult && event.partialResult.content) {
@@ -1138,6 +1251,21 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
                 break;
             }
             case "tool_execution_end": {
+                if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                    appendDebugLog(
+                        debugLogPath,
+                        [
+                            `Event: TOOL END`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Tool Call ID: ${event.toolCallId}`,
+                            `Tool: ${event.toolName}`,
+                            `Status: ${event.isError ? "ERROR" : "OK"}`,
+                            `Result:`,
+                            formatDebugJson(event.result),
+                            "",
+                        ].join("\n"),
+                    );
+                }
                 if (uiAPI && uiAPI.getActiveToolBlock) {
                     const block = uiAPI.getActiveToolBlock(event.toolCallId);
                     if (block) {
@@ -1228,6 +1356,10 @@ export function attachUiSubscribers(session, agentDef, uiAPI) {
  * @param {Array<{base64: string, mimeType: string}>} [opts.images]
  * @param {import('../workflow/workflow.js').UiAPI} [opts.uiAPI]
  * @param {SubscriberState} opts.subscriberState
+ * @param {any} [opts.resolvedModel]
+ * @param {string} [opts.resolvedThinkingLevel]
+ * @param {string} [opts.cwd]
+ * @param {string} [opts.debugLogPath]
  *
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */
@@ -1240,6 +1372,10 @@ async function runPrompt({
     images,
     uiAPI,
     subscriberState,
+    resolvedModel,
+    resolvedThinkingLevel,
+    cwd,
+    debugLogPath,
 }) {
     subscriberState.resetTurn();
 
@@ -1252,7 +1388,7 @@ async function runPrompt({
         }));
     }
 
-    const debugEnabled = Deno.env.get("DEBUG") === "1";
+    const debugEnabled = shouldWriteDebugLog(debugLogPath);
     if (debugEnabled) {
         const startTitle = agentName === AGENTS.ROUTER
             ? "ROUTER INVOCATION START"
@@ -1260,17 +1396,19 @@ async function runPrompt({
         const logEntry = [
             `Event: ${startTitle}`,
             `Timestamp: ${new Date().toISOString()}`,
+            `Agent: ${agentDef.displayName} (${agentName})`,
+            `Provider: ${resolvedModel?.provider || "(session default)"}`,
+            `Model: ${resolvedModel?.id || "(session default)"}`,
+            `Model Name: ${resolvedModel?.name || "(not available)"}`,
+            `Thinking Level: ${resolvedThinkingLevel || "(default)"}`,
+            `Execution CWD: ${cwd || CWD}`,
             `System Prompt:`,
             finalSystemPrompt,
             `User Request:`,
             userRequest,
             "",
         ].join("\n");
-        try {
-            Deno.writeTextFileSync(join(Deno.cwd(), "debug.log"), logEntry, { append: true });
-        } catch (_e) {
-            // Ignore log error
-        }
+        appendDebugLog(debugLogPath, logEntry);
     }
 
     /** @type {Error | null} */
@@ -1302,6 +1440,9 @@ async function runPrompt({
                 ? [
                     `Event: ROUTER INVOCATION END`,
                     `Timestamp: ${new Date().toISOString()}`,
+                    `Provider: ${resolvedModel?.provider || "(session default)"}`,
+                    `Model: ${resolvedModel?.id || "(session default)"}`,
+                    `Thinking Level: ${resolvedThinkingLevel || "(default)"}`,
                     `Router Tools Used: ${invokedToolNames.join(", ") || "(none)"}`,
                     promptError ? `Status: ERROR (${promptError.message})` : `Status: OK`,
                     "",
@@ -1309,17 +1450,16 @@ async function runPrompt({
                 : [
                     `Event: AGENT INVOCATION END: ${agentDef.name} (${agentName})`,
                     `Timestamp: ${new Date().toISOString()}`,
+                    `Provider: ${resolvedModel?.provider || "(session default)"}`,
+                    `Model: ${resolvedModel?.id || "(session default)"}`,
+                    `Thinking Level: ${resolvedThinkingLevel || "(default)"}`,
                     `Tools Used: ${invokedToolNames.join(", ") || "(none)"}`,
                     promptError ? `Status: ERROR (${promptError.message})` : `Status: OK`,
                     `Summary:`,
                     summary || "(empty)",
                     "",
                 ].join("\n");
-            try {
-                Deno.writeTextFileSync(join(Deno.cwd(), "debug.log"), logEntry, { append: true });
-            } catch (_e) {
-                // Ignore log error
-            }
+            appendDebugLog(debugLogPath, logEntry);
         }
     }
 
@@ -1465,12 +1605,14 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
  * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta] - Optional triage metadata threaded into auto-wired plan_written.
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride] - Internal: skip loadAgentDef() and use this pre-loaded definition.
  * @param {boolean} [opts.allowReturnToRouter] - Internal: expose return_to_router only for interactive direct/root flows.
+ * @param {string} [opts.cwd] - Execution cwd for file tools and agent operations.
+ * @param {string} [opts.debugLogPath] - Optional DEBUG log destination for this invocation.
  *
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */
 export async function runAgentSession(opts) {
-    const { session, agentDef, promptState, resolvedModel } = await buildAgentSession(opts);
-    const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI);
+    const { session, agentDef, promptState, resolvedModel, resolvedThinkingLevel } = await buildAgentSession(opts);
+    const subscriberState = attachUiSubscribers(session, agentDef, opts.uiAPI, opts.debugLogPath);
     addSubAgentSession(session);
 
     const suppressUI = opts.uiAPI?.isOutputSuppressed?.();
@@ -1490,6 +1632,10 @@ export async function runAgentSession(opts) {
             images: opts.images,
             uiAPI: opts.uiAPI,
             subscriberState,
+            resolvedModel,
+            resolvedThinkingLevel,
+            cwd: opts.cwd,
+            debugLogPath: opts.debugLogPath,
         });
     } finally {
         if (!suppressUI) {

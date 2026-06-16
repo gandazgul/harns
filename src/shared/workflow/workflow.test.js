@@ -373,6 +373,106 @@ Deno.test("executeProjectTasks records incomplete tasks and blocks dependents", 
     assertEquals(harness.runningSnapshots.map((snapshot) => snapshot.map((task) => task.task)), [[1], []]);
 });
 
+Deno.test("executeProjectTasks writes per-task logs for headless agents without DEBUG env", async () => {
+    const previousDebug = Deno.env.get("DEBUG");
+    const executionCwd = await Deno.makeTempDir({ prefix: "harns-workflow-log-test-" });
+    Deno.env.delete("DEBUG");
+    try {
+        const tasks = [
+            {
+                task: 1,
+                assignee: "engineer",
+                dependencies: "none",
+                writeScope: "src/a.js",
+                description: "Implement alpha",
+            },
+        ];
+        const harness = createWorkflowHarness();
+        /** @type {string | undefined} */
+        let debugLogPath;
+
+        const result = await executeProjectTasks(
+            "project-plan",
+            "Full plan body",
+            tasks,
+            harness.uiAPI,
+            [],
+            harness.onRunningTasksChange,
+            harness.sessionManager,
+            undefined,
+            (/** @type {{ debugLogPath?: string }} */ opts) => {
+                debugLogPath = opts.debugLogPath;
+                return Promise.resolve(completedTaskMessages("Implemented alpha."));
+            },
+            { executionCwd },
+        );
+
+        assertEquals(result.failedTasks, []);
+        assertEquals(debugLogPath?.startsWith(`${executionCwd}/`), true);
+        assertStringIncludes(debugLogPath || "", "debug-agents/task-1-engineer.log");
+
+        const rootDebug = await Deno.readTextFile(`${executionCwd}/debug.log`);
+        assertStringIncludes(rootDebug, "Event: HEADLESS TASK LOG");
+        assertStringIncludes(rootDebug, debugLogPath || "");
+
+        const taskDebug = await Deno.readTextFile(debugLogPath || "");
+        assertStringIncludes(taskDebug, "Event: HEADLESS TASK START");
+        assertStringIncludes(taskDebug, "Event: HEADLESS TASK RESULT");
+        assertStringIncludes(taskDebug, '"toolName": "task_completed"');
+        assertStringIncludes(taskDebug, "Implemented alpha.");
+    } finally {
+        if (previousDebug === undefined) {
+            Deno.env.delete("DEBUG");
+        } else {
+            Deno.env.set("DEBUG", previousDebug);
+        }
+        await Deno.remove(executionCwd, { recursive: true });
+    }
+});
+
+Deno.test("executeProjectTasks does not write root per-task logs for DEBUG legacy runs", async () => {
+    const previousDebug = Deno.env.get("DEBUG");
+    Deno.env.set("DEBUG", "1");
+    try {
+        const tasks = [
+            {
+                task: 1,
+                assignee: "engineer",
+                dependencies: "none",
+                writeScope: "src/a.js",
+                description: "Implement alpha",
+            },
+        ];
+        const harness = createWorkflowHarness();
+        /** @type {string | undefined} */
+        let debugLogPath;
+
+        const result = await executeProjectTasks(
+            "project-plan",
+            "Full plan body",
+            tasks,
+            harness.uiAPI,
+            [],
+            harness.onRunningTasksChange,
+            harness.sessionManager,
+            undefined,
+            (/** @type {{ debugLogPath?: string }} */ opts) => {
+                debugLogPath = opts.debugLogPath;
+                return Promise.resolve(completedTaskMessages("Implemented alpha."));
+            },
+        );
+
+        assertEquals(result.failedTasks, []);
+        assertEquals(debugLogPath, undefined);
+    } finally {
+        if (previousDebug === undefined) {
+            Deno.env.delete("DEBUG");
+        } else {
+            Deno.env.set("DEBUG", previousDebug);
+        }
+    }
+});
+
 Deno.test("executeProjectTasks records thrown task errors and blocks dependents", async () => {
     const tasks = [
         { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
