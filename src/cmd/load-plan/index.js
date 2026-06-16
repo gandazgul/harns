@@ -8,6 +8,7 @@
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { AGENTS, CLI_BIN, CWD } from "../../constants.js";
 import {
+    findPlansByParent as findPlansByParentFn,
     injectFrontMatter,
     loadPlan as loadPlanFn,
     resolvePlan as resolvePlanFn,
@@ -46,6 +47,7 @@ import {
     updateEntry as updateWorktreeRegistryEntryFn,
 } from "../../shared/worktree-registry.js";
 import { runValidationLoop as runValidationLoopFn } from "../../shared/workflow/validation.js";
+import { runSlicerAgent as runSlicerAgentFn } from "../../shared/workflow/workflow-slicer.js";
 import { submitPlanForReview as submitPlanForReviewFn } from "../../shared/workflow/submit-plan.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 import {
@@ -76,6 +78,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof askApprovalWithTasksFn} [askApprovalWithTasks]
  * @property {typeof ensureSlicerTasksFn} [ensureSlicerTasks]
  * @property {typeof runValidationLoopFn} [runValidationLoop]
+ * @property {typeof runSlicerAgentFn} [runSlicerAgent]
  * @property {typeof loadPlanFn} [loadPlan]
  * @property {typeof getWorkflowDiffFn} [getWorkflowDiff]
  * @property {typeof listCommitsTouchingPathsSinceFn} [listCommitsTouchingPathsSince]
@@ -85,6 +88,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof resetTuiStateFn} [resetTuiState]
  * @property {typeof getRootAgentNameFn} [getRootAgentName]
  * @property {(cwd: string) => Promise<Array<{name: string, attrs: {classification: string, status: string}}>>} [listPlans]
+ * @property {typeof findPlansByParentFn} [findPlansByParent]
  * @property {typeof recordPlanEventFn} [recordPlanEvent]
  * @property {typeof updatePlanFrontMatterFn} [updatePlanFrontMatter]
  * @property {typeof findWorktreeByIdFn} [findWorktreeById]
@@ -1255,6 +1259,98 @@ async function handlePlanRecovery({
 }
 
 /**
+ * @param {import('../../plan-store.js').PlanFrontMatter} attrs
+ * @returns {boolean}
+ */
+function isDecomposedEpicStatus(attrs) {
+    return attrs.status === "ready_for_decomposition" || attrs.status === "ready_for_work";
+}
+
+/**
+ * @param {{ name: string, attrs: import('../../plan-store.js').PlanFrontMatter }} child
+ * @returns {string}
+ */
+function formatChildPlanLabel(child) {
+    const summary = child.attrs.summary ? ` — ${child.attrs.summary}` : "";
+    return `${child.name} [${child.attrs.status}]${summary}`;
+}
+
+/**
+ * @param {Object} opts
+ * @param {{ planName: string, body: string, markdown: string, attrs: import('../../plan-store.js').PlanFrontMatter }} opts.plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof findPlansByParentFn} opts.findPlansByParent
+ * @param {typeof runSlicerAgentFn} opts.runSlicerAgent
+ * @param {(childPlanName: string) => Promise<void>} opts.loadChildPlan
+ * @returns {Promise<"handled" | "continue">}
+ */
+async function handleEpicPlan({ plan, uiAPI, findPlansByParent, runSlicerAgent, loadChildPlan }) {
+    if (!isEpicPlan(plan.attrs)) return "continue";
+
+    const children = (await findPlansByParent(CWD, plan.planName)).filter((child) =>
+        child.attrs.classification === "FEATURE"
+    );
+    const hasChildren = children.length > 0;
+    const canPickChild = hasChildren && isDecomposedEpicStatus(plan.attrs);
+
+    if (plan.attrs.status === "draft" || plan.attrs.status === "approved") {
+        uiAPI.appendSystemMessage(
+            "This PROJECT Epic is not executable. Resume Slicer decomposition to create child FEATURE plans.",
+            false,
+            "Harns",
+        );
+    } else if (canPickChild) {
+        uiAPI.appendSystemMessage(
+            `PROJECT Epic has ${children.length} child FEATURE plan${children.length === 1 ? "" : "s"}.`,
+            false,
+            "Harns",
+        );
+    } else if (!hasChildren) {
+        uiAPI.appendSystemMessage("This PROJECT Epic has no child FEATURE plans yet.", false, "Harns");
+    }
+
+    while (true) {
+        /** @type {Array<{ value: string, label: string }>} */
+        const epicOptions = [
+            { value: "slicer", label: "Open or resume Slicer decomposition" },
+            { value: "view", label: "View Epic details" },
+            { value: "cancel", label: "Cancel" },
+        ];
+        if (canPickChild) {
+            epicOptions.splice(1, 0, { value: "pick_child", label: "Pick a child FEATURE plan" });
+        }
+
+        const answer = await uiAPI.promptSelect("What would you like to do with this Epic?", epicOptions);
+        if (!answer || answer === "cancel") return "handled";
+
+        if (answer === "view") {
+            uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
+            continue;
+        }
+
+        if (answer === "slicer") {
+            await runSlicerAgent({
+                planName: plan.planName,
+                triageMeta: plan.attrs,
+                uiAPI,
+            });
+            return "handled";
+        }
+
+        if (answer === "pick_child") {
+            const childOptions = children.map((child) => ({
+                value: child.name,
+                label: formatChildPlanLabel(child),
+            }));
+            const childPlanName = await uiAPI.promptSelect("Load child FEATURE plan:", childOptions);
+            if (!childPlanName) return "handled";
+            await loadChildPlan(String(childPlanName));
+            return "handled";
+        }
+    }
+}
+
+/**
  * Handle `load-plan` command.
  *
  * @param {string[]} argv
@@ -1276,6 +1372,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         askApprovalWithTasks: askApprovalWithTasksDep,
         ensureSlicerTasks: ensureSlicerTasksDep,
         runValidationLoop: runValidationLoopDep,
+        runSlicerAgent: runSlicerAgentDep,
         loadPlan: loadPlanDep,
         getWorkflowDiff: getWorkflowDiffDep,
         listCommitsTouchingPathsSince: listCommitsTouchingPathsSinceDep,
@@ -1284,6 +1381,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         createDirectAgentHandler: createDirectAgentHandlerDep,
         getRootAgentName: getRootAgentNameDep,
         listPlans: listPlansDep,
+        findPlansByParent: findPlansByParentDep,
         recordPlanEvent: recordPlanEventDep,
         updatePlanFrontMatter: updatePlanFrontMatterDep,
         findWorktreeById: findWorktreeByIdDep,
@@ -1309,6 +1407,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const askApprovalWithTasks = askApprovalWithTasksDep || askApprovalWithTasksFn;
     const ensureSlicerTasks = ensureSlicerTasksDep || ensureSlicerTasksFn;
     const runValidationLoop = runValidationLoopDep || runValidationLoopFn;
+    const runSlicerAgent = runSlicerAgentDep || runSlicerAgentFn;
     const loadPlan = loadPlanDep || loadPlanFn;
     const getWorkflowDiff = getWorkflowDiffDep || getWorkflowDiffFn;
     const listCommitsTouchingPathsSince = listCommitsTouchingPathsSinceDep || listCommitsTouchingPathsSinceFn;
@@ -1316,6 +1415,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const setActiveAgent = setActiveAgentDep || setActiveAgentFn;
     const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
     const getRootAgentName = getRootAgentNameDep || getRootAgentNameFn;
+    const findPlansByParent = findPlansByParentDep || findPlansByParentFn;
     const recordPlanEvent = recordPlanEventDep || recordPlanEventFn;
     const updatePlanFrontMatter = updatePlanFrontMatterDep || updatePlanFrontMatterFn;
     const findWorktreeById = findWorktreeByIdDep || findWorktreeByIdFn;
@@ -1433,6 +1533,30 @@ export async function runLoadPlanCommand(argv, options = {}) {
             if (result === "handled") return;
         }
 
+        const epicResult = await handleEpicPlan({
+            plan,
+            uiAPI,
+            findPlansByParent,
+            runSlicerAgent,
+            loadChildPlan: async (childPlanName) => {
+                skipRouterRestore = true;
+                await runLoadPlanCommand([childPlanName], {
+                    ...options,
+                    __testDeps: {
+                        ...deps,
+                        parseArgs: /** @type {any} */ ((/** @type {readonly string[]} */ childArgv) => ({
+                            help: false,
+                            _: [...childArgv],
+                        })),
+                    },
+                });
+            },
+        });
+        if (epicResult === "handled") {
+            skipRouterRestore = true;
+            return;
+        }
+
         if (plan.attrs.status === "verified") {
             uiAPI.appendSystemMessage("This plan is already verified.", false, "Harns");
             while (true) {
@@ -1461,16 +1585,6 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 plan.attrs.status = "feedback";
                 break;
             }
-        }
-
-        if (isEpicPlan(plan.attrs) && plan.attrs.status === "ready_for_decomposition") {
-            uiAPI.appendSystemMessage(
-                `PROJECT Epic ready for decomposition or child plan selection: ${plan.planName}`,
-                false,
-                "Harns",
-            );
-            skipRouterRestore = true;
-            return;
         }
 
         if (plan.attrs.status === "approved" || isExecutablePlanStatus(plan.attrs.status)) {
