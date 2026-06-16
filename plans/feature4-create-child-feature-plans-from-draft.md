@@ -8,10 +8,10 @@ affectedPaths:
   - "src/shared/workflow/workflow.test.js"
   - "src/plan-store.test.js"
 createdAt: "2026-06-16T16:25:04Z"
-updatedAt: "2026-06-16T20:36:41.682Z"
-status: "verified"
+updatedAt: "2026-06-16T20:55:58.967Z"
+status: "feedback"
 origin: "internal"
-verifiedAt: "2026-06-16T20:36:41.682Z"
+worktreeStatus: "abandoned"
 ---
 # Create Child FEATURE Plans from a Draft
 
