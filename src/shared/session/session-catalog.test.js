@@ -11,6 +11,7 @@ import {
     listSkills,
     readGlobalAgentMd,
     steerRootSession,
+    steerRootSessionWithTarget,
 } from "./session.js";
 import { setRootAgentSession } from "./session-state.js";
 
@@ -264,6 +265,7 @@ Deno.test("steerRootSession sends image content only while root is streaming", a
             text: "interrupt",
             images: [{ type: "image", data: "abc123", mimeType: "image/png" }],
         }]);
+        assertEquals(await steerRootSessionWithTarget("targeted"), session);
     } finally {
         setRootAgentSession(null);
     }

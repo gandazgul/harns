@@ -154,7 +154,6 @@ Deno.test("dispatchPostTriage executes approved FEATURE plans and runs validatio
     const executed = [];
     /** @type {unknown[]} */
     const validations = [];
-    let popped = false;
 
     await dispatchPostTriage({
         triage: {
@@ -194,11 +193,6 @@ Deno.test("dispatchPostTriage executes approved FEATURE plans and runs validatio
                 validations.push(args);
                 return Promise.resolve();
             },
-            getConfiguredAgentModel: () => "test/model",
-            pushAgentInfo: () => {},
-            popAgentInfo: () => {
-                popped = true;
-            },
         }),
     });
 
@@ -207,14 +201,12 @@ Deno.test("dispatchPostTriage executes approved FEATURE plans and runs validatio
     assertEquals(validations.length, 1);
     assertEquals(/** @type {any} */ (validations[0]).planContent, "plan markdown");
     assertEquals(/** @type {any} */ (validations[0]).finalAgentName, "planner");
-    assertEquals(popped, true);
 });
 
 Deno.test("dispatchPostTriage restores PROJECT owner after incomplete execution", async () => {
     const uiAPI = makeUi();
     /** @type {string[]} */
     const activeAgents = [];
-    let popped = false;
 
     await dispatchPostTriage({
         triage: {
@@ -242,16 +234,10 @@ Deno.test("dispatchPostTriage restores PROJECT owner after incomplete execution"
             decidePostExecution: () => ({ kind: "stay_with_agent", payload: { reason: "execution_incomplete" } }),
             createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
             setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
-            getConfiguredAgentModel: () => "test/model",
-            pushAgentInfo: () => {},
-            popAgentInfo: () => {
-                popped = true;
-            },
         }),
     });
 
     assertEquals(activeAgents, ["architect"]);
-    assertEquals(popped, true);
 });
 
 Deno.test("readLatestTriageOutcome returns the latest triage_report details", () => {

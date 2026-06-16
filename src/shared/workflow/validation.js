@@ -156,6 +156,7 @@ async function runCompletionGatedRepair({
         uiAPI,
         sessionManager,
         cwd,
+        useRootSession: true,
     });
     consumePendingSwitchHandoff();
 
@@ -405,6 +406,7 @@ export async function runValidationLoop({
                     cwd: executionCwd,
                     _agentDefOverride: reviewerAgentDef,
                     includeEditFallback: false,
+                    useRootSession: true,
                 });
                 consumePendingSwitchHandoff();
 

@@ -85,6 +85,7 @@ export async function runPlanningAgent({ agentName, initialRequest, triageMeta, 
         triageMeta,
         uiAPI,
         sessionManager,
+        useRootSession: true,
     });
 
     const result = readLatestPlanOutcome(messages);
@@ -408,6 +409,7 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager, ex
         uiAPI,
         sessionManager,
         cwd: executionCwd,
+        useRootSession: true,
     });
 
     const completed = readLatestTaskCompletedOutcome(messages);
