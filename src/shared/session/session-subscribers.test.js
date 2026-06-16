@@ -174,6 +174,7 @@ Deno.test("attachUiSubscribers streams assistant deltas to debug log path immedi
         emit({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "thinking live" } });
 
         const afterThinking = await Deno.readTextFile(debugLogPath);
+        assertStringIncludes(afterThinking, "Event: MESSAGE START");
         assertStringIncludes(afterThinking, "Event: ASSISTANT THINKING DELTA");
         assertStringIncludes(afterThinking, "thinking live");
 

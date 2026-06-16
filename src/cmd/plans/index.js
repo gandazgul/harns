@@ -59,6 +59,10 @@ export async function runPlansCommand(argv, options = {}) {
             `    Status: ${p.attrs.status} | Classification: ${p.attrs.classification} | Complexity: ${p.attrs.complexity}`,
         );
         console.log(`    Summary: ${p.attrs.summary || "(none)"}`);
+        if (p.attrs.worktreeStatus || p.attrs.worktreeBranch || p.attrs.worktreePath) {
+            const ref = p.attrs.worktreeBranch || p.attrs.worktreePath || "unknown";
+            console.log(`    Worktree: ${p.attrs.worktreeStatus || "unknown"} (${ref})`);
+        }
         console.log(`    Created: ${p.attrs.createdAt}`);
         console.log();
     }

@@ -14,7 +14,7 @@ import { updatePlanFrontMatter } from "../../plan-store.js";
  */
 
 /**
- * @typedef {"review_feedback"|"review_approved"|"readiness_passed"|"execution_started"|"execution_failed"|"implementation_finished"|"validation_failed"|"validation_passed"|"recovery_continue"|"recovery_reset"|"review_reopened"} PlanEvent
+ * @typedef {"review_feedback"|"review_approved"|"readiness_passed"|"execution_started"|"execution_failed"|"implementation_finished"|"validation_failed"|"validation_passed"|"worktree_merge_failed"|"recovery_continue"|"recovery_reset"|"review_reopened"} PlanEvent
  */
 
 /**
@@ -22,6 +22,10 @@ import { updatePlanFrontMatter } from "../../plan-store.js";
  * @property {Partial<import('../../plan-store.js').PlanFrontMatter>} [triageMeta]
  * @property {string} [failureReason]
  * @property {string} [executionBaselineTree]
+ * @property {string} [worktreeId]
+ * @property {string} [worktreePath]
+ * @property {string} [worktreeBranch]
+ * @property {import('../../plan-store.js').PlanFrontMatter['worktreeStatus']} [worktreeStatus]
  * @property {() => Date} [now]
  */
 
@@ -35,6 +39,7 @@ const ALLOWED_FROM = {
     implementation_finished: ["in_progress"],
     validation_failed: ["implemented"],
     validation_passed: ["implemented"],
+    worktree_merge_failed: ["implemented"],
     recovery_continue: ["in_progress", "failed"],
     recovery_reset: ["in_progress", "failed", "implemented"],
     review_reopened: ["ready_for_work", "in_progress", "failed", "implemented", "verified"],
@@ -50,6 +55,7 @@ const EVENT_STATUS = {
     implementation_finished: "implemented",
     validation_failed: "implemented",
     validation_passed: "verified",
+    worktree_merge_failed: "implemented",
     recovery_continue: "ready_for_work",
     recovery_reset: "ready_for_work",
     review_reopened: "feedback",
@@ -111,6 +117,10 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
 
     if (event === "execution_started") {
         updates.executionBaselineTree = details.executionBaselineTree;
+        updates.worktreeId = details.worktreeId;
+        updates.worktreePath = details.worktreePath;
+        updates.worktreeBranch = details.worktreeBranch;
+        updates.worktreeStatus = details.worktreeStatus || "active";
         updates.failureReason = null;
         updates.failedAt = null;
         updates.implementedAt = null;
@@ -118,26 +128,40 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
     }
 
     if (event === "execution_failed") {
+        updates.worktreeStatus = "execution_failed";
         updates.failureReason = details.failureReason || "Execution failed before implementation finished.";
         updates.failedAt = now;
     }
 
     if (event === "implementation_finished") {
+        updates.worktreeStatus = "completed";
         updates.implementedAt = now;
         updates.failedAt = null;
     }
 
     if (event === "validation_failed") {
+        updates.worktreeStatus = "validation_failed";
         updates.failureReason = details.failureReason || "Workflow Validation failed.";
     }
 
+    if (event === "worktree_merge_failed") {
+        updates.worktreeStatus = "merge_conflict";
+        updates.failureReason = details.failureReason || "Worktree merge failed.";
+    }
+
     if (event === "validation_passed") {
+        updates.worktreeStatus = details.worktreeStatus || "merged";
         updates.verifiedAt = now;
         updates.failureReason = null;
         updates.failedAt = null;
     }
 
     if (event === "recovery_reset") {
+        updates.worktreeId = details.worktreeId || updates.worktreeId;
+        updates.worktreePath = details.worktreePath || updates.worktreePath;
+        updates.worktreeBranch = details.worktreeBranch || updates.worktreeBranch;
+        updates.executionBaselineTree = details.executionBaselineTree || updates.executionBaselineTree;
+        updates.worktreeStatus = details.worktreeStatus || updates.worktreeStatus || "abandoned";
         updates.failureReason = null;
         updates.failedAt = null;
         updates.implementedAt = null;
@@ -157,6 +181,10 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
         updates.implementedAt = null;
         updates.verifiedAt = null;
         updates.executionBaselineTree = null;
+        updates.worktreeId = null;
+        updates.worktreePath = null;
+        updates.worktreeBranch = null;
+        updates.worktreeStatus = "abandoned";
     }
 
     return updates;

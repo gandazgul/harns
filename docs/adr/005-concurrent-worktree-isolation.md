@@ -6,61 +6,81 @@ Accepted
 
 ## Context
 
-Harns currently executes all plan work in the primary working tree (CWD = `Deno.cwd()`). This means:
+Harns previously executed plan work in the primary working tree (CWD = `Deno.cwd()`). This meant:
 
-- Two Harns instances executing plans concurrently will step on each other's file changes.
-- A failed execution leaves the working tree in an unknown state, and recovery resets the entire tree to the baseline
-  snapshot — destroying unrelated user edits.
-- Plan recovery has no way to inspect, merge, or discard a partial execution without affecting other work.
+- Two Harns instances executing plans concurrently could step on each other's file changes.
+- Failed execution recovery could reset the primary checkout to a baseline snapshot and destroy unrelated user edits.
+- Plan recovery had no isolated place to inspect, merge, continue, or discard a partial execution.
 
 ADR-003 introduced execution baseline trees (git tree objects captured before execution) as a lightweight recovery
-mechanism, but those trees operate on the same working tree. ADR-004 centralized the plan lifecycle, but didn't change
+mechanism, but those trees operated on the same working tree. ADR-004 centralized the plan lifecycle, but did not change
 the single-worktree constraint.
 
-We need a mechanism that lets multiple Harns instances (or multiple sequential plan executions) operate independently on
+We need a mechanism that lets multiple Harns instances, or multiple sequential plan executions, operate independently on
 the same repository.
 
 ## Decision
 
-Use **git worktrees** (`git worktree add`) to isolate each plan execution into its own linked working tree.
+Use **git worktrees** (`git worktree add`) to isolate each saved plan execution into its own linked working tree.
 
 ### Isolation Granularity
 
-**Plan-level isolation.** Each plan execution gets its own worktree. Tasks within a PROJECT plan share that worktree
-(they are already coordinated by the orchestrator and write-scope conflict detection runs against the same tree). This
-avoids the complexity of per-task worktrees while giving us the primary benefit: concurrent plan executions don't
-conflict.
+**Plan-level isolation.** Each plan execution gets one worktree. Tasks within a PROJECT plan share that worktree because
+they are already coordinated by the orchestrator and write-scope conflict detection runs against the same tree. This
+avoids per-task worktree complexity while allowing concurrent plan executions to avoid primary-checkout conflicts.
 
 ### Worktree Lifecycle
 
-1. **Creation** — Before `execution_started`, Harns creates a branch named `harns/worktree/<plan-name>` from the current
-   HEAD, then calls `git worktree add -b harns/worktree/<plan-name> <path> HEAD`. The worktree path follows the pattern
-   `../<repo-name>-<plan-name>` (adjacent to the primary repo).
+1. **Creation** — Before `execution_started`, Harns creates or reuses a worktree branch with the prefix
+   `harns/worktree/` from the selected base ref. The worktree path is created adjacent to the primary repo and includes
+   a sanitized plan slug plus a short id, e.g. `../<repo>-harns-<plan-slug>-<id>`.
+2. **Execution** — Implementation runs in the worktree cwd. Harns records the execution baseline tree from that
+   worktree. Agent sessions and file-writing tools receive the worktree cwd explicitly; Harns does not mutate the
+   process cwd with `Deno.chdir()`.
+3. **Implementation complete** — `implementation_finished` means implementation finished in the worktree. It sets Plan
+   Status `implemented` and worktree status `completed`, but does **not** merge the branch into the primary checkout.
+4. **Validation** — Workflow Validation runs local CI, workflow diff computation, semantic review, and repair sessions
+   in the execution worktree.
+5. **Merge-back** — Only after Workflow Validation passes does Harns merge the worktree branch into the primary
+   checkout. `validation_passed` and Plan Status `verified` are recorded only after that merge succeeds.
+6. **Recovery/failure** — If execution, validation, or merge-back fails, the worktree is left in place. Recovery can
+   inspect, continue, retry validation, merge, recreate, or abandon the isolated worktree depending on plan state.
 
-2. **Execution** — The execution runs in the worktree's CWD. All git-snapshot operations (baseline capture, diff, tree
-   operations) receive the worktree path as their CWD. The primary working tree is completely untouched.
+### CWD Plumbing
 
-3. **Merge (success)** — On `implementation_finished`, Harns switches back to the primary working tree, merges
-   `harns/worktree/<plan-name>` into the current branch (fast-forward when possible), updates the plan's front matter,
-   and optionally removes the worktree via `git worktree remove`.
+`CWD` remains the primary project root. It anchors saved plan files, Harns settings, `.hns/worktrees.json`, and
+`.hns/worktrees.lock`.
 
-4. **Inspect/Resume (failure)** — On `execution_failed`, the worktree is left in place. Recovery menus show the worktree
-   path and can offer to inspect it, continue execution inside it, merge partial changes, or delete it.
+Execution code must pass an explicit execution cwd to every operation that reads or writes implementation files:
+
+- `runAgentSession()` / agent session creation
+- built-in file tools and custom edit tools
+- PROJECT task sub-sessions
+- local CI
+- workflow diff computation
+- reviewer sessions
+- operator/engineer repair sessions
+- git snapshot helpers that operate on the implementation tree
+
+Prompt templates, settings, plan metadata updates, and worktree registry updates remain anchored to the primary project
+root unless a caller explicitly needs worktree-local files.
 
 ### Worktree Registry
 
-A persistent JSON file at `<project>/.hns/worktrees.json` tracks all active and historical worktrees:
+A persistent JSON file at `<project>/.hns/worktrees.json` tracks active and historical execution worktrees:
 
 ```json
 {
-    "worktrees": [
+    "version": 1,
+    "entries": [
         {
-            "id": "add-dark-mode-toggle",
+            "id": "5fe73e21",
             "planName": "add-dark-mode-toggle",
-            "branch": "harns/worktree/add-dark-mode-toggle",
-            "path": "/absolute/path/to/../harns-add-dark-mode-toggle",
             "baseBranch": "main",
-            "baseTree": "abc123def...",
+            "baseRef": "HEAD",
+            "baseCommit": "abc123def...",
+            "branch": "harns/worktree/add-dark-mode-toggle-5fe73e21",
+            "path": "/absolute/path/to/repo-harns-add-dark-mode-toggle-5fe73e21",
             "status": "active",
             "createdAt": "2026-06-15T12:00:00.000Z",
             "updatedAt": "2026-06-15T12:00:00.000Z"
@@ -69,65 +89,78 @@ A persistent JSON file at `<project>/.hns/worktrees.json` tracks all active and 
 }
 ```
 
-A simple lockfile at `<project>/.hns/worktrees.lock` prevents race conditions between concurrent Harns instances
-creating or deleting worktrees.
+A best-effort advisory lockfile at `<project>/.hns/worktrees.lock` prevents concurrent Harns instances from racing while
+creating, updating, or deleting registry entries.
 
 ### Front Matter Additions
 
-The plan's `PlanFrontMatter` gains three optional fields:
+The plan's `PlanFrontMatter` includes optional worktree fields:
 
-| Field            | Type                                                                               | Description                                                       |
-| ---------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `worktreePath`   | `string \| null`                                                                   | Absolute path to the worktree, or null when no worktree is active |
-| `worktreeBranch` | `string \| null`                                                                   | Branch name of the worktree (e.g., `harns/worktree/<plan-name>`)  |
-| `worktreeStatus` | `"none" \| "active" \| "completed" \| "failed" \| "merged" \| "abandoned" \| null` | Lifecycle status of the worktree                                  |
+| Field            | Type                                                                                                                                    | Description                                     |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `worktreeId`     | `string \| null`                                                                                                                        | Durable registry id for the execution worktree. |
+| `worktreePath`   | `string \| null`                                                                                                                        | Filesystem path to the execution worktree.      |
+| `worktreeBranch` | `string \| null`                                                                                                                        | Branch checked out in the execution worktree.   |
+| `worktreeStatus` | `"none" \| "active" \| "completed" \| "execution_failed" \| "validation_failed" \| "merge_conflict" \| "merged" \| "abandoned" \| null` | Lifecycle status of the worktree.               |
 
 ### Merge Strategy
 
-**Branch merge** — the worktree is created on a named branch. On success, Harns returns to the primary worktree and runs
-`git merge harns/worktree/<plan-name>`. Fast-forward merges are preferred; if conflicts arise, they are surfaced to the
-user for manual resolution. For fully automated workflows, the merge can be configured to use
-`git merge --no-commit --no-ff` and diff-apply as a fallback.
+Harns performs a branch merge from the primary checkout after validation passes. The merge helper refuses to proceed
+when the primary checkout has blocking uncommitted changes, while allowing Harns-owned metadata paths needed during the
+workflow. If merge fails or is refused, Harns records `worktree_merge_failed`, keeps Plan Status `implemented`, sets
+`worktreeStatus: "merge_conflict"`, and leaves the worktree branch/path intact for recovery.
+
+Dirty primary checkout state is therefore a **merge-back risk**, not a worktree creation blocker. Worktree creation can
+start from `HEAD` even when the primary checkout has unrelated uncommitted edits; those edits are not copied into the
+execution worktree.
 
 ### Recovery Integration
 
-The `handlePlanRecovery` flow in the `load-plan` command gains worktree-aware options:
+The `load-plan` recovery flow resolves worktree context from plan front matter first and the registry second. Inspect
+reports plan status, worktree status, path, branch, base ref/commit, git status, and diff from the execution baseline.
 
-- **Inspect worktree** — shows the worktree status, current branch, and diff from base
-- **Merge worktree changes** — for `implemented` plans where the worktree is still active but unmerged
-- **Continue in worktree** — for `in_progress` or `failed` plans, resume execution inside the existing worktree
-- **Delete worktree** — removes the worktree (`git worktree remove`) without merging, discarding changes
-- **Reset worktree** — deletes and recreates the worktree from the execution baseline tree
+Recovery actions for worktree-backed plans include:
 
-### Locking
+- **Continue execution from current worktree** for `in_progress` and `failed` plans.
+- **Retry Workflow Validation** for `implemented` plans.
+- **Merge worktree changes** for implemented worktrees that need merge-back.
+- **Delete/recreate worktree and start over** without restoring the primary checkout.
+- **Delete/abandon worktree** to discard the isolated checkout and clear plan worktree fields.
+- **Re-open for review** to revise the plan.
 
-A simple advisory lockfile (`<project>/.hns/worktrees.lock`) with a timeout prevents two Harns instances from
-simultaneously modifying the worktree registry or creating worktrees for the same plan.
+Legacy plans with an execution baseline but no worktree metadata keep the older primary-checkout baseline reset path
+with a destructive warning.
+
+### Plan List Visibility
+
+`hns plans` displays concise worktree state when a plan has worktree metadata, for example:
+
+```text
+Worktree: merge_conflict (harns/worktree/add-dark-mode-toggle-5fe73e21)
+```
 
 ## Consequences
 
 ### Positive
 
-- Multiple Harns instances can execute plans concurrently without file conflicts.
-- The primary working tree is never touched during execution — unrelated user edits are preserved.
-- Plan recovery gains concrete options around merge/inspect/delete instead of only "reset everything."
-- The worktree registry provides a durable record of all execution attempts, even past sessions.
-- No changes to the task-scheduling or project-executor logic — tasks already receive CWD implicitly.
+- Multiple Harns instances can execute plans concurrently without implementation-file conflicts.
+- The primary working tree is not touched during implementation or validation repair.
+- Workflow Validation checks the isolated execution result before anything is merged back.
+- Plan recovery can inspect, continue, retry validation, merge, recreate, or abandon an isolated checkout.
+- The worktree registry provides durable state for recovery and plan listing.
 
 ### Negative
 
-- Git worktrees require a clean working tree in the primary checkout before creation (git enforces this, so `git stash`
-  or commit may be needed).
-- Worktree creation and deletion adds latency to execution start/end (typically 10–100ms).
-- Disk usage increases (one extra checkout per active worktree).
-- Branch namespace `harns/worktree/*` needs periodic GC if worktrees are abandoned.
-- The `.hns/worktrees.json` registry and lockfile must be kept consistent — a crashed instance could leave stale
-  entries.
+- Worktree creation and deletion add latency to execution start/recovery.
+- Disk usage increases while worktrees remain active.
+- Branch namespace `harns/worktree/*` needs periodic cleanup when worktrees are abandoned.
+- The `.hns/worktrees.json` registry and lockfile must be kept consistent after crashes or interrupted sessions.
+- Merge-back can be blocked by dirty primary-checkout files or conflicts even after validation passes in the worktree.
 
 ### Mitigations
 
-- On startup, Harns can prune stale worktree registrations (check if the worktree path still exists, check
-  `git worktree list` for orphans).
-- A `hns worktrees prune` command can clean up abandoned worktrees and stale registry entries.
-- The lockfile uses a 5-second timeout and PID-based detection.
-- `git worktree remove --force` is available as a fallback when the primary tree is dirty.
+- Registry writes use a lockfile plus atomic temp-file-and-rename updates.
+- Recovery detects missing worktree paths and can abandon or recreate isolated worktrees.
+- Worktree pruning compares registry entries with filesystem/git worktree state and removes stale records.
+- Merge failures keep the worktree branch/path intact and leave the plan in `implemented` for recovery.
+- Baseline-tree reset remains available only for legacy no-worktree plans, with the existing destructive warning.

@@ -121,6 +121,35 @@ Deno.test("plan-store resolves external plans and injects defaults when front ma
     }
 });
 
+Deno.test("worktree front matter fields round-trip and can be cleared", () => {
+    const markdown = injectFrontMatter("## Body", {
+        executionBaselineTree: "tree123",
+        worktreeId: "wt-123",
+        worktreePath: "/tmp/repo-harns-plan-wt-123",
+        worktreeBranch: "harns/worktree/plan-wt-123",
+        worktreeStatus: "active",
+    });
+
+    const parsed = parsePlanFrontMatter(markdown);
+    assertEquals(parsed.attrs.executionBaselineTree, "tree123");
+    assertEquals(parsed.attrs.worktreeId, "wt-123");
+    assertEquals(parsed.attrs.worktreePath, "/tmp/repo-harns-plan-wt-123");
+    assertEquals(parsed.attrs.worktreeBranch, "harns/worktree/plan-wt-123");
+    assertEquals(parsed.attrs.worktreeStatus, "active");
+
+    const cleared = injectFrontMatter(markdown, {
+        worktreeId: null,
+        worktreePath: null,
+        worktreeBranch: null,
+        worktreeStatus: null,
+    });
+    const reparsed = parsePlanFrontMatter(cleared);
+    assertEquals(reparsed.attrs.worktreeId, undefined);
+    assertEquals(reparsed.attrs.worktreePath, undefined);
+    assertEquals(reparsed.attrs.worktreeBranch, undefined);
+    assertEquals(reparsed.attrs.worktreeStatus, undefined);
+});
+
 Deno.test("updatePlanFrontMatter preserves body and clears optional fields", async () => {
     const cwd = await Deno.makeTempDir();
     try {

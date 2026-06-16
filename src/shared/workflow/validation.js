@@ -3,6 +3,8 @@
  * Mechanical and semantic validation for completed Harns execution workflows.
  */
 
+import { extractYaml } from "@std/front-matter";
+import { dirname, fromFileUrl, join } from "@std/path";
 import { AGENTS, CWD } from "../../constants.js";
 import { getAgentDisplayName } from "../session/agents.js";
 import { runAgentSession } from "../session/session.js";
@@ -17,6 +19,36 @@ import { extractAssistantOutput, readLatestTaskCompletedOutcome } from "./workfl
 import { setActiveAgent } from "../interactive/chat-session.js";
 import { getWorkflowDiff } from "./git-snapshot.js";
 import { recordPlanEvent } from "./plan-lifecycle.js";
+import { mergeExecutionWorktree } from "../worktree.js";
+import { updateEntry as updateWorktreeRegistryEntry } from "../worktree-registry.js";
+
+export const __dirname = dirname(fromFileUrl(import.meta.url));
+const REVIEWER_PROMPT_PATH = join(__dirname, "reviewer-prompt.md");
+
+/**
+ * Load reviewer as a bare workflow prompt instead of a normal agent definition.
+ * Normal agent definitions are wrapped with Harns' shared system prompt, which
+ * advertises skills, memory, and exploration tools. Semantic review is a
+ * mechanical plan-vs-diff check, so it intentionally receives none of that.
+ *
+ * @param {(path: string) => Promise<string>} [readTextFile]
+ * @returns {Promise<import('../session/types.js').AgentDefinition>}
+ */
+export async function loadReviewerPrompt(readTextFile = Deno.readTextFile) {
+    const raw = await readTextFile(REVIEWER_PROMPT_PATH);
+    const { attrs, body } = extractYaml(raw);
+    const displayName = typeof attrs.name === "string" && attrs.name.trim() ? attrs.name.trim() : "Reviewer";
+    const description = typeof attrs.description === "string" ? attrs.description.trim() : "";
+
+    return {
+        name: AGENTS.REVIEWER,
+        displayName,
+        model: "",
+        description,
+        tools: [],
+        systemPrompt: body.trim(),
+    };
+}
 
 /**
  * @param {import('./workflow.js').UiAPI} uiAPI
@@ -50,10 +82,11 @@ async function getOrAskForValidationCommand(uiAPI) {
  * Spawns the local validation step.
  *
  * @param {import('./workflow.js').UiAPI} uiAPI
+ * @param {string} [cwd]
  *
  * @returns {Promise<{ exitCode: number, output: string }>}
  */
-export async function runLocalCI(uiAPI) {
+export async function runLocalCI(uiAPI, cwd = CWD) {
     const cmdArgs = await getOrAskForValidationCommand(uiAPI);
 
     if (!cmdArgs) {
@@ -71,7 +104,7 @@ export async function runLocalCI(uiAPI) {
 
         const command = new Deno.Command(cmdExe, {
             args: [cmdFlag, cmdArgs],
-            cwd: CWD,
+            cwd,
             stdout: "piped",
             stderr: "piped",
         });
@@ -97,6 +130,7 @@ export async function runLocalCI(uiAPI) {
  * @param {string} args.userRequest
  * @param {import('./workflow.js').UiAPI} args.uiAPI
  * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} args.sessionManager
+ * @param {string} [args.cwd]
  * @param {typeof runAgentSession} [args.runAgentSession]
  * @param {typeof readLatestTaskCompletedOutcome} [args.readLatestTaskCompletedOutcome]
  * @returns {Promise<boolean>}
@@ -106,6 +140,7 @@ async function runCompletionGatedRepair({
     userRequest,
     uiAPI,
     sessionManager,
+    cwd,
     runAgentSession: runAgentSessionImpl = runAgentSession,
     readLatestTaskCompletedOutcome: readTaskCompleted = readLatestTaskCompletedOutcome,
 }) {
@@ -114,6 +149,7 @@ async function runCompletionGatedRepair({
         userRequest,
         uiAPI,
         sessionManager,
+        cwd,
     });
     consumePendingSwitchHandoff();
 
@@ -122,10 +158,11 @@ async function runCompletionGatedRepair({
 
 /**
  * @param {string | undefined} baselineTree
+ * @param {string} [cwd]
  * @returns {Promise<string>}
  */
-async function getGitDiffText(baselineTree) {
-    return await getWorkflowDiff(CWD, baselineTree);
+async function getGitDiffText(baselineTree, cwd = CWD) {
+    return await getWorkflowDiff(cwd, baselineTree);
 }
 
 /**
@@ -213,8 +250,11 @@ export function shouldRunWorkflowValidation(triageMeta) {
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcome,
  *   getDiffText?: typeof getGitDiffText,
  *   recordPlanEvent?: typeof recordPlanEvent,
+ *   mergeExecutionWorktree?: typeof mergeExecutionWorktree,
+ *   updateWorktreeRegistryEntry?: typeof updateWorktreeRegistryEntry,
  *   setActiveAgent?: typeof setActiveAgent,
  *   createDirectAgentHandler?: (agentName: string) => import('../session/types.js').AgentMessageHandler,
+ *   loadReviewerPrompt?: typeof loadReviewerPrompt,
  * }} [args.__deps] Test-only injection point.
  */
 export async function runValidationLoop({
@@ -237,8 +277,15 @@ export async function runValidationLoop({
             }));
     const getDiffText = __deps?.getDiffText || getGitDiffText;
     const recordPlanEventImpl = __deps?.recordPlanEvent || recordPlanEvent;
+    const mergeExecutionWorktreeImpl = __deps?.mergeExecutionWorktree || mergeExecutionWorktree;
+    const updateWorktreeRegistryEntryImpl = __deps?.updateWorktreeRegistryEntry || updateWorktreeRegistryEntry;
+    const loadReviewerPromptImpl = __deps?.loadReviewerPrompt || loadReviewerPrompt;
     const activeWorkflow = getActiveExecutionWorkflow();
     const baselineTree = activeWorkflow?.baselineTree;
+    const projectRoot = activeWorkflow?.projectRoot || CWD;
+    const executionCwd = activeWorkflow?.executionCwd || CWD;
+    const worktreeBranch = activeWorkflow?.worktreeBranch;
+    const worktreeId = activeWorkflow?.worktreeId;
     if (activeWorkflow) {
         clearActiveExecutionWorkflow();
     }
@@ -259,7 +306,7 @@ export async function runValidationLoop({
         while (!buildPasses && mechanicalAttempts < 3) {
             mechanicalAttempts++;
             uiAPI?.appendSystemMessage?.(`Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
-            const ciResult = await runLocalCIImpl(uiAPI);
+            const ciResult = await runLocalCIImpl(uiAPI, executionCwd);
 
             if (ciResult.exitCode === 0) {
                 buildPasses = true;
@@ -275,6 +322,7 @@ export async function runValidationLoop({
                         `when the repair is complete:\n\n${ciResult.output}`,
                     uiAPI,
                     sessionManager,
+                    cwd: executionCwd,
                 });
                 if (!completed) {
                     haltReason = `${
@@ -292,7 +340,7 @@ export async function runValidationLoop({
 
         uiAPI?.appendSystemMessage?.("Running Semantic Code Review...");
 
-        const diffText = await getDiffText(baselineTree);
+        const diffText = await getDiffText(baselineTree, executionCwd);
 
         if (requiresImplementationDiff(triageMeta) && !hasImplementationDiff(diffText, planName)) {
             haltReason = diffText.trim()
@@ -309,12 +357,16 @@ export async function runValidationLoop({
 
         const reviewPrompt =
             `Compare the current implementation diff against the original plan. If the code fully satisfies the plan, reply ONLY with the word 'APPROVED'. Otherwise, list the missing semantic requirements.\n\n### Original Plan\n${planContent}\n\n### Git Diff\n${diffText}`;
+        const reviewerAgentDef = await loadReviewerPromptImpl();
 
         const sessionMessages = await runAgentSessionImpl({
             agentName: AGENTS.REVIEWER,
             userRequest: reviewPrompt,
             uiAPI: createSilentUiApi(),
             sessionManager,
+            cwd: executionCwd,
+            _agentDefOverride: reviewerAgentDef,
+            includeEditFallback: false,
         });
         consumePendingSwitchHandoff();
 
@@ -325,7 +377,8 @@ export async function runValidationLoop({
             executionComplete = true;
         } else {
             uiAPI?.appendSystemMessage?.(
-                `Review failed. Sending feedback back to ${getAgentDisplayName(AGENTS.ENGINEER)}...`,
+                `Review failed. Sending feedback back to ${getAgentDisplayName(AGENTS.ENGINEER)}...\n\n` +
+                    `Reviewer Feedback:\n${reviewResponse || "(no reviewer output captured)"}`,
             );
             const completed = await repair({
                 agentName: AGENTS.ENGINEER,
@@ -333,6 +386,7 @@ export async function runValidationLoop({
                     `existing tests, and call task_completed when finished.\n\nReviewer Feedback:\n${reviewResponse}`,
                 uiAPI,
                 sessionManager,
+                cwd: executionCwd,
             });
             if (!completed) {
                 haltReason = `${
@@ -351,19 +405,61 @@ export async function runValidationLoop({
         const triageClassificationDisplay = triageMeta?.classification
             ? triageMeta.classification.toLocaleLowerCase().replace(/^([a-z])/, (c) => c.toUpperCase())
             : "Plan";
-        uiAPI.appendSystemMessage(`${triageClassificationDisplay} execution and validation complete.`);
-        if (planName && planName !== "quick-fix") {
-            await recordPlanEventImpl({
-                cwd: CWD,
-                planName,
-                event: "validation_passed",
-                currentStatus: "implemented",
-                details: { triageMeta },
-            });
+
+        if (worktreeBranch) {
+            try {
+                uiAPI.appendSystemMessage(`Merging validated worktree branch ${worktreeBranch} into primary checkout.`);
+                await mergeExecutionWorktreeImpl({
+                    projectRoot,
+                    branch: worktreeBranch,
+                    worktreePath: executionCwd,
+                    allowedDirtyPaths: [
+                        `plans/${planName}.md`,
+                        ".hns/",
+                        ".hns/worktrees.json",
+                        ".hns/worktrees.lock",
+                    ],
+                });
+                if (worktreeId) {
+                    await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "merged" });
+                }
+            } catch (/** @type {any} */ error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                uiAPI.appendSystemMessage(`Workflow halted: Worktree merge failed: ${reason}`);
+                if (worktreeId) {
+                    await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "merge_conflict" });
+                }
+                if (planName && planName !== "quick-fix") {
+                    await recordPlanEventImpl({
+                        cwd: CWD,
+                        planName,
+                        event: "worktree_merge_failed",
+                        currentStatus: "implemented",
+                        details: { triageMeta, failureReason: reason },
+                    });
+                }
+                executionComplete = false;
+            }
+        }
+
+        if (executionComplete) {
+            uiAPI.appendSystemMessage(`${triageClassificationDisplay} execution and validation complete.`);
+            if (planName && planName !== "quick-fix") {
+                await recordPlanEventImpl({
+                    cwd: CWD,
+                    planName,
+                    event: "validation_passed",
+                    currentStatus: "implemented",
+                    details: { triageMeta, worktreeStatus: worktreeBranch ? "merged" : undefined },
+                });
+            }
         }
     } else {
         const reason = haltReason || "Validation stopped before completion.";
         uiAPI.appendSystemMessage(`Workflow halted: ${reason}`);
+        if (worktreeId) {
+            await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "validation_failed" });
+        }
         if (planName && planName !== "quick-fix") {
             await recordPlanEventImpl({
                 cwd: CWD,

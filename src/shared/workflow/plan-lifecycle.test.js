@@ -19,7 +19,22 @@ Deno.test("buildPlanEventUpdates captures execution baseline when work starts", 
 
     assertEquals(updates.status, "in_progress");
     assertEquals(updates.executionBaselineTree, "abc123");
+    assertEquals(updates.worktreeStatus, "active");
     assertEquals(updates.implementedAt, null);
+});
+
+Deno.test("buildPlanEventUpdates records worktree metadata when execution starts", () => {
+    const updates = buildPlanEventUpdates("execution_started", "ready_for_work", {
+        executionBaselineTree: "abc123",
+        worktreeId: "wt-1",
+        worktreePath: "/tmp/repo-harns-plan-wt-1",
+        worktreeBranch: "harns/worktree/plan-wt-1",
+    });
+
+    assertEquals(updates.worktreeId, "wt-1");
+    assertEquals(updates.worktreePath, "/tmp/repo-harns-plan-wt-1");
+    assertEquals(updates.worktreeBranch, "harns/worktree/plan-wt-1");
+    assertEquals(updates.worktreeStatus, "active");
 });
 
 Deno.test("buildPlanEventUpdates keeps implemented status when validation fails", () => {
@@ -28,7 +43,27 @@ Deno.test("buildPlanEventUpdates keeps implemented status when validation fails"
     });
 
     assertEquals(updates.status, "implemented");
+    assertEquals(updates.worktreeStatus, "validation_failed");
     assertEquals(updates.failureReason, "CI failed");
+});
+
+Deno.test("buildPlanEventUpdates tracks implementation and merge worktree statuses", () => {
+    assertEquals(
+        buildPlanEventUpdates("implementation_finished", "in_progress").worktreeStatus,
+        "completed",
+    );
+    assertEquals(
+        buildPlanEventUpdates("execution_failed", "in_progress").worktreeStatus,
+        "execution_failed",
+    );
+    assertEquals(
+        buildPlanEventUpdates("worktree_merge_failed", "implemented").worktreeStatus,
+        "merge_conflict",
+    );
+    assertEquals(
+        buildPlanEventUpdates("validation_passed", "implemented").worktreeStatus,
+        "merged",
+    );
 });
 
 Deno.test("buildPlanEventUpdates records continue recovery as ready_for_work", () => {

@@ -8,15 +8,24 @@ function makeUi() {
     const messages = [];
     /** @type {Array<unknown>} */
     const selections = [];
+    /** @type {Array<{ prompt: string, options: Array<{ value: string, label: string }> }>} */
+    const prompts = [];
 
     return {
         messages,
         selections,
+        prompts,
         uiAPI: /** @type {import('../../shared/ui/types.js').UiAPI} */ ({
             appendSystemMessage: (msg) => messages.push(String(msg)),
             appendAgentMessageStart: () => ({ appendText: () => {} }),
             requestRender: () => {},
-            promptSelect: () => Promise.resolve(selections.shift() ?? null),
+            promptSelect: (prompt, options = []) => {
+                prompts.push({
+                    prompt: String(prompt),
+                    options: /** @type {Array<{ value: string, label: string }>} */ (options),
+                });
+                return Promise.resolve(selections.shift() ?? null);
+            },
             promptText: () => Promise.resolve(null),
             showModelSelector: () => {},
         }),
@@ -686,6 +695,141 @@ Deno.test("runLoadPlanCommand failed plan can reset baseline and start over", as
     assertEquals(executed, true);
 });
 
+Deno.test("runLoadPlanCommand refuses worktree reset when recorded recreate base is missing", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("reset", "cancel");
+    let removed = false;
+    let recreated = false;
+
+    await runLoadPlanCommand(["plan-missing-base"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-missing-base"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-missing-base",
+                    path: "plans/plan-missing-base.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "failed",
+                        executionBaselineTree: "baseline-tree",
+                        worktreeId: "wt-missing-base",
+                        worktreePath: "/tmp/harns-plan-worktree",
+                        worktreeBranch: "harns/worktree/plan-missing-base",
+                        worktreeStatus: "execution_failed",
+                    },
+                }),
+            findWorktreeById: () => Promise.resolve(null),
+            findWorktreeByPlanName: () => Promise.resolve(null),
+            removeExecutionWorktree: () => {
+                removed = true;
+                return Promise.resolve();
+            },
+            createExecutionWorktree: () => {
+                recreated = true;
+                return Promise.resolve(/** @type {any} */ ({}));
+            },
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(removed, false);
+    assertEquals(recreated, false);
+    assertEquals(messages.some((message) => message.includes("no recorded base commit or base ref")), true);
+});
+
+Deno.test("runLoadPlanCommand recreates worktree reset from recorded base commit", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("reset", "confirm");
+    let removed = false;
+    let createdBaseRef = "";
+    let executed = false;
+
+    await runLoadPlanCommand(["plan-recorded-base"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-recorded-base"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-recorded-base",
+                    path: "plans/plan-recorded-base.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "failed",
+                        executionBaselineTree: "baseline-tree",
+                        worktreeId: "wt-recorded-base",
+                        worktreePath: "/tmp/harns-plan-worktree",
+                        worktreeBranch: "harns/worktree/plan-recorded-base",
+                        worktreeStatus: "execution_failed",
+                    },
+                }),
+            findWorktreeById: () =>
+                Promise.resolve({
+                    id: "wt-recorded-base",
+                    planName: "plan-recorded-base",
+                    path: "/tmp/harns-plan-worktree",
+                    branch: "harns/worktree/plan-recorded-base",
+                    baseRef: "main",
+                    baseCommit: "abc123",
+                    baseTree: "baseline-tree",
+                    status: "execution_failed",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    updatedAt: "2026-01-01T00:00:00.000Z",
+                }),
+            findWorktreeByPlanName: () => Promise.resolve(null),
+            removeExecutionWorktree: () => {
+                removed = true;
+                return Promise.resolve();
+            },
+            updateWorktreeRegistryEntry: () => Promise.resolve(/** @type {any} */ ({})),
+            createExecutionWorktree: (/** @type {{ baseRef: string }} */ args) => {
+                createdBaseRef = args.baseRef;
+                return Promise.resolve({
+                    id: "wt-recreated",
+                    path: "/tmp/harns-plan-worktree-2",
+                    branch: "harns/worktree/plan-recorded-base-2",
+                    status: "active",
+                    baseRef: "abc123",
+                    baseCommit: "abc123",
+                    baseTree: "new-baseline-tree",
+                });
+            },
+            updatePlanFrontMatter: (
+                /** @type {string} */ _cwd,
+                /** @type {string} */ _planName,
+                /** @type {Partial<import('../../plan-store.js').PlanFrontMatter>} */ updates,
+                /** @type {import('../../plan-store.js').PlanFrontMatter} */ attrs,
+            ) => Promise.resolve({ ...attrs, ...updates }),
+            recordPlanEvent: noOpRecordPlanEvent,
+            executePlan: () => {
+                executed = true;
+                return Promise.resolve(undefined);
+            },
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(removed, true);
+    assertEquals(createdBaseRef, "abc123");
+    assertEquals(executed, true);
+});
+
 Deno.test("runLoadPlanCommand in_progress inspect reports failure and baseline diff", async () => {
     const { uiAPI, selections, messages } = makeUi();
     selections.push("inspect", "cancel");
@@ -777,6 +921,169 @@ Deno.test("runLoadPlanCommand implemented plan retries validation", async () => 
         },
         baselineTree: "baseline-tree",
     });
+});
+
+Deno.test("runLoadPlanCommand only offers manual merge for merge-conflict worktree recovery", async () => {
+    for (const worktreeStatus of ["completed", "validation_failed", "merge_conflict"]) {
+        const { uiAPI, selections, prompts } = makeUi();
+        selections.push("cancel");
+
+        await runLoadPlanCommand([`plan-${worktreeStatus}`], {
+            uiAPI,
+            editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+            __testDeps: /** @type {any} */ ({
+                parseArgs: () => ({ help: false, _: [`plan-${worktreeStatus}`] }),
+                resolvePlan: () =>
+                    Promise.resolve({
+                        planName: `plan-${worktreeStatus}`,
+                        path: `plans/plan-${worktreeStatus}.md`,
+                        body: "body",
+                        markdown: "markdown",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "s",
+                            affectedPaths: [],
+                            status: "implemented",
+                            worktreePath: "/tmp/harns-plan-worktree",
+                            worktreeBranch: `harns/worktree/plan-${worktreeStatus}`,
+                            worktreeStatus,
+                        },
+                    }),
+                findWorktreeById: () => Promise.resolve(null),
+                findWorktreeByPlanName: () => Promise.resolve(null),
+                createDirectAgentHandler: () => async () => {},
+                resetTuiState: () => {},
+                setActiveAgent: () => {},
+            }),
+        });
+
+        const optionValues = prompts[0].options.map((option) => option.value);
+        assertEquals(optionValues.includes("merge"), worktreeStatus === "merge_conflict");
+    }
+});
+
+Deno.test("runLoadPlanCommand refuses forced manual merge before validation-backed merge conflict", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("merge", "cancel");
+    let mergeCalled = false;
+    /** @type {string[]} */
+    const events = [];
+
+    await runLoadPlanCommand(["plan-completed-worktree"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["plan-completed-worktree"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "plan-completed-worktree",
+                    path: "plans/plan-completed-worktree.md",
+                    body: "body",
+                    markdown: "markdown",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "implemented",
+                        worktreePath: "/tmp/harns-plan-worktree",
+                        worktreeBranch: "harns/worktree/plan-completed-worktree",
+                        worktreeStatus: "completed",
+                    },
+                }),
+            findWorktreeById: () => Promise.resolve(null),
+            findWorktreeByPlanName: () => Promise.resolve(null),
+            mergeExecutionWorktree: () => {
+                mergeCalled = true;
+                return Promise.resolve();
+            },
+            recordPlanEvent: (/** @type {{ event: string }} */ event) => {
+                events.push(event.event);
+                return Promise.resolve(/** @type {any} */ ({}));
+            },
+            createDirectAgentHandler: () => async () => {},
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(mergeCalled, false);
+    assertEquals(events.includes("validation_passed"), false);
+    assertEquals(messages.some((message) => message.includes("Retry Workflow Validation first")), true);
+});
+
+Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recovery", async () => {
+    const worktreePath = await Deno.makeTempDir({ prefix: "harns-load-plan-merge-" });
+    try {
+        const { uiAPI, selections } = makeUi();
+        selections.push("merge");
+        let mergedBranch = "";
+        let registryStatus = "";
+        /** @type {string | null} */
+        let lifecycleEvent = null;
+
+        await runLoadPlanCommand(["plan-merge-conflict"], {
+            uiAPI,
+            editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+            __testDeps: /** @type {any} */ ({
+                parseArgs: () => ({ help: false, _: ["plan-merge-conflict"] }),
+                resolvePlan: () =>
+                    Promise.resolve({
+                        planName: "plan-merge-conflict",
+                        path: "plans/plan-merge-conflict.md",
+                        body: "body",
+                        markdown: "markdown",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "s",
+                            affectedPaths: [],
+                            status: "implemented",
+                            worktreeId: "wt1",
+                            worktreePath,
+                            worktreeBranch: "harns/worktree/plan-merge-conflict",
+                            worktreeStatus: "merge_conflict",
+                        },
+                    }),
+                findWorktreeById: () => Promise.resolve(null),
+                findWorktreeByPlanName: () => Promise.resolve(null),
+                getWorktreeStatus: () =>
+                    Promise.resolve({
+                        exists: true,
+                        path: worktreePath,
+                        branch: "harns/worktree/plan-merge-conflict",
+                        statusText: "",
+                        diff: "",
+                    }),
+                mergeExecutionWorktree: (/** @type {{ branch: string }} */ args) => {
+                    mergedBranch = args.branch;
+                    return Promise.resolve();
+                },
+                updateWorktreeRegistryEntry: (
+                    /** @type {string} */ _cwd,
+                    /** @type {string} */ _id,
+                    /** @type {{ status: string }} */ updates,
+                ) => {
+                    registryStatus = updates.status;
+                    return Promise.resolve(/** @type {any} */ ({}));
+                },
+                recordPlanEvent: (/** @type {{ event: string }} */ args) => {
+                    lifecycleEvent = args.event;
+                    return Promise.resolve(/** @type {any} */ ({}));
+                },
+                createDirectAgentHandler: () => async () => {},
+                resetTuiState: () => {},
+                setActiveAgent: () => {},
+            }),
+        });
+
+        assertEquals(mergedBranch, "harns/worktree/plan-merge-conflict");
+        assertEquals(registryStatus, "merged");
+        assertEquals(lifecycleEvent, "validation_passed");
+    } finally {
+        await Deno.remove(worktreePath, { recursive: true });
+    }
 });
 
 Deno.test("runLoadPlanCommand verified plan review path records review_reopened", async () => {

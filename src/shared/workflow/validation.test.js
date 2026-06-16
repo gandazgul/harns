@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { runValidationLoop } from "./validation.js";
+import { loadReviewerPrompt, runValidationLoop } from "./validation.js";
 import { getActiveExecutionWorkflow, setActiveExecutionWorkflow } from "../session/session-state.js";
 
 /**
@@ -18,6 +18,28 @@ function makeUi() {
 function noOpRecordPlanEvent() {
     return Promise.resolve({});
 }
+
+Deno.test("loadReviewerPrompt returns a bare tool-free prompt", async () => {
+    const reviewerDef = await loadReviewerPrompt(() =>
+        Promise.resolve([
+            "---",
+            "name: Reviewer",
+            'description: "Review prompt"',
+            "tools: []",
+            "---",
+            "",
+            "Review only the supplied plan and diff.",
+            "",
+        ].join("\n"))
+    );
+
+    assertEquals(reviewerDef.name, "reviewer");
+    assertEquals(reviewerDef.displayName, "Reviewer");
+    assertEquals(reviewerDef.tools, []);
+    assertEquals(reviewerDef.systemPrompt, "Review only the supplied plan and diff.");
+    assertEquals(reviewerDef.systemPrompt.includes("{{SKILLS}}"), false);
+    assertEquals(reviewerDef.systemPrompt.includes("Available tools"), false);
+});
 
 Deno.test("runValidationLoop does not switch active agent unless finalAgentName is provided", async () => {
     const uiAPI = makeUi();
@@ -218,6 +240,13 @@ Deno.test("runValidationLoop reports exact semantic repair halt reason", async (
         true,
     );
     assertEquals(
+        uiAPI.messages.some((/** @type {string} */ m) =>
+            m.includes("Review failed. Sending feedback back to Engineer") &&
+            m.includes("Reviewer Feedback:\nmissing requirement")
+        ),
+        true,
+    );
+    assertEquals(
         uiAPI.messages.some((/** @type {string} */ m) => m.includes("Maximum validation cycles")),
         false,
     );
@@ -267,4 +296,225 @@ Deno.test("runValidationLoop reviews the diff scoped to the active workflow base
     assertEquals(reviewPrompts[0].includes("scoped workflow change"), true);
     assertEquals(reviewPrompts[0].includes("pre-existing dirty change"), false);
     assertEquals(getActiveExecutionWorkflow(), null);
+});
+
+Deno.test("runValidationLoop runs validation and reviewer in active execution cwd", async () => {
+    const uiAPI = makeUi();
+    /** @type {Array<string | undefined>} */
+    const ciCwds = [];
+    /** @type {Array<string | undefined>} */
+    const diffCwds = [];
+    /** @type {Array<string | undefined>} */
+    const sessionCwds = [];
+    /** @type {Array<any>} */
+    const sessionOpts = [];
+
+    setActiveExecutionWorkflow({
+        planName: "p",
+        triageMeta: { classification: "FEATURE" },
+        baselineTree: "baseline-tree",
+        projectRoot: "/primary",
+        executionCwd: "/worktree",
+        worktreeId: "wt1",
+        worktreeBranch: "harns/worktree/p-wt1",
+    });
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: (/** @type {any} */ _uiAPI, /** @type {string | undefined} */ cwd) => {
+                ciCwds.push(cwd);
+                return Promise.resolve({ exitCode: 0, output: "" });
+            },
+            getDiffText: (/** @type {string | undefined} */ _baselineTree, /** @type {string | undefined} */ cwd) => {
+                diffCwds.push(cwd);
+                return Promise.resolve("diff --git a/file.js b/file.js\n+change\n");
+            },
+            runAgentSession: (/** @type {any} */ opts) => {
+                sessionCwds.push(opts.cwd);
+                sessionOpts.push(opts);
+                return Promise.resolve(
+                    /** @type {any} */ ([{
+                        role: "assistant",
+                        content: [{ type: "text", text: "APPROVED" }],
+                    }]),
+                );
+            },
+            mergeExecutionWorktree: () => Promise.resolve(),
+            updateWorktreeRegistryEntry: () => Promise.resolve({}),
+            recordPlanEvent: noOpRecordPlanEvent,
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(ciCwds, ["/worktree"]);
+    assertEquals(diffCwds, ["/worktree"]);
+    assertEquals(sessionCwds, ["/worktree"]);
+    assertEquals(sessionOpts[0]._agentDefOverride.tools, []);
+    assertEquals(sessionOpts[0]._agentDefOverride.systemPrompt.includes("{{SKILLS}}"), false);
+    assertEquals(sessionOpts[0].includeEditFallback, false);
+});
+
+Deno.test("runValidationLoop records validation_passed only after worktree merge succeeds", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const actions = [];
+
+    setActiveExecutionWorkflow({
+        planName: "p",
+        triageMeta: { classification: "FEATURE" },
+        baselineTree: "baseline-tree",
+        projectRoot: "/primary",
+        executionCwd: "/worktree",
+        worktreeId: "wt1",
+        worktreeBranch: "harns/worktree/p-wt1",
+    });
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve("diff --git a/file.js b/file.js\n+change\n"),
+            runAgentSession: () =>
+                Promise.resolve(
+                    /** @type {any} */ ([{
+                        role: "assistant",
+                        content: [{ type: "text", text: "APPROVED" }],
+                    }]),
+                ),
+            mergeExecutionWorktree: (/** @type {{ projectRoot: string, branch: string }} */ args) => {
+                actions.push(`merge:${args.projectRoot}:${args.branch}`);
+                return Promise.resolve();
+            },
+
+            updateWorktreeRegistryEntry: (
+                /** @type {string} */ _projectRoot,
+                /** @type {string} */ _id,
+                /** @type {{ status: string }} */ updates,
+            ) => {
+                actions.push(`registry:${updates.status}`);
+                return Promise.resolve({});
+            },
+            recordPlanEvent: (/** @type {any} */ event) => {
+                actions.push(`event:${event.event}:${event.details.worktreeStatus || ""}`);
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(actions, [
+        "merge:/primary:harns/worktree/p-wt1",
+        "registry:merged",
+        "event:validation_passed:merged",
+    ]);
+});
+
+Deno.test("runValidationLoop records worktree_merge_failed when merge-back fails", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const actions = [];
+
+    setActiveExecutionWorkflow({
+        planName: "p",
+        triageMeta: { classification: "FEATURE" },
+        baselineTree: "baseline-tree",
+        projectRoot: "/primary",
+        executionCwd: "/worktree",
+        worktreeId: "wt1",
+        worktreeBranch: "harns/worktree/p-wt1",
+    });
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve("diff --git a/file.js b/file.js\n+change\n"),
+            runAgentSession: () =>
+                Promise.resolve(
+                    /** @type {any} */ ([{
+                        role: "assistant",
+                        content: [{ type: "text", text: "APPROVED" }],
+                    }]),
+                ),
+            mergeExecutionWorktree: () => Promise.reject(new Error("conflict")),
+            updateWorktreeRegistryEntry: (
+                /** @type {string} */ _projectRoot,
+                /** @type {string} */ _id,
+                /** @type {{ status: string }} */ updates,
+            ) => {
+                actions.push(`registry:${updates.status}`);
+                return Promise.resolve({});
+            },
+            recordPlanEvent: (/** @type {any} */ event) => {
+                actions.push(`event:${event.event}:${event.details.failureReason}`);
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(actions, ["registry:merge_conflict", "event:worktree_merge_failed:conflict"]);
+    assertEquals(
+        uiAPI.messages.some((/** @type {string} */ message) => message.includes("Worktree merge failed: conflict")),
+        true,
+    );
+});
+
+Deno.test("runValidationLoop marks active worktree validation_failed when validation fails", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const actions = [];
+
+    setActiveExecutionWorkflow({
+        planName: "p",
+        triageMeta: { classification: "FEATURE" },
+        baselineTree: "baseline-tree",
+        projectRoot: "/primary",
+        executionCwd: "/worktree",
+        worktreeId: "wt1",
+        worktreeBranch: "harns/worktree/p-wt1",
+    });
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve(""),
+            updateWorktreeRegistryEntry: (
+                /** @type {string} */ _projectRoot,
+                /** @type {string} */ _id,
+                /** @type {{ status: string }} */ updates,
+            ) => {
+                actions.push(`registry:${updates.status}`);
+                return Promise.resolve({});
+            },
+            recordPlanEvent: (/** @type {any} */ event) => {
+                actions.push(`event:${event.event}:${event.details.failureReason}`);
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(actions, [
+        "registry:validation_failed",
+        "event:validation_failed:No implementation changes detected in workflow diff.",
+    ]);
 });

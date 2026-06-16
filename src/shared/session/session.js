@@ -701,17 +701,18 @@ function resolveModel(modelOverride, agentDef, agentName, modelRegistry = getMod
  * @param {import('./types.js').AgentDefinition} agentDef
  * @param {string[]} tools
  * @param {import('@earendil-works/pi-coding-agent').ToolDefinition[]} finalCustomTools
+ * @param {string} [cwd]
  * @returns {Promise<string>}
  */
-export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTools) {
+export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTools, cwd = CWD) {
     const piTools = [
-        createBashToolDefinition(CWD),
-        createGrepToolDefinition(CWD),
-        createFindToolDefinition(CWD),
-        createLsToolDefinition(CWD),
-        createReadToolDefinition(CWD),
-        createWriteToolDefinition(CWD),
-        createEditToolDefinition(CWD),
+        createBashToolDefinition(cwd),
+        createGrepToolDefinition(cwd),
+        createFindToolDefinition(cwd),
+        createLsToolDefinition(cwd),
+        createReadToolDefinition(cwd),
+        createWriteToolDefinition(cwd),
+        createEditToolDefinition(cwd),
     ];
 
     const extensionTools = [
@@ -825,6 +826,7 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  * @param {boolean} [opts.allowReturnToRouter]
  * @param {string} [opts.cwd] - Execution cwd for file tools and agent operations. Defaults to primary project root.
  * @param {string} [opts.debugLogPath] - Optional DEBUG log destination for this invocation.
+ * @param {boolean} [opts.includeEditFallback] - Internal: whether to register the edit fallback custom tool.
  *
  * @returns {Promise<{
  *   session: import('@earendil-works/pi-coding-agent').AgentSession,
@@ -848,6 +850,7 @@ export async function buildAgentSession({
     allowReturnToRouter,
     cwd,
     debugLogPath,
+    includeEditFallback,
 }) {
     const sessionCwd = cwd || CWD;
     await ensureMnemosyneBinary();
@@ -891,11 +894,13 @@ export async function buildAgentSession({
 
     if (tools.includes("task_completed") && uiAPI && !finalCustomTools.find((t) => t.name === "task_completed")) {
         const { createTaskCompletedTool } = await import("../../tools/task-completed.js");
-        finalCustomTools.push(createTaskCompletedTool({ uiAPI, agentName }));
+        finalCustomTools.push(createTaskCompletedTool({ uiAPI, agentName: agentDef.displayName }));
     }
 
     // Override the built-in edit tool to return file contents on failure.
-    finalCustomTools.push(createEditWithFallbackToolDefinition(sessionCwd));
+    if (includeEditFallback !== false) {
+        finalCustomTools.push(createEditWithFallbackToolDefinition(sessionCwd));
+    }
 
     if (tools.includes("multi_file_edit") && !finalCustomTools.find((t) => t.name === "multi_file_edit")) {
         const { createMultiFileEditTool } = await import("../../tools/multi_file_edit.js");
@@ -903,7 +908,7 @@ export async function buildAgentSession({
     }
 
     // Resolve system prompt placeholders
-    const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools);
+    const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools, sessionCwd);
     const promptState = { text: finalSystemPrompt };
     const extensionFactories = [mnemosyneExtension, cymbalExtension];
     if (await hasRtkBinary()) {
@@ -1015,6 +1020,17 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
     const unsubscribe = session.subscribe((event) => {
         switch (event.type) {
             case "message_start": {
+                if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                    appendDebugLog(
+                        debugLogPath,
+                        [
+                            `Event: MESSAGE START`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Role: ${event.message.role}`,
+                            "",
+                        ].join("\n"),
+                    );
+                }
                 if (event.message.role === "assistant") {
                     // Start a fresh assistant message context, but do not render a block yet.
                     // We only create assistant blocks lazily when we receive actual text deltas
@@ -1095,6 +1111,22 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
                 break;
             }
             case "message_end": {
+                if (shouldWriteDebugLog(debugLogPath) && debugLogPath) {
+                    const message =
+                        /** @type {import('@earendil-works/pi-agent-core').AgentMessage & { stopReason?: string, errorMessage?: string }} */ (event
+                            .message);
+                    appendDebugLog(
+                        debugLogPath,
+                        [
+                            `Event: MESSAGE END`,
+                            `Timestamp: ${new Date().toISOString()}`,
+                            `Role: ${message.role}`,
+                            message.stopReason ? `Stop Reason: ${message.stopReason}` : "",
+                            message.errorMessage ? `Error: ${message.errorMessage}` : "",
+                            "",
+                        ].filter((line) => line !== "").join("\n"),
+                    );
+                }
                 if (event.message.role === "assistant") {
                     endThinking();
                 }
@@ -1607,6 +1639,7 @@ export async function runRootTurn({ agentName, userRequest, images, uiAPI }) {
  * @param {boolean} [opts.allowReturnToRouter] - Internal: expose return_to_router only for interactive direct/root flows.
  * @param {string} [opts.cwd] - Execution cwd for file tools and agent operations.
  * @param {string} [opts.debugLogPath] - Optional DEBUG log destination for this invocation.
+ * @param {boolean} [opts.includeEditFallback] - Internal: whether to register the edit fallback custom tool.
  *
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */

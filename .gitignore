@@ -7,3 +7,4 @@ src/shared/version.js
 .pi/
 
 debug.log
+.hns/debug/

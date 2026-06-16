@@ -57,6 +57,17 @@ function getTaskDebugLogPath(root, task, agentName) {
 }
 
 /**
+ * @param {{ executionCwd?: string, debugRoot?: string }} options
+ * @returns {string | undefined}
+ */
+function resolveTaskDebugRoot(options) {
+    if (options.executionCwd) return options.executionCwd;
+    if (options.debugRoot) return options.debugRoot;
+    if (Deno.env.get("DEBUG") === "1") return join(Deno.cwd(), ".hns", "debug");
+    return undefined;
+}
+
+/**
  * @param {import('@earendil-works/pi-agent-core').AgentMessage[]} messages
  * @returns {string}
  */
@@ -83,7 +94,7 @@ function formatAgentTranscript(messages) {
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
  * @param {Map<number, import('./types.js').TaskExecutionResult>} [seedResults]
  * @param {typeof runAgentSession} [agentSessionRunner]
- * @param {{ executionCwd?: string }} [options]
+ * @param {{ executionCwd?: string, debugRoot?: string }} [options]
  */
 export async function executeProjectTasks(
     planName,
@@ -143,8 +154,8 @@ export async function executeProjectTasks(
             pending.delete(task.task);
 
             const agentName = task.assignee || AGENTS.ENGINEER;
-            const debugRoot = options.executionCwd || Deno.cwd();
-            const taskDebugLogPath = options.executionCwd ? getTaskDebugLogPath(debugRoot, task, agentName) : undefined;
+            const debugRoot = resolveTaskDebugRoot(options);
+            const taskDebugLogPath = debugRoot ? getTaskDebugLogPath(debugRoot, task, agentName) : undefined;
 
             const taskHeader = `--- Task ${task.task}: ${task.description} (→ ${getAgentDisplayName(agentName)}) ---`;
             uiAPI.appendSystemMessage(taskHeader, false, "Harns");
@@ -163,12 +174,12 @@ export async function executeProjectTasks(
                             `Description: ${task.description}`,
                             `Dependencies: ${task.dependencies || "none"}`,
                             `Write Scope: ${task.writeScope || "unknown"}`,
-                            `Execution CWD: ${debugRoot}`,
+                            `Execution CWD: ${options.executionCwd || Deno.cwd()}`,
                             "",
                         ].join("\n"),
                     );
                     appendDebugLog(
-                        join(debugRoot, "debug.log"),
+                        join(/** @type {string} */ (debugRoot), "debug.log"),
                         [
                             `Event: HEADLESS TASK LOG`,
                             `Timestamp: ${new Date().toISOString()}`,
