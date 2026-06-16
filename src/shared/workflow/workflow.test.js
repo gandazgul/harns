@@ -3,6 +3,7 @@ import {
     buildSlicerRequest,
     ensureSlicerTasks,
     executeProjectTasks,
+    extractAssistantOutput,
     extractTasks,
     parseTaskWriteScope,
     readLatestPlanOutcome,
@@ -42,6 +43,44 @@ Deno.test("readLatestPlanOutcome returns the latest plan_written outcome", () =>
 
 Deno.test("readLatestPlanOutcome returns null when no plan_written tool result is present", () => {
     assertEquals(readLatestPlanOutcome([]), null);
+});
+
+Deno.test("extractAssistantOutput falls back to task_completed message details", () => {
+    const messages = [
+        /** @type {any} */ ({
+            role: "assistant",
+            content: [{
+                type: "tool_use",
+                name: "task_completed",
+                input: { message: "Implemented isolated worktree setup." },
+            }],
+        }),
+        /** @type {any} */ ({
+            role: "toolResult",
+            toolName: "task_completed",
+            details: {
+                outcome: "task_completed",
+                message: "Implemented isolated worktree setup.",
+            },
+        }),
+    ];
+
+    assertEquals(extractAssistantOutput(messages), "Implemented isolated worktree setup.");
+});
+
+Deno.test("extractAssistantOutput handles legacy assistant text shapes", () => {
+    assertEquals(
+        extractAssistantOutput([
+            /** @type {any} */ ({ role: "assistant", content: "Plain legacy summary." }),
+        ]),
+        "Plain legacy summary.",
+    );
+    assertEquals(
+        extractAssistantOutput([
+            /** @type {any} */ ({ role: "assistant", content: [{ contentText: "Content text summary." }] }),
+        ]),
+        "Content text summary.",
+    );
 });
 
 Deno.test("extractTasks parses valid markdown table", () => {
@@ -291,7 +330,21 @@ function completedTaskMessages(text) {
     ]);
 }
 
+/**
+ * @returns {Promise<{ debugRoot: string, cleanup: () => Promise<void> }>}
+ */
+async function setupTempDebugRoot() {
+    const debugRoot = await Deno.makeTempDir({ prefix: "harns-workflow-debug-test-" });
+    return {
+        debugRoot,
+        cleanup: async () => {
+            await Deno.remove(debugRoot, { recursive: true });
+        },
+    };
+}
+
 Deno.test("executeProjectTasks passes successful dependency output to dependent task request", async () => {
+    const debug = await setupTempDebugRoot();
     const tasks = [
         { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
         { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
@@ -311,69 +364,80 @@ Deno.test("executeProjectTasks passes successful dependency output to dependent 
         ) => rootEntries.push(content),
     });
 
-    const result = await executeProjectTasks(
-        "project-plan",
-        "Full plan body",
-        tasks,
-        uiAPI,
-        [],
-        undefined,
-        sessionManager,
-        undefined,
-        /** @type {any} */ ((/** @type {any} */ opts) => {
-            requests.push(opts.userRequest);
-            return Promise.resolve([
-                {
-                    role: "assistant",
-                    content: [{
-                        type: "text",
-                        text: opts.agentName === "engineer" ? "Implemented alpha." : "Verified alpha.",
-                    }],
-                },
-                { role: "toolResult", toolName: "task_completed", details: { outcome: "task_completed" } },
-            ]);
-        }),
-    );
+    try {
+        const result = await executeProjectTasks(
+            "project-plan",
+            "Full plan body",
+            tasks,
+            uiAPI,
+            [],
+            undefined,
+            sessionManager,
+            undefined,
+            /** @type {any} */ ((/** @type {any} */ opts) => {
+                requests.push(opts.userRequest);
+                return Promise.resolve([
+                    {
+                        role: "assistant",
+                        content: [{
+                            type: "text",
+                            text: opts.agentName === "engineer" ? "Implemented alpha." : "Verified alpha.",
+                        }],
+                    },
+                    { role: "toolResult", toolName: "task_completed", details: { outcome: "task_completed" } },
+                ]);
+            }),
+            { debugRoot: debug.debugRoot },
+        );
 
-    assertEquals(result.failedTasks, []);
-    assertEquals(rootEntries.length, 2);
-    assertStringIncludes(requests[1], "### Dependency Outputs");
-    assertStringIncludes(requests[1], rootEntries[0]);
+        assertEquals(result.failedTasks, []);
+        assertEquals(rootEntries.length, 2);
+        assertStringIncludes(requests[1], "### Dependency Outputs");
+        assertStringIncludes(requests[1], rootEntries[0]);
+    } finally {
+        await debug.cleanup();
+    }
 });
 
 Deno.test("executeProjectTasks records incomplete tasks and blocks dependents", async () => {
+    const debug = await setupTempDebugRoot();
     const tasks = [
         { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
         { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
     ];
     const harness = createWorkflowHarness();
 
-    const result = await executeProjectTasks(
-        "project-plan",
-        "Full plan body",
-        tasks,
-        harness.uiAPI,
-        [],
-        harness.onRunningTasksChange,
-        harness.sessionManager,
-        undefined,
-        () =>
-            Promise.resolve(
-                /** @type {import('@earendil-works/pi-agent-core').AgentMessage[]} */ ([
-                    { role: "assistant", content: [{ type: "text", text: "I stopped early." }] },
-                ]),
-            ),
-    );
+    try {
+        const result = await executeProjectTasks(
+            "project-plan",
+            "Full plan body",
+            tasks,
+            harness.uiAPI,
+            [],
+            harness.onRunningTasksChange,
+            harness.sessionManager,
+            undefined,
+            () =>
+                Promise.resolve(
+                    /** @type {import('@earendil-works/pi-agent-core').AgentMessage[]} */ ([
+                        { role: "assistant", content: [{ type: "text", text: "I stopped early." }] },
+                    ]),
+                ),
+            { debugRoot: debug.debugRoot },
+        );
 
-    assertEquals(result.failedTasks, [1, 2]);
-    assertEquals(result.results.get(1)?.status, "failed");
-    assertEquals(result.results.get(2)?.status, "blocked");
-    assertEquals(harness.rootEntries[0].metadata?.status, "failed");
-    assertStringIncludes(harness.rootEntries[0].content, "INCOMPLETE");
-    assertEquals(harness.runningSnapshots.map((snapshot) => snapshot.map((task) => task.task)), [[1], []]);
+        assertEquals(result.failedTasks, [1, 2]);
+        assertEquals(result.results.get(1)?.status, "failed");
+        assertEquals(result.results.get(2)?.status, "blocked");
+        assertEquals(harness.rootEntries[0].metadata?.status, "failed");
+        assertStringIncludes(harness.rootEntries[0].content, "INCOMPLETE");
+        assertEquals(harness.runningSnapshots.map((snapshot) => snapshot.map((task) => task.task)), [[1], []]);
+    } finally {
+        await debug.cleanup();
+    }
 });
 
-Deno.test("executeProjectTasks writes per-task logs for headless agents without DEBUG env", async () => {
+Deno.test("executeProjectTasks writes per-task logs under explicit temp execution cwd", async () => {
     const previousDebug = Deno.env.get("DEBUG");
     const executionCwd = await Deno.makeTempDir({ prefix: "harns-workflow-log-test-" });
     Deno.env.delete("DEBUG");
@@ -430,8 +494,9 @@ Deno.test("executeProjectTasks writes per-task logs for headless agents without 
     }
 });
 
-Deno.test("executeProjectTasks does not write root per-task logs for DEBUG legacy runs", async () => {
+Deno.test("executeProjectTasks writes DEBUG legacy task logs under explicit debug root", async () => {
     const previousDebug = Deno.env.get("DEBUG");
+    const debugRoot = await Deno.makeTempDir({ prefix: "harns-debug-root-test-" });
     Deno.env.set("DEBUG", "1");
     try {
         const tasks = [
@@ -460,48 +525,60 @@ Deno.test("executeProjectTasks does not write root per-task logs for DEBUG legac
                 debugLogPath = opts.debugLogPath;
                 return Promise.resolve(completedTaskMessages("Implemented alpha."));
             },
+            { debugRoot },
         );
 
         assertEquals(result.failedTasks, []);
-        assertEquals(debugLogPath, undefined);
+        assertEquals(debugLogPath?.startsWith(`${debugRoot}/`), true);
+        assertStringIncludes(debugLogPath || "", "debug-agents/task-1-engineer.log");
+        const rootDebug = await Deno.readTextFile(`${debugRoot}/debug.log`);
+        assertStringIncludes(rootDebug, "Event: HEADLESS TASK LOG");
     } finally {
         if (previousDebug === undefined) {
             Deno.env.delete("DEBUG");
         } else {
             Deno.env.set("DEBUG", previousDebug);
         }
+        await Deno.remove(debugRoot, { recursive: true });
     }
 });
 
 Deno.test("executeProjectTasks records thrown task errors and blocks dependents", async () => {
+    const debug = await setupTempDebugRoot();
     const tasks = [
         { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
         { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
     ];
     const harness = createWorkflowHarness();
 
-    const result = await executeProjectTasks(
-        "project-plan",
-        "Full plan body",
-        tasks,
-        harness.uiAPI,
-        [],
-        harness.onRunningTasksChange,
-        harness.sessionManager,
-        undefined,
-        () => {
-            throw new Error("agent crashed");
-        },
-    );
+    try {
+        const result = await executeProjectTasks(
+            "project-plan",
+            "Full plan body",
+            tasks,
+            harness.uiAPI,
+            [],
+            harness.onRunningTasksChange,
+            harness.sessionManager,
+            undefined,
+            () => {
+                throw new Error("agent crashed");
+            },
+            { debugRoot: debug.debugRoot },
+        );
 
-    assertEquals(result.failedTasks, [1, 2]);
-    assertEquals(result.results.get(1)?.error, "agent crashed");
-    assertEquals(result.results.get(2)?.status, "blocked");
-    assertEquals(harness.rootEntries[0].metadata?.error, "agent crashed");
-    assertStringIncludes(harness.systemMessages.join("\n"), "Task 1 failed");
+        assertEquals(result.failedTasks, [1, 2]);
+        assertEquals(result.results.get(1)?.error, "agent crashed");
+        assertEquals(result.results.get(2)?.status, "blocked");
+        assertEquals(harness.rootEntries[0].metadata?.error, "agent crashed");
+        assertStringIncludes(harness.systemMessages.join("\n"), "Task 1 failed");
+    } finally {
+        await debug.cleanup();
+    }
 });
 
 Deno.test("executeProjectTasks retries only failed tasks with seeded dependency context", async () => {
+    const debug = await setupTempDebugRoot();
     const tasks = [
         { task: 1, assignee: "engineer", dependencies: "none", writeScope: "src/a.js", description: "Implement alpha" },
         { task: 2, assignee: "tester", dependencies: "1", writeScope: "none", description: "Verify alpha" },
@@ -518,29 +595,34 @@ Deno.test("executeProjectTasks retries only failed tasks with seeded dependency 
     const requests = [];
     const harness = createWorkflowHarness();
 
-    const result = await executeProjectTasks(
-        "project-plan",
-        "Full plan body",
-        tasks,
-        harness.uiAPI,
-        [2],
-        harness.onRunningTasksChange,
-        harness.sessionManager,
-        seedResults,
-        (/** @type {{ userRequest: string }} */ opts) => {
-            requests.push(opts.userRequest);
-            return Promise.resolve(completedTaskMessages("Verified alpha."));
-        },
-    );
+    try {
+        const result = await executeProjectTasks(
+            "project-plan",
+            "Full plan body",
+            tasks,
+            harness.uiAPI,
+            [2],
+            harness.onRunningTasksChange,
+            harness.sessionManager,
+            seedResults,
+            (/** @type {{ userRequest: string }} */ opts) => {
+                requests.push(opts.userRequest);
+                return Promise.resolve(completedTaskMessages("Verified alpha."));
+            },
+            { debugRoot: debug.debugRoot },
+        );
 
-    assertEquals(result.failedTasks, []);
-    assertEquals(requests.length, 1);
-    assertStringIncludes(requests[0], "### Dependency Outputs");
-    assertStringIncludes(requests[0], "Implemented alpha.");
-    assertEquals(result.results.get(1)?.status, "success");
-    assertEquals(result.results.get(2)?.status, "success");
-    assertEquals(harness.rootEntries.length, 1);
-    assertEquals(harness.rootEntries[0].metadata?.taskId, 2);
+        assertEquals(result.failedTasks, []);
+        assertEquals(requests.length, 1);
+        assertStringIncludes(requests[0], "### Dependency Outputs");
+        assertStringIncludes(requests[0], "Implemented alpha.");
+        assertEquals(result.results.get(1)?.status, "success");
+        assertEquals(result.results.get(2)?.status, "success");
+        assertEquals(harness.rootEntries.length, 1);
+        assertEquals(harness.rootEntries[0].metadata?.taskId, 2);
+    } finally {
+        await debug.cleanup();
+    }
 });
 
 // ── buildSlicerRequest ─────────────────────────────────────────────

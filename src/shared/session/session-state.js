@@ -3,6 +3,8 @@
  * Single source of truth for interactive session state.
  */
 
+import { CWD } from "../../constants.js";
+
 /**
  * @typedef {Object} PendingRootSwap
  * @property {string} agentName  Internal agent name (lowercase, matches agent definition filename).
@@ -39,7 +41,7 @@
  * subAgentSessions: Set<import('@earendil-works/pi-coding-agent').AgentSession>,
  * pendingRootSwap: PendingRootSwap | null,
  * pendingSwitchHandoff: PendingSwitchHandoff | null,
- * activeExecutionWorkflow: { planName: string, triageMeta: any, baselineTree?: string } | null,
+ * activeExecutionWorkflow: { planName: string, triageMeta: any, baselineTree?: string, projectRoot?: string, executionCwd?: string, worktreeId?: string, worktreeBranch?: string } | null,
  * }} */
 const state = {
     // Initial placeholder; overwritten by startInteractiveSession() once the
@@ -230,9 +232,13 @@ export function getActiveExecutionWorkflow() {
     return state.activeExecutionWorkflow;
 }
 
-/** @param {{ planName: string, triageMeta: any, baselineTree?: string } | null} workflow */
+/** @param {{ planName: string, triageMeta: any, baselineTree?: string, projectRoot?: string, executionCwd?: string, worktreeId?: string, worktreeBranch?: string } | null} workflow */
 export function setActiveExecutionWorkflow(workflow) {
     state.activeExecutionWorkflow = workflow;
+}
+
+export function getActiveExecutionCwd() {
+    return state.activeExecutionWorkflow?.executionCwd || CWD;
 }
 
 export function clearActiveExecutionWorkflow() {

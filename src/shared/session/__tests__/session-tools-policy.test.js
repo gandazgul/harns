@@ -2,7 +2,7 @@ import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { CWD } from "../../../constants.js";
 import { loadAgentDef, resolveSessionToolNames } from "../agents.js";
-import { resolveEffectiveSessionToolNames } from "../session.js";
+import { buildAgentSession, resolveEffectiveSessionToolNames } from "../session.js";
 
 const localAgentsDir = join(CWD, ".hns", "agents");
 const routerOverridePath = join(localAgentsDir, "router.md");
@@ -117,4 +117,53 @@ Deno.test("resolveEffectiveSessionToolNames normalizes legacy multi replace tool
         resolveEffectiveSessionToolNames(["read", "edit", "multi_replace_file_content"], undefined, []),
         ["read", "edit", "multi_file_edit"],
     );
+});
+
+Deno.test("buildAgentSession wires task_completed with agent displayName", async () => {
+    /** @type {Array<{ agentName: string, text: string }>} */
+    const rendered = [];
+    const debugLogPath = await Deno.makeTempFile({ prefix: "harns-session-debug-test-", suffix: ".log" });
+    const uiAPI = /** @type {import('../../ui/types.js').UiAPI} */ ({
+        appendSystemMessage: () => {},
+        appendAgentMessageStart: (agentName) => ({
+            appendText: (text) => rendered.push({ agentName, text }),
+        }),
+        requestRender: () => {},
+        promptSelect: () => Promise.resolve(null),
+        promptText: () => Promise.resolve(null),
+        showModelSelector: () => {},
+    });
+
+    /** @type {import('@earendil-works/pi-coding-agent').AgentSession | undefined} */
+    let session;
+
+    try {
+        const built = await buildAgentSession({
+            agentName: "operator",
+            uiAPI,
+            debugLogPath,
+            _agentDefOverride: {
+                name: "operator",
+                displayName: "Operator",
+                model: "",
+                description: "Test operator",
+                tools: ["task_completed"],
+                systemPrompt: "Test operator prompt.",
+            },
+        });
+        session = built.session;
+        const { finalCustomTools } = built;
+        const tool = finalCustomTools.find((candidate) => candidate.name === "task_completed");
+        assert(tool, "expected task_completed to be wired");
+        const execute =
+            /** @type {(id: string, params: { message?: string }, signal: AbortSignal, onUpdate: () => void, context: object) => Promise<unknown>} */ (tool
+                .execute);
+
+        await execute("tool-call-1", { message: "Done." }, new AbortController().signal, () => {}, {});
+
+        assertEquals(rendered, [{ agentName: "Operator", text: "**Task completed.**\n\nDone." }]);
+    } finally {
+        session?.dispose();
+        await Deno.remove(debugLogPath);
+    }
 });

@@ -9,6 +9,8 @@ import { loadPlan } from "../../plan-store.js";
 import { getAgentDisplayName } from "../session/agents.js";
 import { runAgentSession } from "../session/session.js";
 import { getActiveExecutionWorkflow, setActiveExecutionWorkflow } from "../session/session-state.js";
+import { createExecutionWorktree, findReusableWorktree } from "../worktree.js";
+import { updateEntry as updateWorktreeRegistryEntry } from "../worktree-registry.js";
 import { captureWorktreeTree } from "./git-snapshot.js";
 import { isExecutablePlanStatus, recordPlanEvent } from "./plan-lifecycle.js";
 import { executeProjectTasks } from "./project-executor.js";
@@ -157,6 +159,7 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
                     currentStatus: "in_progress",
                     details: { triageMeta, failureReason: error.message },
                 });
+                await markActiveWorktreeStatus("execution_failed");
             }
             return { repairRequired: true, executionComplete: false, error: error.message };
         }
@@ -184,6 +187,7 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
         currentStatus: "in_progress",
         details: { triageMeta },
     });
+    await markActiveWorktreeStatus("completed");
     return { repairRequired: false, executionComplete: true };
 }
 
@@ -208,7 +212,7 @@ async function executeStructuredProjectPlan({
     sessionManager,
     currentStatus,
 }) {
-    await startActiveExecutionWorkflow(planName, triageMeta, currentStatus);
+    const executionContext = await startActiveExecutionWorkflow(planName, triageMeta, currentStatus);
     uiAPI.appendSystemMessage(
         `Found ${tasks.length} tasks in plan. Executing in parallel where possible.`,
         false,
@@ -229,6 +233,9 @@ async function executeStructuredProjectPlan({
             if (uiAPI.setRunningTasks) uiAPI.setRunningTasks(runningTasks);
         },
         sessionManager,
+        new Map(),
+        runAgentSession,
+        { executionCwd: executionContext.executionCwd },
     );
 
     if (spinnerInterval) clearInterval(spinnerInterval);
@@ -250,6 +257,8 @@ async function executeStructuredProjectPlan({
                 },
                 sessionManager,
                 executionResult.results,
+                runAgentSession,
+                { executionCwd: executionContext.executionCwd },
             );
             if (spinnerInterval) clearInterval(spinnerInterval);
             if (finalResult.failedTasks.length > 0) {
@@ -296,8 +305,14 @@ async function executeStructuredProjectPlan({
  * @returns {Promise<PlanExecutionResult>}
  */
 async function executeSingleEngineerPlan({ planName, planBody, triageMeta, uiAPI, sessionManager, currentStatus }) {
-    await startActiveExecutionWorkflow(planName, triageMeta, currentStatus);
-    const engineerResult = await runEngineerWithPlan(planName, planBody, uiAPI, sessionManager);
+    const executionContext = await startActiveExecutionWorkflow(planName, triageMeta, currentStatus);
+    const engineerResult = await runEngineerWithPlan(
+        planName,
+        planBody,
+        uiAPI,
+        sessionManager,
+        executionContext.executionCwd,
+    );
     if (!engineerResult.completed) {
         await recordPlanEvent({
             cwd: CWD,
@@ -309,6 +324,7 @@ async function executeSingleEngineerPlan({ planName, planBody, triageMeta, uiAPI
                 failureReason: `${getAgentDisplayName(AGENTS.ENGINEER)} stopped without task_completed.`,
             },
         });
+        await markActiveWorktreeStatus("execution_failed");
         return { repairRequired: false, executionComplete: false };
     }
     return { repairRequired: false, executionComplete: true };
@@ -351,6 +367,7 @@ async function recordFailedProjectExecution(planName, triageMeta, failedTasks, r
             }`,
         },
     });
+    await markActiveWorktreeStatus("execution_failed");
 }
 
 /**
@@ -359,26 +376,17 @@ async function recordFailedProjectExecution(planName, triageMeta, failedTasks, r
  * @param {string} planName
  * @param {string} planBody
  * @param {UiAPI} uiAPI
- * @param {import('@earendil-works/pi-coding-agent').SessionManager} [_sessionManager]
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
+ * @param {string} [executionCwd]
  * @returns {Promise<{ completed: boolean, messages: import('@earendil-works/pi-agent-core').AgentMessage[] }>}
  */
-async function runEngineerWithPlan(planName, planBody, uiAPI, _sessionManager) {
-    const { setActiveAgent, applyPendingRootSwap } = await import("../interactive/chat-session.js");
-    const { createDirectAgentHandler } = await import("../session/direct-agent.js");
-    setActiveAgent(
-        AGENTS.ENGINEER,
-        createDirectAgentHandler(AGENTS.ENGINEER),
-        uiAPI,
-        undefined,
-        { allowReturnToRouter: false },
-    );
-    await applyPendingRootSwap(uiAPI);
-
-    const { runRootTurn } = await import("../session/session.js");
-    const messages = await runRootTurn({
+async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager, executionCwd) {
+    const messages = await runAgentSession({
         agentName: AGENTS.ENGINEER,
         userRequest: buildEngineerRequest(planName, planBody),
         uiAPI,
+        sessionManager,
+        cwd: executionCwd,
     });
 
     const completed = readLatestTaskCompletedOutcome(messages);
@@ -399,22 +407,56 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, _sessionManager) {
  * @param {string} planName
  * @param {Partial<import('../../plan-store.js').PlanFrontMatter>} triageMeta
  * @param {import('./plan-lifecycle.js').PlanStatus} currentStatus
- * @returns {Promise<void>}
+ * @returns {Promise<{ projectRoot: string, executionCwd: string, baselineTree: string, worktreeId: string, worktreeBranch: string }>}
  */
 async function startActiveExecutionWorkflow(planName, triageMeta, currentStatus) {
     const existing = getActiveExecutionWorkflow();
-    if (existing?.planName === planName && existing.baselineTree) {
-        setActiveExecutionWorkflow({ ...existing, triageMeta });
-        return;
+    const reusable =
+        existing?.planName === planName && existing.executionCwd && existing.worktreeId && existing.worktreeBranch
+            ? {
+                id: existing.worktreeId,
+                path: existing.executionCwd,
+                branch: existing.worktreeBranch,
+            }
+            : await findReusableWorktree({ projectRoot: CWD, planName });
+    const worktree = reusable || await createExecutionWorktree({ projectRoot: CWD, planName, baseRef: "HEAD" });
+    const baselineTree =
+        existing?.planName === planName && existing.executionCwd === worktree.path && existing.baselineTree
+            ? existing.baselineTree
+            : await captureWorktreeTree(worktree.path);
+    const workflow = {
+        planName,
+        triageMeta,
+        baselineTree,
+        projectRoot: CWD,
+        executionCwd: worktree.path,
+        worktreeId: worktree.id,
+        worktreeBranch: worktree.branch,
+    };
+    setActiveExecutionWorkflow(workflow);
+    if (worktree.id) {
+        await updateWorktreeRegistryEntry(CWD, worktree.id, { status: "active" });
     }
-
-    const baselineTree = await captureWorktreeTree(CWD);
-    setActiveExecutionWorkflow({ planName, triageMeta, baselineTree });
     await recordPlanEvent({
         cwd: CWD,
         planName,
         event: "execution_started",
         currentStatus,
-        details: { triageMeta, executionBaselineTree: baselineTree },
+        details: {
+            triageMeta,
+            executionBaselineTree: baselineTree,
+            worktreeId: worktree.id,
+            worktreePath: worktree.path,
+            worktreeBranch: worktree.branch,
+            worktreeStatus: "active",
+        },
     });
+    return workflow;
+}
+
+/** @param {import('../../plan-store.js').PlanFrontMatter['worktreeStatus']} status */
+async function markActiveWorktreeStatus(status) {
+    const workflow = getActiveExecutionWorkflow();
+    if (!workflow?.worktreeId || !status || status === "none") return;
+    await updateWorktreeRegistryEntry(workflow.projectRoot || CWD, workflow.worktreeId, { status });
 }

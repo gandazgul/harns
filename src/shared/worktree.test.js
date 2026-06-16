@@ -1,0 +1,123 @@
+import { assertEquals, assertMatch, assertRejects } from "@std/assert";
+import { basename, dirname } from "@std/path";
+import { findByPlanName } from "./worktree-registry.js";
+import {
+    createExecutionWorktree,
+    getWorktreeStatus,
+    mergeExecutionWorktree,
+    removeExecutionWorktree,
+} from "./worktree.js";
+
+/**
+ * @param {string} cwd
+ * @param {string[]} args
+ */
+async function git(cwd, args) {
+    const command = new Deno.Command("git", { args, cwd, stdout: "piped", stderr: "piped" });
+    const output = await command.output();
+    if (!output.success) {
+        throw new Error(new TextDecoder().decode(output.stderr));
+    }
+    return new TextDecoder().decode(output.stdout).trim();
+}
+
+async function makeRepo() {
+    const cwd = await Deno.makeTempDir();
+    await git(cwd, ["init"]);
+    await git(cwd, ["config", "user.email", "harns@example.com"]);
+    await git(cwd, ["config", "user.name", "Harns Test"]);
+    await Deno.writeTextFile(`${cwd}/README.md`, "base\n");
+    await git(cwd, ["add", "."]);
+    await git(cwd, ["commit", "-m", "base"]);
+    return cwd;
+}
+
+Deno.test("createExecutionWorktree creates a unique branch/path and registry entry", async () => {
+    const projectRoot = await makeRepo();
+    let worktree;
+    try {
+        worktree = await createExecutionWorktree({ projectRoot, planName: "Demo Plan" });
+        assertMatch(worktree.branch, /^harns\/worktree\/demo-plan-[a-f0-9]{8}$/);
+        assertEquals(dirname(worktree.path), dirname(projectRoot));
+        assertMatch(basename(worktree.path), /harns-demo-plan-[a-f0-9]{8}$/);
+        assertEquals(await git(worktree.path, ["branch", "--show-current"]), worktree.branch);
+        const registryEntry = await findByPlanName(projectRoot, "Demo Plan");
+        assertEquals(registryEntry?.id, worktree.id);
+        assertEquals(registryEntry?.baseTree, await git(projectRoot, ["rev-parse", "HEAD^{tree}"]));
+
+        const status = await getWorktreeStatus({ projectRoot, path: worktree.path, branch: worktree.branch });
+        assertEquals(status.exists, true);
+        assertEquals(status.clean, true);
+    } finally {
+        if (worktree) {
+            await removeExecutionWorktree({
+                projectRoot,
+                path: worktree.path,
+                branch: worktree.branch,
+                force: true,
+            });
+        }
+        await Deno.remove(projectRoot, { recursive: true });
+    }
+});
+
+Deno.test("mergeExecutionWorktree includes uncommitted worktree changes", async () => {
+    const projectRoot = await makeRepo();
+    /** @type {Awaited<ReturnType<typeof createExecutionWorktree>> | undefined} */
+    let worktree;
+    try {
+        worktree = await createExecutionWorktree({ projectRoot, planName: "Uncommitted Merge" });
+        await Deno.writeTextFile(`${worktree.path}/README.md`, "base\nchanged\n");
+        await Deno.writeTextFile(`${worktree.path}/feature.txt`, "feature\n");
+
+        await mergeExecutionWorktree({
+            projectRoot,
+            branch: worktree.branch,
+            worktreePath: worktree.path,
+            allowedDirtyPaths: [".hns/"],
+        });
+
+        assertEquals(await Deno.readTextFile(`${projectRoot}/README.md`), "base\nchanged\n");
+        assertEquals(await Deno.readTextFile(`${projectRoot}/feature.txt`), "feature\n");
+    } finally {
+        if (worktree) {
+            await removeExecutionWorktree({
+                projectRoot,
+                path: worktree.path,
+                branch: worktree.branch,
+                force: true,
+            });
+        }
+        await Deno.remove(projectRoot, { recursive: true });
+    }
+});
+
+Deno.test("mergeExecutionWorktree refuses to merge into a dirty primary checkout", async () => {
+    const projectRoot = await makeRepo();
+    /** @type {Awaited<ReturnType<typeof createExecutionWorktree>> | undefined} */
+    let worktree;
+    try {
+        worktree = await createExecutionWorktree({ projectRoot, planName: "Dirty Merge" });
+        await Deno.writeTextFile(`${worktree.path}/feature.txt`, "feature\n");
+        await git(worktree.path, ["add", "."]);
+        await git(worktree.path, ["commit", "-m", "feature"]);
+        await Deno.writeTextFile(`${projectRoot}/dirty.txt`, "dirty\n");
+        const branch = worktree.branch;
+
+        await assertRejects(
+            () => mergeExecutionWorktree({ projectRoot, branch }),
+            Error,
+            "Primary checkout has uncommitted changes",
+        );
+    } finally {
+        if (worktree) {
+            await removeExecutionWorktree({
+                projectRoot,
+                path: worktree.path,
+                branch: worktree.branch,
+                force: true,
+            });
+        }
+        await Deno.remove(projectRoot, { recursive: true });
+    }
+});

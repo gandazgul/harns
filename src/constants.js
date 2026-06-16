@@ -11,7 +11,7 @@ export const CLI_BIN = "hns";
 /** Fallback source-run invocation used in contributor docs and local dev. */
 export const DEV_CLI_RUN = "deno run -A src/cli.js";
 
-/** Current project root used by all command handlers and agent invocations. */
+/** Primary project root used for Harns metadata, settings, and command state. */
 export const CWD = Deno.cwd();
 
 /** Harns source root path (works for source runs and compiled binaries). */
@@ -34,6 +34,21 @@ export const COMPLEXITIES = ["LOW", "MEDIUM", "HIGH"];
 
 /** Directory name where plan markdown files are stored. */
 export const PLANS_DIR_NAME = "plans";
+
+/** Directory name for project-local Harns metadata. */
+export const HARNS_DIR_NAME = ".hns";
+
+/** Durable execution worktree registry filename inside .hns/. */
+export const WORKTREE_REGISTRY_FILE = "worktrees.json";
+
+/** Best-effort lock filename for serialized worktree registry updates. */
+export const WORKTREE_REGISTRY_LOCK_FILE = "worktrees.lock";
+
+/** Git branch prefix for isolated execution worktrees. */
+export const WORKTREE_BRANCH_PREFIX = "harns/worktree/";
+
+/** Path infix for adjacent isolated execution worktree directories. */
+export const WORKTREE_PATH_PREFIX = "harns-";
 
 export const HOME_DIR = Deno.env.get("HOME") || "";
 
@@ -79,6 +94,10 @@ export const COMMAND_NAMES = Object.freeze({
  * `SLICER` is a workflow-only pseudo-agent loaded from
  * `src/shared/workflow/slicer-prompt.md`, so it also does not appear in
  * `/agent` listings or return_to_router targets.
+ *
+ * `REVIEWER` is also workflow-only and is loaded from
+ * `src/shared/workflow/reviewer-prompt.md` as a bare prompt, without shared
+ * skills or extra tools.
  */
 /** @type {Readonly<{ROUTER: string, OPERATOR: string, PLANNER: string, ARCHITECT: string, ENGINEER: string, REVIEWER: string, SLICER: string, TESTER: string, IDEATOR: string, DOC_WRITER: string, INIT: string}>} */
 export const AGENTS = Object.freeze({

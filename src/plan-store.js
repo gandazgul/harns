@@ -55,6 +55,10 @@ export async function ensurePlansDir(cwd) {
  * @property {string|null} [implementedAt] - ISO timestamp when execution finished
  * @property {string|null} [verifiedAt] - ISO timestamp when validation passed
  * @property {string|null} [executionBaselineTree] - Git tree captured before execution started
+ * @property {string|null} [worktreeId] - Durable execution worktree registry id
+ * @property {string|null} [worktreePath] - Filesystem path to the execution worktree
+ * @property {string|null} [worktreeBranch] - Git branch checked out in the execution worktree
+ * @property {"none"|"active"|"completed"|"execution_failed"|"validation_failed"|"merge_conflict"|"merged"|"abandoned"|null} [worktreeStatus]
  */
 
 /**
@@ -113,6 +117,10 @@ function formatFrontMatter(fm) {
     if (fm.executionBaselineTree) {
         lines.push(`executionBaselineTree: "${escapeYamlDoubleQuoted(fm.executionBaselineTree)}"`);
     }
+    if (fm.worktreeId) lines.push(`worktreeId: "${escapeYamlDoubleQuoted(fm.worktreeId)}"`);
+    if (fm.worktreePath) lines.push(`worktreePath: "${escapeYamlDoubleQuoted(fm.worktreePath)}"`);
+    if (fm.worktreeBranch) lines.push(`worktreeBranch: "${escapeYamlDoubleQuoted(fm.worktreeBranch)}"`);
+    if (fm.worktreeStatus) lines.push(`worktreeStatus: "${escapeYamlDoubleQuoted(fm.worktreeStatus)}"`);
     lines.push("---");
     return lines.join("\n");
 }
@@ -158,6 +166,27 @@ function optionalFrontMatterValue(overrides, existingFm, key) {
 }
 
 /**
+ * @param {unknown} status
+ * @returns {PlanFrontMatter["worktreeStatus"]}
+ */
+function normalizeWorktreeStatus(status) {
+    const allowed = new Set([
+        "none",
+        "active",
+        "completed",
+        "execution_failed",
+        "validation_failed",
+        "merge_conflict",
+        "merged",
+        "abandoned",
+    ]);
+    if (typeof status === "string" && allowed.has(status)) {
+        return /** @type {PlanFrontMatter["worktreeStatus"]} */ (status);
+    }
+    return undefined;
+}
+
+/**
  * Inject or update front matter on a plan's markdown content.
  * If front matter already exists, merge with existing values.
  *
@@ -198,6 +227,12 @@ export function injectFrontMatter(markdown, overrides = {}) {
         implementedAt: optionalFrontMatterValue(overrides, existingFm, "implementedAt"),
         verifiedAt: optionalFrontMatterValue(overrides, existingFm, "verifiedAt"),
         executionBaselineTree: optionalFrontMatterValue(overrides, existingFm, "executionBaselineTree"),
+        worktreeId: optionalFrontMatterValue(overrides, existingFm, "worktreeId"),
+        worktreePath: optionalFrontMatterValue(overrides, existingFm, "worktreePath"),
+        worktreeBranch: optionalFrontMatterValue(overrides, existingFm, "worktreeBranch"),
+        worktreeStatus: normalizeWorktreeStatus(
+            Object.hasOwn(overrides, "worktreeStatus") ? overrides.worktreeStatus : existingFm.worktreeStatus,
+        ),
     };
 
     return formatFrontMatter(fm) + "\n" + body.trimStart();
@@ -239,6 +274,10 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
             implementedAt: attrs.implementedAt,
             verifiedAt: attrs.verifiedAt,
             executionBaselineTree: attrs.executionBaselineTree,
+            worktreeId: attrs.worktreeId,
+            worktreePath: attrs.worktreePath,
+            worktreeBranch: attrs.worktreeBranch,
+            worktreeStatus: normalizeWorktreeStatus(attrs.worktreeStatus),
         },
         body,
     };
