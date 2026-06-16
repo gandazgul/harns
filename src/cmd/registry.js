@@ -24,6 +24,7 @@ import { runInstallCommand } from "./install/index.js";
 import { runRemoveCommand } from "./remove/index.js";
 import { runCompactCommand } from "./compact/index.js";
 import { runReloadCommand } from "./reload/index.js";
+import { runVersionCommand } from "./version/index.js";
 
 /** @param {...string} parts */
 const bin = (...parts) => [CLI_BIN, ...parts].join(" ");
@@ -301,6 +302,19 @@ export const commandRegistry = {
         ],
         notes: [],
         execute: runHelpCommand,
+        surfaces: ["cli"],
+    },
+    [COMMAND_NAMES.VERSION]: {
+        name: COMMAND_NAMES.VERSION,
+        displayName: "Version",
+        description: "Show version and architecture info",
+        summary: "Print harns version and platform architecture.",
+        usage: [
+            `${bin("--version")}`,
+            `${bin("version")}`,
+        ],
+        notes: [],
+        execute: runVersionCommand,
         surfaces: ["cli"],
     },
     [COMMAND_NAMES.QUIT]: {
