@@ -44,7 +44,15 @@ async function pathExists(path) {
  * @returns {string[]}
  */
 function parseStatusPaths(statusText) {
-    return statusText.trim().split("\n").filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+    return statusText.split("\n").filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+}
+
+/**
+ * @param {string} diffText
+ * @returns {string[]}
+ */
+function parseNameOnlyPaths(diffText) {
+    return diffText.trim().split("\n").map((line) => line.trim()).filter(Boolean);
 }
 
 /**
@@ -60,6 +68,14 @@ function isAllowedDirtyPath(dirtyPath, allowedPaths) {
         if (normalizedAllowed.startsWith(normalizedDirty)) return true;
     }
     return false;
+}
+
+/**
+ * @param {string} dirtyPath
+ * @param {Set<string>} branchChangedPaths
+ */
+function overlapsBranchChangedPath(dirtyPath, branchChangedPaths) {
+    return isAllowedDirtyPath(dirtyPath, branchChangedPaths);
 }
 
 /**
@@ -167,16 +183,6 @@ export async function getWorktreeStatus({ path, branch, baseTree }) {
  * @param {{ projectRoot: string, branch: string, worktreePath?: string, allowedDirtyPaths?: string[] }} opts
  */
 export async function mergeExecutionWorktree({ projectRoot, branch, worktreePath, allowedDirtyPaths = [] }) {
-    const statusText = await runGit(projectRoot, ["status", "--porcelain"]);
-    const allowed = new Set(allowedDirtyPaths);
-    const blockingDirtyPaths = parseStatusPaths(statusText).filter((path) => !isAllowedDirtyPath(path, allowed));
-    if (blockingDirtyPaths.length > 0) {
-        throw new Error(
-            "Primary checkout has uncommitted changes; refusing to merge execution worktree: " +
-                blockingDirtyPaths.join(", "),
-        );
-    }
-
     let resolvedWorktreePath = worktreePath;
     if (!resolvedWorktreePath) {
         const worktreeList = await runGit(projectRoot, ["worktree", "list", "--porcelain"]);
@@ -184,6 +190,21 @@ export async function mergeExecutionWorktree({ projectRoot, branch, worktreePath
     }
     if (resolvedWorktreePath) {
         await commitDirtyWorktreeState(resolvedWorktreePath, branch);
+    }
+
+    const statusText = await runGit(projectRoot, ["status", "--porcelain"]);
+    const allowed = new Set(allowedDirtyPaths);
+    const branchChangedPaths = new Set(
+        parseNameOnlyPaths(await runGit(projectRoot, ["diff", "--name-only", `HEAD...${branch}`])),
+    );
+    const blockingDirtyPaths = parseStatusPaths(statusText).filter((path) =>
+        !isAllowedDirtyPath(path, allowed) && overlapsBranchChangedPath(path, branchChangedPaths)
+    );
+    if (blockingDirtyPaths.length > 0) {
+        throw new Error(
+            "Primary checkout has uncommitted changes that overlap execution worktree changes; refusing to merge: " +
+                blockingDirtyPaths.join(", "),
+        );
     }
 
     await runGit(projectRoot, ["merge", "--no-ff", branch]);

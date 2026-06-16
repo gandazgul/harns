@@ -6,15 +6,16 @@ affectedPaths:
     - "src/plan-store.js"
     - "src/plan-store.test.js"
 createdAt: "2026-06-16T16:25:04Z"
-updatedAt: "2026-06-16T17:37:18.484Z"
+updatedAt: "2026-06-16T18:56:16.992Z"
 status: "implemented"
 origin: "internal"
+failureReason: "Primary checkout has uncommitted changes; refusing to merge execution worktree: ODO.md"
 implementedAt: "2026-06-16T17:37:18.484Z"
 executionBaselineTree: "1f1bdaf7cd15c62c13f9688a909f60c9aa7a8ffe"
 worktreeId: "74f8b50f"
 worktreePath: "/Users/gandazgul/Documents/web/harns-harns-project-breakdown-epic-feature1-preserve-epic-an-74f8b50f"
 worktreeBranch: "harns/worktree/project-breakdown-epic-feature1-preserve-epic-an-74f8b50f"
-worktreeStatus: "completed"
+worktreeStatus: "merge_conflict"
 ---
 
 # Preserve Epic and Child Plan Metadata

@@ -25,6 +25,7 @@ import { updateEntry as updateWorktreeRegistryEntry } from "../worktree-registry
 export const __dirname = dirname(fromFileUrl(import.meta.url));
 const WORKFLOW_PROMPTS_DIR = "workflow-prompts";
 const REVIEWER_PROMPT_FILE = "reviewer-prompt.md";
+const SUCCESS_MESSAGE_STYLE = { bodyColor: "success" };
 
 /**
  * Load reviewer as a bare workflow prompt instead of a normal agent definition.
@@ -180,6 +181,22 @@ function isApprovedReviewResponse(response) {
 }
 
 /**
+ * @param {import('./workflow.js').UiAPI} uiAPI
+ * @param {string} reason
+ * @returns {Promise<"retry" | "stop">}
+ */
+async function promptForMergeFailureAction(uiAPI, reason) {
+    const choice = await uiAPI.promptSelect?.(
+        `Worktree merge failed:\n${reason}\n\nFix the primary checkout if needed, then retry the merge.`,
+        [
+            { value: "retry", label: "Retry merge" },
+            { value: "stop", label: "Stop" },
+        ],
+    );
+    return choice === "retry" ? "retry" : "stop";
+}
+
+/**
  * @param {string} path
  * @param {string} planName
  * @returns {boolean}
@@ -311,15 +328,16 @@ export async function runValidationLoop({
 
         while (!buildPasses && mechanicalAttempts < 3) {
             mechanicalAttempts++;
-            uiAPI?.appendSystemMessage?.(`Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
+            uiAPI?.appendSystemMessage?.(`[spinner] Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
             const ciResult = await runLocalCIImpl(uiAPI, executionCwd);
 
             if (ciResult.exitCode === 0) {
                 buildPasses = true;
-                uiAPI?.appendSystemMessage?.("Build and tests passed.");
+                uiAPI?.appendSystemMessage?.("Build and tests passed.", false, "", SUCCESS_MESSAGE_STYLE);
             } else {
                 uiAPI?.appendSystemMessage?.(
                     `Build failed. Dispatching ${getAgentDisplayName(AGENTS.OPERATOR)} to fix syntax/types...`,
+                    true,
                 );
                 const completed = await repair({
                     agentName: AGENTS.OPERATOR,
@@ -344,7 +362,7 @@ export async function runValidationLoop({
             break;
         }
 
-        uiAPI?.appendSystemMessage?.("Running Semantic Code Review...");
+        uiAPI?.appendSystemMessage?.("[spinner] Running Semantic Code Review...");
 
         const diffText = await getDiffText(baselineTree, executionCwd);
 
@@ -356,7 +374,12 @@ export async function runValidationLoop({
         }
 
         if (!diffText.trim()) {
-            uiAPI?.appendSystemMessage?.("No changes detected in diff. Assuming approved.");
+            uiAPI?.appendSystemMessage?.(
+                "No changes detected in diff. Assuming approved.",
+                false,
+                "",
+                SUCCESS_MESSAGE_STYLE,
+            );
             executionComplete = true;
             break;
         }
@@ -379,12 +402,13 @@ export async function runValidationLoop({
         const reviewResponse = extractAssistantOutput(sessionMessages) || "";
 
         if (isApprovedReviewResponse(reviewResponse)) {
-            uiAPI?.appendSystemMessage?.("Semantic Code Review Approved.");
+            uiAPI?.appendSystemMessage?.("Semantic Code Review Approved.", false, "", SUCCESS_MESSAGE_STYLE);
             executionComplete = true;
         } else {
             uiAPI?.appendSystemMessage?.(
                 `Review failed. Sending feedback back to ${getAgentDisplayName(AGENTS.ENGINEER)}...\n\n` +
                     `Reviewer Feedback:\n${reviewResponse || "(no reviewer output captured)"}`,
+                true,
             );
             const completed = await repair({
                 agentName: AGENTS.ENGINEER,
@@ -413,43 +437,59 @@ export async function runValidationLoop({
             : "Plan";
 
         if (worktreeBranch) {
-            try {
-                uiAPI.appendSystemMessage(`Merging validated worktree branch ${worktreeBranch} into primary checkout.`);
-                await mergeExecutionWorktreeImpl({
-                    projectRoot,
-                    branch: worktreeBranch,
-                    worktreePath: executionCwd,
-                    allowedDirtyPaths: [
-                        `plans/${planName}.md`,
-                        ".hns/",
-                        ".hns/worktrees.json",
-                        ".hns/worktrees.lock",
-                    ],
-                });
-                if (worktreeId) {
-                    await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "merged" });
-                }
-            } catch (/** @type {any} */ error) {
-                const reason = error instanceof Error ? error.message : String(error);
-                uiAPI.appendSystemMessage(`Workflow halted: Worktree merge failed: ${reason}`);
-                if (worktreeId) {
-                    await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "merge_conflict" });
-                }
-                if (planName && planName !== "quick-fix") {
-                    await recordPlanEventImpl({
-                        cwd: CWD,
-                        planName,
-                        event: "worktree_merge_failed",
-                        currentStatus: "implemented",
-                        details: { triageMeta, failureReason: reason },
+            while (executionComplete) {
+                try {
+                    uiAPI.appendSystemMessage(
+                        `Merging validated worktree branch ${worktreeBranch} into primary checkout.`,
+                    );
+                    await mergeExecutionWorktreeImpl({
+                        projectRoot,
+                        branch: worktreeBranch,
+                        worktreePath: executionCwd,
+                        allowedDirtyPaths: [
+                            `plans/${planName}.md`,
+                            ".hns/",
+                            ".hns/worktrees.json",
+                            ".hns/worktrees.lock",
+                        ],
                     });
+                    if (worktreeId) {
+                        await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "merged" });
+                    }
+                    break;
+                } catch (/** @type {any} */ error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    uiAPI.appendSystemMessage(`Worktree merge failed: ${reason}`, true);
+                    if (worktreeId) {
+                        await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "merge_conflict" });
+                    }
+                    if (planName && planName !== "quick-fix") {
+                        await recordPlanEventImpl({
+                            cwd: CWD,
+                            planName,
+                            event: "worktree_merge_failed",
+                            currentStatus: "implemented",
+                            details: { triageMeta, failureReason: reason },
+                        });
+                    }
+
+                    const action = await promptForMergeFailureAction(uiAPI, reason);
+                    if (action === "retry") {
+                        continue;
+                    }
+                    uiAPI.appendSystemMessage(`Workflow halted: Worktree merge failed: ${reason}`, true);
+                    executionComplete = false;
                 }
-                executionComplete = false;
             }
         }
 
         if (executionComplete) {
-            uiAPI.appendSystemMessage(`${triageClassificationDisplay} execution and validation complete.`);
+            uiAPI.appendSystemMessage(
+                `${triageClassificationDisplay} execution and validation complete.`,
+                false,
+                "",
+                SUCCESS_MESSAGE_STYLE,
+            );
             if (planName && planName !== "quick-fix") {
                 await recordPlanEventImpl({
                     cwd: CWD,
@@ -462,7 +502,7 @@ export async function runValidationLoop({
         }
     } else {
         const reason = haltReason || "Validation stopped before completion.";
-        uiAPI.appendSystemMessage(`Workflow halted: ${reason}`);
+        uiAPI.appendSystemMessage(`Workflow halted: ${reason}`, true);
         if (worktreeId) {
             await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "validation_failed" });
         }

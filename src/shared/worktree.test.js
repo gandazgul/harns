@@ -92,22 +92,55 @@ Deno.test("mergeExecutionWorktree includes uncommitted worktree changes", async 
     }
 });
 
-Deno.test("mergeExecutionWorktree refuses to merge into a dirty primary checkout", async () => {
+Deno.test("mergeExecutionWorktree allows unrelated dirty primary checkout changes", async () => {
+    const projectRoot = await makeRepo();
+    /** @type {Awaited<ReturnType<typeof createExecutionWorktree>> | undefined} */
+    let worktree;
+    try {
+        worktree = await createExecutionWorktree({ projectRoot, planName: "Unrelated Dirty Merge" });
+        await Deno.writeTextFile(`${worktree.path}/feature.txt`, "feature\n");
+        await git(worktree.path, ["add", "."]);
+        await git(worktree.path, ["commit", "-m", "feature"]);
+        await Deno.writeTextFile(`${projectRoot}/ODO.md`, "scratch note\n");
+
+        await mergeExecutionWorktree({
+            projectRoot,
+            branch: worktree.branch,
+            worktreePath: worktree.path,
+        });
+
+        assertEquals(await Deno.readTextFile(`${projectRoot}/feature.txt`), "feature\n");
+        assertEquals(await Deno.readTextFile(`${projectRoot}/ODO.md`), "scratch note\n");
+        assertMatch(await git(projectRoot, ["status", "--porcelain"]), /\?\? ODO\.md/);
+    } finally {
+        if (worktree) {
+            await removeExecutionWorktree({
+                projectRoot,
+                path: worktree.path,
+                branch: worktree.branch,
+                force: true,
+            });
+        }
+        await Deno.remove(projectRoot, { recursive: true });
+    }
+});
+
+Deno.test("mergeExecutionWorktree refuses dirty primary changes that overlap branch changes", async () => {
     const projectRoot = await makeRepo();
     /** @type {Awaited<ReturnType<typeof createExecutionWorktree>> | undefined} */
     let worktree;
     try {
         worktree = await createExecutionWorktree({ projectRoot, planName: "Dirty Merge" });
-        await Deno.writeTextFile(`${worktree.path}/feature.txt`, "feature\n");
+        await Deno.writeTextFile(`${worktree.path}/README.md`, "base\nfeature\n");
         await git(worktree.path, ["add", "."]);
         await git(worktree.path, ["commit", "-m", "feature"]);
-        await Deno.writeTextFile(`${projectRoot}/dirty.txt`, "dirty\n");
+        await Deno.writeTextFile(`${projectRoot}/README.md`, "base\nprimary scratch\n");
         const branch = worktree.branch;
 
         await assertRejects(
             () => mergeExecutionWorktree({ projectRoot, branch }),
             Error,
-            "Primary checkout has uncommitted changes",
+            "Primary checkout has uncommitted changes that overlap execution worktree changes",
         );
     } finally {
         if (worktree) {

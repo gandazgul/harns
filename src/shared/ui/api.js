@@ -138,7 +138,7 @@ export function createUiApi(tui, messageList, spinner) {
          * @param {string} text
          * @param {boolean} [isError=false]
          * @param {string} [header='']
-         * @param {{ headingColor?: string }} [style]
+         * @param {{ headingColor?: string, bodyColor?: string }} [style]
          */
         appendSystemMessage: (text, isError = false, header = "", style = {}) => {
             if (outputSuppressed) return;
