@@ -32,9 +32,9 @@ deno task compile
 
 Harns works best when these optional-but-expected binaries are available on `PATH`:
 
-- `mnemosyne` for project and global memory.
-- `cymbal` for code search, symbol lookup, impact analysis, and tracing.
-- `rtk` for compact command-output rewriting. RTK is optional and fail-open.
+- [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for project and global memory.
+- [`cymbal`](https://github.com/1broseidon/cymbal) for code search, symbol lookup, impact analysis, and tracing.
+- [`rtk`](https://github.com/rtk-ai/rtk) for compact command-output rewriting. RTK is optional and fail-open.
 
 ### 3. Authenticate a model provider
 
@@ -46,9 +46,11 @@ Start an interactive session and run:
 
 Then choose a subscription provider or API-key provider. Harns stores credentials under `~/.hns/auth.json`.
 
-Harns uses Pi's model/provider system, so the full provider setup is documented in
-[Pi Providers](https://pi.dev/docs/latest/providers). See [Harns providers](providers.md) for the Harns-specific storage
-paths and commands.
+You can also configure providers and custom models manually in `~/.hns/models.json`, for example when using Ollama,
+vLLM, LM Studio, API proxies, or custom model entries. Harns uses Pi's model/provider system, so the full provider and
+model configuration format is documented in [Pi Providers](https://pi.dev/docs/latest/providers) and
+[Pi Custom Models](https://pi.dev/docs/latest/models). See [Harns providers](providers.md) for the Harns-specific
+storage paths and commands.
 
 ### 4. Initialize a project
 
