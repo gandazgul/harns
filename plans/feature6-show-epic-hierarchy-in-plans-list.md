@@ -7,10 +7,10 @@ affectedPaths:
   - "src/cmd/plans/index.test.js"
   - "src/plan-store.js"
 createdAt: "2026-06-16T16:25:04Z"
-updatedAt: "2026-06-17T15:56:30.687Z"
-status: "verified"
+updatedAt: "2026-06-17T15:57:11.532Z"
+status: "feedback"
 origin: "internal"
-verifiedAt: "2026-06-17T15:56:30.687Z"
+worktreeStatus: "abandoned"
 ---
 # Show Epic Hierarchy in Plans List
 
