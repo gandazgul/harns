@@ -78,7 +78,8 @@ diffs, reviewer sessions, and repair sessions receive the execution worktree as 
 
 The primary checkout remains the metadata root for saved plans, settings, `.hns/worktrees.json`, and
 `.hns/worktrees.lock`. This means `hns plans` and `hns load-plan` can see current lifecycle state while implementation
-files are isolated in a linked worktree.
+files are isolated in a linked worktree. The worktree registry and lock files are local runtime state and are ignored by
+Git so execution branches cannot merge stale registry snapshots back into the primary checkout.
 
 ## Workflow Validation and Merge-Back
 
