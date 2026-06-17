@@ -16,6 +16,7 @@ import {
     SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { createEditWithFallbackToolDefinition } from "../../tools/edit-with-fallback.js";
+import { createHarnsGrepToolDefinition } from "../../tools/grep.js";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
 import { dirname, join } from "@std/path";
 import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
@@ -940,6 +941,11 @@ export async function buildAgentSession({
         finalCustomTools.push(createEditWithFallbackToolDefinition(sessionCwd));
     }
 
+    // Override the built-in grep tool to accept shell-shaped multi-path input.
+    if (!finalCustomTools.find((t) => t.name === "grep")) {
+        finalCustomTools.push(createHarnsGrepToolDefinition(sessionCwd));
+    }
+
     if (tools.includes("multi_file_edit") && !finalCustomTools.find((t) => t.name === "multi_file_edit")) {
         const { createMultiFileEditTool } = await import("../../tools/multi_file_edit.js");
         finalCustomTools.push(createMultiFileEditTool(sessionCwd));
@@ -1239,7 +1245,8 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
                 if (filePath) headerArgs = `${filePath}`;
                 else if (event.toolName === "bash") headerArgs = event.args?.command || "";
                 else if (event.toolName === "grep") {
-                    headerArgs = `${event.args?.pattern} in ${event.args?.path || "."}`;
+                    const path = Array.isArray(event.args?.path) ? event.args.path.join(" ") : event.args?.path || ".";
+                    headerArgs = `${event.args?.pattern} in ${path}`;
                 } else if (event.toolName === "find") {
                     headerArgs = `${event.args?.pattern} in ${event.args?.path || "."}`;
                 } else if (event.toolName === "ls") {
