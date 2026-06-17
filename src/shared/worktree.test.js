@@ -1,11 +1,13 @@
 import { assertEquals, assertMatch, assertRejects } from "@std/assert";
 import { basename, dirname } from "@std/path";
+import { HOME_DIR } from "../constants.js";
 import { findByPlanName } from "./worktree-registry.js";
 import {
     createExecutionWorktree,
     getWorktreeStatus,
     mergeExecutionWorktree,
     removeExecutionWorktree,
+    resolveWorktreeParent,
 } from "./worktree.js";
 
 /**
@@ -31,6 +33,21 @@ async function makeRepo() {
     await git(cwd, ["commit", "-m", "base"]);
     return cwd;
 }
+
+Deno.test("resolveWorktreeParent uses session-style full cwd encoding by default", () => {
+    const projectRoot = "/Users/alice/Documents/web/harns";
+
+    if (HOME_DIR) {
+        assertEquals(
+            resolveWorktreeParent(projectRoot, undefined),
+            `${HOME_DIR}/.hns/worktrees/--Users-alice-Documents-web-harns--`,
+        );
+    } else {
+        assertEquals(resolveWorktreeParent(projectRoot, undefined), `${projectRoot}/.hns/worktrees`);
+    }
+
+    assertEquals(resolveWorktreeParent(projectRoot, "/tmp/worktrees"), "/tmp/worktrees");
+});
 
 Deno.test("createExecutionWorktree creates a unique branch/path and registry entry", async () => {
     const projectRoot = await makeRepo();

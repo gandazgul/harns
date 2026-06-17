@@ -3,24 +3,16 @@ classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Add a focused path for materializing Slicer decomposition drafts as child FEATURE plan files."
 affectedPaths:
-    - "src/plan-store.js"
-    - "src/shared/workflow/workflow-slicer.js"
-    - "src/shared/workflow/workflow.test.js"
-    - "src/plan-store.test.js"
+  - "src/plan-store.js"
+  - "src/shared/workflow/workflow-slicer.js"
+  - "src/shared/workflow/workflow.test.js"
+  - "src/plan-store.test.js"
 createdAt: "2026-06-16T16:25:04Z"
-updatedAt: "2026-06-16T21:13:40.542Z"
-status: "implemented"
+updatedAt: "2026-06-17T13:17:32.459Z"
+status: "verified"
 origin: "internal"
-failureReason: "git merge --no-ff harns/worktree/feature4-create-child-feature-plans-from-draft-db00435d failed: error: Your local changes to the following files would be overwritten by merge:
-    .hns/worktrees.json
-    plans/feature4-create-child-feature-plans-from-draft.md
-    Please commit your changes or stash them before you merge.
-    Aborting
-    Merge with strategy ort failed."
-verifiedAt: "2026-06-16T20:36:41.682Z"
-worktreeStatus: "merge_conflict"
+verifiedAt: "2026-06-17T13:17:32.459Z"
 ---
-
 # Create Child FEATURE Plans from a Draft
 
 ## Context
