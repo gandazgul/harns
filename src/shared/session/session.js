@@ -73,6 +73,27 @@ import { recordActiveAgent } from "./active-agent-session.js";
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
 
+/** Regex to detect an HTML body in an error message (e.g. from a 404 page). */
+const HTML_ERROR_RE = /^(.*?\b404\b.*?)(?:<!DOCTYPE|<html|<body)/i;
+
+/**
+ * Replace 404 error messages that contain an HTML body with a clean generic
+ * message so the user does not see a raw HTML dump.
+ *
+ * @param {string} msg
+ * @returns {string}
+ */
+function sanitizeApiErrorMessage(msg) {
+    const match = HTML_ERROR_RE.exec(msg);
+    if (match) {
+        const prefix = match[1].trim();
+        return prefix.endsWith(" -") || prefix.endsWith(".")
+            ? `${prefix.slice(0, -1)} — Model not found or endpoint unavailable`
+            : `${prefix} — Model not found or endpoint unavailable`;
+    }
+    return msg;
+}
+
 /**
  * @param {string | undefined} debugLogPath
  * @param {string} text
@@ -1229,7 +1250,7 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
                             [
                                 `Event: ASSISTANT MESSAGE ERROR`,
                                 `Timestamp: ${new Date().toISOString()}`,
-                                `Error: ${event.message.errorMessage || "Unknown LLM error"}`,
+                                `Error: ${sanitizeApiErrorMessage(event.message.errorMessage || "Unknown LLM error")}`,
                                 "",
                             ].join("\n"),
                         );
@@ -1241,7 +1262,7 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
                         agentHeaderShown = true;
                     }
                     currentMarkdownBlock.appendText(
-                        `\n\n**Error:** ${event.message.errorMessage || "Unknown LLM error"}`,
+                        `\n\n**Error:** ${sanitizeApiErrorMessage(event.message.errorMessage || "Unknown LLM error")}`,
                     );
                     uiAPI.requestRender();
                 }
@@ -1250,7 +1271,9 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
             case "auto_retry_start": {
                 if (uiAPI) {
                     uiAPI.appendSystemMessage(
-                        `[Retry ${event.attempt}/${event.maxAttempts}] ${event.errorMessage} — waiting ${event.delayMs}ms...`,
+                        `[Retry ${event.attempt}/${event.maxAttempts}] ${
+                            sanitizeApiErrorMessage(event.errorMessage)
+                        } — waiting ${event.delayMs}ms...`,
                     );
                 }
                 break;
@@ -1444,7 +1467,9 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
                             `Auto-compacted. Tokens before: ${event.result.tokensBefore.toLocaleString()}`,
                         );
                     } else if (event.errorMessage) {
-                        uiAPI.appendSystemMessage(`Auto-compaction failed: ${event.errorMessage}`);
+                        uiAPI.appendSystemMessage(
+                            `Auto-compaction failed: ${sanitizeApiErrorMessage(event.errorMessage)}`,
+                        );
                     }
                 }
                 break;
