@@ -155,6 +155,36 @@ testWithFs("plan-store preserves Epic and nested child metadata", async () => {
     }
 });
 
+testWithFs("listPlans hides archived plans", async () => {
+    const cwd = await Deno.makeTempDir();
+    try {
+        await savePlan(cwd, "active-plan", "# Active", {
+            classification: "FEATURE",
+            complexity: "MEDIUM",
+            summary: "Visible plan",
+            affectedPaths: [],
+            status: "draft",
+            createdAt: "2026-06-18T00:00:00.000Z",
+        });
+        await savePlan(cwd, "archived/old-plan", "# Archived", {
+            classification: "FEATURE",
+            complexity: "LOW",
+            summary: "Hidden plan",
+            affectedPaths: [],
+            status: "verified",
+            createdAt: "2026-06-17T00:00:00.000Z",
+        });
+
+        const listed = await listPlans(cwd);
+        assertEquals(listed.map((plan) => plan.name), ["active-plan"]);
+
+        const explicitArchived = await loadPlan(cwd, "archived/old-plan");
+        assertEquals(explicitArchived?.attrs.summary, "Hidden plan");
+    } finally {
+        await Deno.remove(cwd, { recursive: true });
+    }
+});
+
 testWithFs("saveChildFeaturePlans creates draft child FEATURE plans with dependencies", async () => {
     const cwd = await Deno.makeTempDir();
     try {
