@@ -20,7 +20,6 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { AGENTS } from "../constants.js";
 import { getActiveUiAPI, setActiveAgent } from "../shared/interactive/chat-session.js";
-import { createDirectAgentHandler } from "../shared/session/direct-agent.js";
 import { loadAgentDef } from "../shared/session/agents.js";
 import { setPendingSwitchHandoff } from "../shared/session/session-state.js";
 
@@ -30,9 +29,10 @@ import { setPendingSwitchHandoff } from "../shared/session/session-state.js";
  * @param {Object} params
  * @param {string} params.reason
  * @param {import('../shared/workflow/workflow.js').UiAPI | null | undefined} uiAPI
+ * @param {{ createAgentHandler?: (agentName: string) => import('../shared/session/types.js').AgentMessageHandler }} [__deps]
  * @returns {Promise<import('@earendil-works/pi-coding-agent').AgentToolResult<{ agentName: string, reason: string } | null>>}
  */
-export async function executeReturnToRouter(params, uiAPI) {
+export async function executeReturnToRouter(params, uiAPI, __deps) {
     const { reason } = params;
 
     if (!uiAPI) {
@@ -47,7 +47,9 @@ export async function executeReturnToRouter(params, uiAPI) {
     }
 
     const routerDef = await loadAgentDef(AGENTS.ROUTER);
-    const handler = createDirectAgentHandler(AGENTS.ROUTER);
+    const createAgentHandler = __deps?.createAgentHandler ||
+        (await import("../shared/session/agent-handler.js")).createAgentHandler;
+    const handler = createAgentHandler(AGENTS.ROUTER);
     setActiveAgent(AGENTS.ROUTER, handler, uiAPI, routerDef.model || undefined);
     setPendingSwitchHandoff({ agentName: AGENTS.ROUTER, reason });
 

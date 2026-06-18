@@ -1,17 +1,14 @@
 /**
  * @module triage-report
- * Custom tool for the Router to output a structured triage report.
+ * Custom tool for emitting a structured Triage Report.
  *
  * The tool only captures classification + summary + affectedPaths and surfaces
  * them via the tool result. Post-triage dispatch (Operator/Planner/Architect)
- * is handled by the router orchestrator in `src/cmd/router/index.js`, which
- * reads the latest triage_report outcome after the router session ends.
+ * is handled by the active Agent handler after the Agent Session ends.
  */
 
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { AGENTS } from "../constants.js";
-import { getAgentDisplayName } from "../shared/session/agents.js";
 
 const TOOL_PARAMS = Type.Object({
     classification: StringEnum(["QUICK_FIX", "FEATURE", "PROJECT"], {
@@ -32,7 +29,7 @@ const TOOL_PARAMS = Type.Object({
 
 /**
  * Create the triage_report tool. The tool only emits the classification —
- * dispatch to the next agent happens in the router orchestrator.
+ * dispatch to the next Agent happens in the active Agent handler.
  *
  * @param {{
  *   uiAPI?: import('../shared/workflow/workflow.js').UiAPI,
@@ -55,7 +52,7 @@ export function createTriageReportTool({ uiAPI } = {}) {
             uiAPI?.appendSystemMessage(
                 `Classification: ${classification}, Complexity: ${complexity}. Summary: ${summary}`,
                 false,
-                getAgentDisplayName(AGENTS.ROUTER),
+                "Triage",
             );
 
             return {

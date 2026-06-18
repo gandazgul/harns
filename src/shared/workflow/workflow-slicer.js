@@ -8,7 +8,8 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { AGENTS, CWD } from "../../constants.js";
 import { findPlansByParent, loadPlan, parsePlanFrontMatter, saveChildFeaturePlans } from "../../plan-store.js";
-import { ensureBundledAgentDefFile, runAgentSession, runRootTurn } from "../session/session.js";
+import { ensureBundledAgentDefFile, runAgentSession } from "../session/session.js";
+import { createAgentHandler } from "../session/agent-handler.js";
 import { loadAgentDefFromPath } from "../session/agents.js";
 import { extractTasks, validateProjectTasks } from "./task-scheduling.js";
 import { buildSlicerRequest } from "./workflow-prompts.js";
@@ -208,33 +209,6 @@ function createSlicerCustomTools(planName, deps) {
 }
 
 /**
- * @param {string} planName
- * @param {{
- *   runRootTurn?: typeof runRootTurn,
- *   ensureBundledAgentDefFile?: typeof ensureBundledAgentDefFile,
- *   loadAgentDefFromPath?: typeof loadAgentDefFromPath,
- *   createSlicerDraftTool?: typeof createSlicerDraftTool,
- *   createSlicerFinalizeTool?: typeof createSlicerFinalizeTool,
- * }} [__deps]
- * @returns {import('../session/types.js').AgentMessageHandler}
- */
-export function createSlicerMessageHandler(planName, __deps) {
-    const runTurn = __deps?.runRootTurn || runRootTurn;
-    return async (userRequest, images, uiAPI, sessionManager) => {
-        await runTurn({
-            agentName: AGENTS.SLICER,
-            userRequest,
-            images,
-            uiAPI,
-            sessionManager,
-            _agentDefOverride: await loadSlicerAgentDef(__deps),
-            customTools: createSlicerCustomTools(planName, __deps),
-            allowReturnToRouter: false,
-        });
-    };
-}
-
-/**
  * Run the interactive slicer agent against an Epic plan.
  *
  * @param {Object} opts
@@ -300,9 +274,17 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
             useRootSession: true,
             allowReturnToRouter: false,
         });
-        setActive(AGENTS.SLICER, createSlicerMessageHandler(planName), uiAPI, undefined, {
-            allowReturnToRouter: false,
-        });
+        setActive(
+            AGENTS.SLICER,
+            createAgentHandler(AGENTS.SLICER, {
+                _agentDefOverride: slicerAgentDef,
+                customTools: createSlicerCustomTools(planName, __deps),
+                allowReturnToRouter: false,
+            }),
+            uiAPI,
+            undefined,
+            { allowReturnToRouter: false },
+        );
         return { ok: true };
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e);

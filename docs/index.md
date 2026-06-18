@@ -72,7 +72,7 @@ hns "fix the failing parser test"
 hns router "fix the failing parser test"
 ```
 
-Router classifies the request as one of:
+Router is the default Agent for fresh triage. Its `triage_report` classifies the request as one of:
 
 - `QUICK_FIX` - execute directly with minimal ceremony.
 - `FEATURE` - write a reviewable plan before implementation.
@@ -83,13 +83,13 @@ Router classifies the request as one of:
 ### Work through the router by default
 
 Use `hns "request"` when you want Harns to choose the right workflow. Router records the classification, complexity, and
-affected paths before handing off to the right role.
+affected paths through `triage_report`; that tool outcome hands off to the right role.
 
 ### Talk to a specific agent when you know what you need
 
 ```bash
 hns agent                  # list agents
-hns agent engineer "..."   # bypass Router
+hns agent engineer "..."   # start with Engineer instead of Router
 ```
 
 Inside the TUI, use `/agent <name>` to switch agents.

@@ -99,8 +99,8 @@ hns "summarize this repository and tell me how to run its checks"
 hns router "summarize this repository and tell me how to run its checks"
 ```
 
-Router decides whether the request is a `QUICK_FIX`, `FEATURE`, or `PROJECT`, then hands off to the appropriate
-workflow.
+Router is the default Agent for fresh triage. It calls `triage_report` to classify the request as a `QUICK_FIX`,
+`FEATURE`, or `PROJECT`; that tool outcome hands off to the appropriate workflow.
 
 ## Common commands
 
@@ -108,7 +108,7 @@ workflow.
 hns "your request"                  # route through triage
 hns router "your request"           # explicit router form
 hns agent                           # list available agents
-hns agent engineer "implement X"    # bypass router and talk to one agent
+hns agent engineer "implement X"    # start with Engineer instead of Router
 hns plans                           # list saved plans
 hns load-plan <name-or-path>        # review, execute, or continue a plan
 hns init                            # bootstrap project context

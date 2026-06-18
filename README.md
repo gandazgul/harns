@@ -41,14 +41,15 @@ of why each change happened. Use a lighter harness when you only want a one-shot
 
 ```mermaid
 flowchart TD
-    U[User request] --> R[Router calls triage_report]
+    U[User request] --> R[Router Agent]
+    R --> TR[triage_report]
 
-    R -->|QUICK_FIX| O[Operator executes directly]
+    TR -->|QUICK_FIX| O[Operator executes directly]
     O --> TC1{task_completed?}
     TC1 -->|yes| QD[Done]
     TC1 -->|no| W1[Wait for completion signal]
 
-    R -->|FEATURE| P[Planner writes plans/*.md]
+    TR -->|FEATURE| P[Planner writes plans/*.md]
     P --> PR[Plannotator review]
     PR -->|feedback| P
     PR -->|approved| PA{Proceed now?}
@@ -151,6 +152,8 @@ hns router "fix the failing parser test"
 Interactive sessions are optimized for one topic at a time. A new session starts with Router, but after Router hands off
 to a specialist, that specialist remains active so follow-up messages keep the useful working context. Use `/new` to
 start a fresh session, or `/agent router` when you want the next message in the same session to go through triage again.
+Router is the default triage Agent, not a special runtime path; workflow steps are triggered by tools like
+`triage_report`, `plan_written`, and `task_completed`.
 
 ## Common Commands
 
@@ -158,7 +161,7 @@ start a fresh session, or `/agent router` when you want the next message in the 
 hns "your request"                  # route through triage
 hns router "your request"           # explicit router form
 hns agent                           # list available agents
-hns agent engineer "implement X"    # bypass router and talk to one agent
+hns agent engineer "implement X"    # start with Engineer instead of Router
 hns plans                           # list saved plans
 hns load-plan <name-or-path>        # review, execute, or continue a plan
 hns init                            # bootstrap project context
@@ -217,7 +220,7 @@ matter for name, model, description, and tools.
 
 | Agent      | Purpose                                                             |
 | ---------- | ------------------------------------------------------------------- |
-| Router     | Classifies incoming requests and calls `triage_report`.             |
+| Router     | Default triage Agent that calls `triage_report`.                    |
 | Operator   | Executes small `QUICK_FIX` tasks and operational work directly.     |
 | Planner    | Writes reviewable plans for `FEATURE` work.                         |
 | Architect  | Designs `PROJECT` plans without implementing code.                  |

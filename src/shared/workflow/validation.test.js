@@ -158,7 +158,7 @@ Deno.test("runValidationLoop restores requested final agent after validation", a
             runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
             getDiffText: () => Promise.resolve(""),
             recordPlanEvent: noOpRecordPlanEvent,
-            createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
             setActiveAgent: (/** @type {string} */ name) => switched.push(name),
         }),
     });

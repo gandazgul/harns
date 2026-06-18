@@ -28,7 +28,6 @@ export {
 // Slicer-facing helpers are re-exported from the workflow facade for callers that should not import submodules.
 export {
     createSlicerFinalizeTool,
-    createSlicerMessageHandler,
     ensureSlicerTasks,
     materializeSlicerDraft,
     runSlicerAgent,
