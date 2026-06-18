@@ -21,20 +21,27 @@ query
 **Triage**: Structured classification of a User Request by workflow type and complexity, usually performed by the
 Router. _Avoid_: Assessment, evaluation, analysis
 
-**Triage Report**: The structured output of Triage containing classification, complexity, summary, and affected paths.
+**Triage Report**: The structured output of Triage containing routing intent, complexity, summary, and affected paths.
 _Avoid_: Triage result, classification result
 
-**Classification**: Exactly one workflow category emitted by Triage: `QUICK_FIX`, `FEATURE`, or `PROJECT`. _Avoid_:
-Type, category, kind
+**Routing Intent**: The top-level intent emitted by Triage that decides which Agent receives the User Request:
+`INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT`. _Avoid_: Classification, route type, request kind, category
 
-**QUICK_FIX**: A Classification for a small direct change with no planning phase. _Avoid_: Hotfix, patch, bug fix
+**INQUIRY**: The fallback Routing Intent for non-materializing understanding work such as questions about repository
+state, architecture, Plans, history, trade-offs, or casual discussion. _Avoid_: Question, investigation, research task
 
-**FEATURE**: A Classification for new functionality that requires a reviewed implementation Plan. _Avoid_: Enhancement,
-change request
+**IDEATION**: A Routing Intent for non-materializing product exploration where the user wants Socratic interviewing,
+assumption stress-testing, current research, or PRD synthesis. _Avoid_: Inquiry, general help, planning workflow
 
-**PROJECT**: A Classification for Epic-scale work that is too large to execute directly. A PROJECT Plan is an Epic
-container that the Architect designs and the Slicer decomposes into independently executable child FEATURE Plans.
-_Avoid_: Initiative, refactor, task DAG
+**QUICK_FIX**: A Routing Intent for a small direct change with no planning phase and no Plan file. _Avoid_: Operational,
+hotfix, patch, bug fix
+
+**FEATURE**: A Routing Intent and Plan file type for new functionality that requires a reviewed implementation Plan.
+_Avoid_: Enhancement, change request
+
+**PROJECT**: A Routing Intent and Plan file type for Epic-scale work that is too large to execute directly. A PROJECT
+Plan is an Epic container that the Architect designs and the Slicer decomposes into independently executable child
+FEATURE Plans. _Avoid_: Initiative, refactor, task DAG
 
 **Complexity**: A `LOW`, `MEDIUM`, or `HIGH` rating assigned during Triage. _Avoid_: Difficulty, effort, severity
 
@@ -51,6 +58,9 @@ Request. _Avoid_: Blueprint, spec, design doc
 
 **Front Matter**: YAML metadata at the top of a Plan containing classification, complexity, status, timestamps, and
 origin. _Avoid_: Metadata, header, YAML block
+
+**Plan Classification**: The `classification` Front Matter field for Plan files, limited to Plan-producing work such as
+`FEATURE` and `PROJECT`. _Avoid_: Routing intent, request type, route category
 
 **Plan Status**: The lifecycle state of a Plan: `draft`, `feedback`, `approved`, `ready_for_decomposition`,
 `ready_for_work`, `in_progress`, `failed`, `implemented`, or `verified`. _Avoid_: Phase, stage
@@ -120,6 +130,13 @@ orchestrator, classifier, triager
 **Planner**: The planning Agent for `FEATURE` work. _Avoid_: Designer, strategist
 
 **Architect**: The planning Agent for `PROJECT` work. _Avoid_: Designer, lead
+
+**Guide**: The read-mostly Agent for `INQUIRY` work that answers questions directly and discusses ideas without
+materializing Plans, code, or documentation or running a Socratic interview. _Avoid_: Explainer, investigator,
+researcher
+
+**Ideator**: The strategic product and research Agent that conducts Socratic interviews to sharpen vague ideas before
+planning or implementation. _Avoid_: General helper, explainer, guide
 
 **Slicer**: The Agent that helps decompose an approved PROJECT Epic into child FEATURE Plans and can materialize those
 plans under `plans/<epic-name>/`. _Avoid_: Task planner, splitter
@@ -191,7 +208,8 @@ _Avoid_: Classification tool, triage result tool
 **Plan-Written Tool**: The `plan_written` Custom Tool that starts the Review Loop and returns the Plan outcome. _Avoid_:
 Review tool, approval tool
 
-**Switch-Agent Tool**: The `switch_agent` Custom Tool that hands a conversation to another Agent. _Avoid_: Handoff tool,
+**Return-to-Router Tool**: The `return_to_router` Custom Tool that lets a user-facing Agent hand an out-of-scope
+interactive conversation back to Router with a self-contained Triage prompt. _Avoid_: Handoff tool, switch-agent tool,
 agent router
 
 **User-Interview Tool**: The `user_interview` Custom Tool for structured clarification questions. _Avoid_: Question
