@@ -2,7 +2,11 @@ import { assertEquals, assertMatch } from "@std/assert";
 import { executeReturnToRouter, returnToRouterTool } from "../return-to-router.js";
 import { setActiveAgent } from "../../shared/interactive/chat-session.js";
 import { loadAgentDef } from "../../shared/session/agents.js";
-import { consumePendingSwitchHandoff, getPendingRootSwap } from "../../shared/session/session-state.js";
+import {
+    consumePendingSwitchHandoff,
+    getActiveOnMessage,
+    getPendingRootSwap,
+} from "../../shared/session/session-state.js";
 import { AGENTS } from "../../constants.js";
 
 /**
@@ -67,6 +71,30 @@ Deno.test("returnToRouterTool terminates the calling turn and records a Router h
     const handoff = consumePendingSwitchHandoff();
     assertEquals(handoff?.agentName, AGENTS.ROUTER);
     assertEquals(handoff?.reason, reason);
+});
+
+Deno.test("executeReturnToRouter installs the normal Router agent handler", async () => {
+    /** @type {import('../../shared/ui/types.js').UiAPI} */
+    const mockUiAPI = {
+        appendSystemMessage: () => {},
+        requestRender: () => {},
+        appendAgentMessageStart: () => ({ appendText: () => {} }),
+        promptSelect: () => Promise.resolve(null),
+        promptText: () => Promise.resolve(null),
+        showModelSelector: () => {},
+    };
+    const routerHandler = async () => {};
+
+    setActiveAgent(AGENTS.PLANNER, async () => {}, mockUiAPI);
+    consumePendingSwitchHandoff();
+
+    await executeReturnToRouter(
+        { reason: "The user wants you to triage this request from scratch." },
+        mockUiAPI,
+        { createAgentHandler: () => routerHandler },
+    );
+
+    assertEquals(getActiveOnMessage(), routerHandler);
 });
 
 Deno.test("returnToRouterTool queues Router's model on the pending root swap", async () => {

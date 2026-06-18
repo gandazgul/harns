@@ -22,7 +22,7 @@ Deno.test("dispatchPostTriage restores plan owner when FEATURE/PROJECT execution
     const source = await Deno.readTextFile(new URL("./orchestrator.js", import.meta.url));
     assertEquals(source.includes('executionDecision.kind === "stay_with_agent"'), true);
     assertEquals(
-        source.includes("setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);"),
+        source.includes("setActiveAgentImpl(agentName, createAgentHandlerImpl(agentName), uiAPI);"),
         true,
     );
 });
@@ -44,7 +44,7 @@ Deno.test("dispatchPostTriage skips workflow validation for completed QUICK_FIX"
         sessionManager: undefined,
         __deps: /** @type {any} */ ({
             applyPendingRootSwap: () => Promise.resolve(),
-            createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
             readLatestTaskCompletedOutcome: () => true,
             runRootTurn: () =>
                 Promise.resolve(
@@ -85,7 +85,7 @@ Deno.test("dispatchPostTriage warns when QUICK_FIX stops without task_completed"
         sessionManager: undefined,
         __deps: /** @type {any} */ ({
             applyPendingRootSwap: () => Promise.resolve(),
-            createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
             readLatestTaskCompletedOutcome: () => null,
             runRootTurn: () => Promise.resolve([]),
             setActiveAgent: () => {},
@@ -127,7 +127,7 @@ Deno.test("dispatchPostTriage keeps planning agent active on stay/save/halt deci
                 runPlanningAgent: () => Promise.resolve({ outcome: "feedback" }),
                 consumePendingSwitchHandoff: () => null,
                 decidePostPlanning: () => item.decision,
-                createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+                createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
                 setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
                 getConfiguredAgentModel: () => "test/model",
                 pushAgentInfo: () => {},
@@ -232,7 +232,7 @@ Deno.test("dispatchPostTriage restores PROJECT owner after incomplete execution"
             }),
             executePlan: () => Promise.resolve({ executionComplete: false }),
             decidePostExecution: () => ({ kind: "stay_with_agent", payload: { reason: "execution_incomplete" } }),
-            createDirectAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
             setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
         }),
     });
@@ -269,6 +269,27 @@ Deno.test("readLatestTriageOutcome returns the latest triage_report details", ()
         summary: "second",
         affectedPaths: ["b.js"],
     });
+});
+
+Deno.test("readLatestTriageOutcome ignores stale triage_report before fromIndex", () => {
+    const messages = [
+        /** @type {any} */ ({
+            role: "toolResult",
+            toolName: "triage_report",
+            details: {
+                classification: "FEATURE",
+                complexity: "MEDIUM",
+                summary: "old",
+                affectedPaths: ["old.js"],
+            },
+        }),
+        /** @type {any} */ ({
+            role: "assistant",
+            content: "no tool this turn",
+        }),
+    ];
+
+    assertEquals(readLatestTriageOutcome(messages, 1), null);
 });
 
 Deno.test("readLatestTriageOutcome returns null when no triage_report tool result", () => {

@@ -15,7 +15,7 @@ hns "fix the bug in the parser"
 hns router "fix the bug in the parser"
 ```
 
-Router classifies the request before work starts:
+Router is the default Agent for fresh triage. It calls `triage_report`, and that tool outcome starts the workflow:
 
 | Classification | Use when                                            | Typical path                                                                                        |
 | -------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -31,8 +31,8 @@ Start an interactive session with:
 hns
 ```
 
-A new interactive session starts with Router. After Router hands off to a specialist, that specialist remains the active
-root agent so follow-up messages stay in the same working context.
+A new interactive session starts with Router. After `triage_report` dispatches to a specialist, that specialist remains
+the active root agent so follow-up messages stay in the same working context.
 
 Use:
 
@@ -61,7 +61,7 @@ Inside the TUI:
 /agent engineer
 ```
 
-Direct agent usage bypasses Router. Use it when you intentionally do not want triage.
+Specific Agent usage bypasses the default Router prompt. Use it when you intentionally do not want fresh triage.
 
 User-selectable bundled agent definitions live in `src/agent-definitions/` and can be overridden by home or project
 definitions. Workflow-only pseudo-agents such as Slicer and Reviewer are loaded from workflow prompts and do not appear

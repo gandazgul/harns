@@ -160,7 +160,7 @@ Deno.test("runLoadPlanCommand approved plan proceed path", async () => {
                 return Promise.resolve(undefined);
             },
             recordPlanEvent: noOpRecordPlanEvent,
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -204,7 +204,7 @@ Deno.test("runLoadPlanCommand Epic with no children opens Slicer", async () => {
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -264,7 +264,7 @@ Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", as
                         },
                     },
                 ]),
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -315,7 +315,7 @@ Deno.test("runLoadPlanCommand Epic done-enough confirm records lifecycle event",
                     epicDoneEnoughSummary: args.details.epicDoneEnoughSummary,
                 });
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -364,7 +364,7 @@ Deno.test("runLoadPlanCommand Epic done-enough can be canceled", async () => {
                 recorded = true;
                 return Promise.resolve({});
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -413,7 +413,7 @@ Deno.test("runLoadPlanCommand verified done-enough Epic remains re-enterable", a
                         attrs: { classification: "FEATURE", status: "draft" },
                     },
                 ]),
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -451,7 +451,7 @@ Deno.test("runLoadPlanCommand verified done-enough Epic shows banner without chi
                     },
                 }),
             findPlansByParent: () => Promise.resolve([]),
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -504,7 +504,7 @@ Deno.test("runLoadPlanCommand Epic child selection can be canceled", async () =>
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -575,7 +575,7 @@ Deno.test("runLoadPlanCommand Epic child selection delegates to FEATURE load beh
                 executedPlanName = planName;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -624,7 +624,7 @@ Deno.test("runLoadPlanCommand child FEATURE with verified dependencies executes 
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -673,7 +673,7 @@ Deno.test("runLoadPlanCommand child FEATURE warns for unverified dependencies an
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -721,7 +721,7 @@ Deno.test("runLoadPlanCommand child FEATURE warns for missing dependencies", asy
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -770,7 +770,7 @@ Deno.test("runLoadPlanCommand child FEATURE dependency warning can be canceled",
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -828,7 +828,7 @@ Deno.test("runLoadPlanCommand warns and cancels execution when affected paths ch
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -886,7 +886,7 @@ Deno.test("runLoadPlanCommand proceeds after affected path warning confirmation"
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => () => Promise.resolve(),
+            createAgentHandler: () => () => Promise.resolve(),
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -928,7 +928,7 @@ Deno.test("runLoadPlanCommand validates completed execution against freshly load
                 return Promise.resolve();
             },
             recordPlanEvent: noOpRecordPlanEvent,
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -963,7 +963,7 @@ Deno.test("runLoadPlanCommand non-approved plan kicks off planning agent", async
                 lifecycleCalled = true;
                 return Promise.resolve({ outcome: "saved", planName: "plan-b" });
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             setActiveAgent: () => {},
             resetTuiState: () => {},
         }),
@@ -1038,7 +1038,7 @@ Deno.test("runLoadPlanCommand approved review approves directly via submitPlanFo
                 return Promise.resolve(undefined);
             },
             recordPlanEvent: noOpRecordPlanEvent,
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1093,7 +1093,7 @@ Deno.test("runLoadPlanCommand approved PROJECT review runs slicer before proceed
                 return Promise.resolve();
             },
             recordPlanEvent: noOpRecordPlanEvent,
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1158,7 +1158,7 @@ Deno.test("runLoadPlanCommand approved PROJECT Epic opens Slicer without executi
                 events.push({ event: args.event, currentStatus: args.currentStatus });
                 return Promise.resolve(/** @type {any} */ ({}));
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1202,7 +1202,7 @@ Deno.test("runLoadPlanCommand ready_for_decomposition PROJECT Epic does not exec
                 executed = true;
                 return Promise.resolve({ repairRequired: false, executionComplete: true });
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1212,7 +1212,7 @@ Deno.test("runLoadPlanCommand ready_for_decomposition PROJECT Epic does not exec
     assertEquals(messages.some((message) => message.includes("no child FEATURE plans")), true);
 });
 
-Deno.test("runLoadPlanCommand approved review proceed restores initial agent without transient operator switch", async () => {
+Deno.test("runLoadPlanCommand approved review proceed keeps plan owner without transient operator switch", async () => {
     const { uiAPI, selections } = makeUi();
     selections.push("review");
     /** @type {string[]} */
@@ -1243,13 +1243,13 @@ Deno.test("runLoadPlanCommand approved review proceed restores initial agent wit
             executePlan: () => Promise.resolve({ repairRequired: false, executionComplete: true }),
             runValidationLoop: () => Promise.resolve(),
             recordPlanEvent: noOpRecordPlanEvent,
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
         }),
     });
 
-    assertEquals(activeAgents, [AGENTS.ARCHITECT, AGENTS.ROUTER]);
+    assertEquals(activeAgents, [AGENTS.ARCHITECT, AGENTS.ARCHITECT]);
 });
 
 Deno.test("runLoadPlanCommand approved review kicks off planner on denial", async () => {
@@ -1280,7 +1280,7 @@ Deno.test("runLoadPlanCommand approved review kicks off planner on denial", asyn
                 plannerCalled = true;
                 return Promise.resolve({ outcome: "saved", planName: "plan-d2" });
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1321,7 +1321,7 @@ Deno.test("runLoadPlanCommand approved proceed with repair reroutes to planner",
                 repairRequest = opts.initialRequest;
                 return Promise.resolve({ outcome: "executed", planName: "plan-e" });
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1365,7 +1365,7 @@ Deno.test("runLoadPlanCommand ready_for_work plan proceed path executes", async 
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1409,7 +1409,7 @@ Deno.test("runLoadPlanCommand in_progress plan can continue from current worktre
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1460,7 +1460,7 @@ Deno.test("runLoadPlanCommand failed plan can reset baseline and start over", as
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1511,7 +1511,7 @@ Deno.test("runLoadPlanCommand refuses worktree reset when recorded recreate base
                 recreated = true;
                 return Promise.resolve(/** @type {any} */ ({}));
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1595,7 +1595,7 @@ Deno.test("runLoadPlanCommand recreates worktree reset from recorded base commit
                 executed = true;
                 return Promise.resolve(undefined);
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1633,7 +1633,7 @@ Deno.test("runLoadPlanCommand in_progress inspect reports failure and baseline d
                 }),
             getWorkflowDiff: (/** @type {string} */ _cwd, /** @type {string} */ baselineTree) =>
                 Promise.resolve(`diff for ${baselineTree}`),
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1677,7 +1677,7 @@ Deno.test("runLoadPlanCommand implemented plan retries validation", async () => 
                 clearActiveExecutionWorkflow();
                 return Promise.resolve();
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1728,7 +1728,7 @@ Deno.test("runLoadPlanCommand only offers manual merge for merge-conflict worktr
                     }),
                 findWorktreeById: () => Promise.resolve(null),
                 findWorktreeByPlanName: () => Promise.resolve(null),
-                createDirectAgentHandler: () => async () => {},
+                createAgentHandler: () => async () => {},
                 resetTuiState: () => {},
                 setActiveAgent: () => {},
             }),
@@ -1778,7 +1778,7 @@ Deno.test("runLoadPlanCommand refuses forced manual merge before validation-back
                 events.push(event.event);
                 return Promise.resolve(/** @type {any} */ ({}));
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1858,7 +1858,7 @@ Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recover
                     lifecycleEvent = args.event;
                     return Promise.resolve(/** @type {any} */ ({}));
                 },
-                createDirectAgentHandler: () => async () => {},
+                createAgentHandler: () => async () => {},
                 resetTuiState: () => {},
                 setActiveAgent: () => {},
             }),
@@ -1907,7 +1907,7 @@ Deno.test("runLoadPlanCommand verified plan review path records review_reopened"
                 lifecycleCalled = true;
                 return Promise.resolve({ outcome: "saved", planName: "plan-verified-review" });
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -1954,7 +1954,7 @@ Deno.test("runLoadPlanCommand verified plan cancel returns without changes", asy
                 lifecycleCalled = true;
                 return Promise.resolve({ outcome: "saved" });
             },
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             resetTuiState: () => {},
             setActiveAgent: () => {},
         }),
@@ -2004,7 +2004,7 @@ Deno.test("runLoadPlanCommand keeps planner active when lifecycle canceled", asy
                     },
                 }),
             runPlanningAgent: () => Promise.resolve({ outcome: "canceled" }),
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             setActiveAgent: (/** @type {string} */ name) => {
                 activeAgents.push(name);
             },
@@ -2040,7 +2040,7 @@ Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_
                     },
                 }),
             runPlanningAgent: () => Promise.resolve({ outcome: "no_call" }),
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             setActiveAgent: (/** @type {string} */ name) => activeAgents.push(name),
             resetTuiState: () => {},
         }),
@@ -2050,7 +2050,7 @@ Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_
     assertEquals(activeAgents.includes(AGENTS.ROUTER), false);
 });
 
-Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan", async () => {
+Deno.test("runLoadPlanCommand keeps planner active after lifecycle saves a plan from router flow", async () => {
     const { uiAPI } = makeUi();
     /** @type {string[]} */
     const restoredAgents = [];
@@ -2074,7 +2074,7 @@ Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan"
                     },
                 }),
             runPlanningAgent: () => Promise.resolve({ outcome: "saved", planName: "plan-g" }),
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             setActiveAgent: (
                 /** @type {string} */ name,
                 /** @type {unknown} */ _handler,
@@ -2087,7 +2087,8 @@ Deno.test("runLoadPlanCommand restores router flow after lifecycle saves a plan"
         }),
     });
 
-    assertEquals(restoredAgents.includes(AGENTS.ROUTER), true);
+    assertEquals(restoredAgents.includes(AGENTS.PLANNER), true);
+    assertEquals(restoredAgents.includes(AGENTS.ROUTER), false);
 });
 
 Deno.test("runLoadPlanCommand restores the initially active agent after lifecycle saves a plan", async () => {
@@ -2115,7 +2116,7 @@ Deno.test("runLoadPlanCommand restores the initially active agent after lifecycl
                     },
                 }),
             runPlanningAgent: () => Promise.resolve({ outcome: "saved", planName: "plan-j" }),
-            createDirectAgentHandler: () => async () => {},
+            createAgentHandler: () => async () => {},
             setActiveAgent: (
                 /** @type {string} */ name,
                 /** @type {unknown} */ _handler,

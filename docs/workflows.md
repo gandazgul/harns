@@ -22,7 +22,7 @@ A `FEATURE` creates a Markdown plan under `plans/` and sends it through review b
 
 Typical flow:
 
-1. Router classifies the request.
+1. An Agent, usually Router, emits a Triage Report through `triage_report`.
 2. Planner writes a plan.
 3. The user reviews it in Plannotator.
 4. On approval, Harns marks it ready for work.

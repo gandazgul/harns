@@ -47,7 +47,7 @@ Deno.test("runAgentsCommand chooses TUI handler when ui deps present", async () 
                     called = true;
                     model = agentModel;
                 },
-                createDirectAgentHandler: () => async () => {},
+                createAgentHandler: () => async () => {},
             }),
         }),
     );
@@ -118,7 +118,7 @@ Deno.test("runAgentsCommand CLI valid agent starts session", async () => {
                     Promise.resolve([
                         { name: "planner", displayName: "Planner", description: "plan", model: "m" },
                     ]),
-                createDirectAgentHandler: () => async () => {},
+                createAgentHandler: () => async () => {},
                 setActiveAgent: (
                     /** @type {string} */ name,
                     /** @type {unknown} */ _handler,

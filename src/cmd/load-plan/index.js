@@ -62,7 +62,7 @@ import {
 } from "../../shared/session/session-state.js";
 import { shouldCleanupMergedWorktrees as shouldCleanupMergedWorktreesFn } from "../../shared/settings.js";
 import { resetTuiState as resetTuiStateFn } from "../command-helpers.js";
-import { createDirectAgentHandler as createDirectAgentHandlerFn } from "../../shared/session/direct-agent.js";
+import { createAgentHandler as createAgentHandlerFn } from "../../shared/session/agent-handler.js";
 export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
 
 /**
@@ -86,7 +86,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof listCommitsTouchingPathsSinceFn} [listCommitsTouchingPathsSince]
  * @property {typeof restoreWorktreeTreeFn} [restoreWorktreeTree]
  * @property {typeof setActiveAgentFn} [setActiveAgent]
- * @property {typeof createDirectAgentHandlerFn} [createDirectAgentHandler]
+ * @property {typeof createAgentHandlerFn} [createAgentHandler]
  * @property {typeof resetTuiStateFn} [resetTuiState]
  * @property {typeof getRootAgentNameFn} [getRootAgentName]
  * @property {(cwd: string) => Promise<Array<{name: string, attrs: {classification: string, status: string}}>>} [listPlans]
@@ -116,15 +116,28 @@ function restorePreviousAgentFlow(uiAPI, agentName, deps = {}) {
     const {
         resetTuiState: resetTuiStateDep,
         setActiveAgent: setActiveAgentDep,
-        createDirectAgentHandler: createDirectAgentHandlerDep,
+        createAgentHandler: createAgentHandlerDep,
     } = deps;
 
     const resetTuiState = resetTuiStateDep || resetTuiStateFn;
     const setActiveAgent = setActiveAgentDep || setActiveAgentFn;
-    const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
+    const createAgentHandler = createAgentHandlerDep || createAgentHandlerFn;
+    const handler = createAgentHandler(agentName);
 
     resetTuiState(undefined, uiAPI, undefined);
-    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+    setActiveAgent(agentName, handler, uiAPI);
+}
+
+/**
+ * If a plan command was entered from Router, the plan owner should become the
+ * follow-up agent. Otherwise restore the specialist the user was already using.
+ *
+ * @param {string} initialAgentName
+ * @param {string} planAgentName
+ * @returns {string}
+ */
+function selectPlanFlowRestoreAgent(initialAgentName, planAgentName) {
+    return initialAgentName === AGENTS.ROUTER ? planAgentName : initialAgentName;
 }
 
 /**
@@ -549,7 +562,7 @@ async function prepareApprovedPlanForWork(plan, uiAPI, ensureSlicerTasks, record
  * @param {typeof loadPlanFn} opts.loadPlan
  * @param {typeof listCommitsTouchingPathsSinceFn} opts.listCommitsTouchingPathsSince
  * @param {typeof setActiveAgentFn} opts.setActiveAgent
- * @param {typeof createDirectAgentHandlerFn} opts.createDirectAgentHandler
+ * @param {typeof createAgentHandlerFn} opts.createAgentHandler
  * @returns {Promise<void>}
  */
 async function executeReadyPlanWithRepair({
@@ -564,7 +577,7 @@ async function executeReadyPlanWithRepair({
     loadPlan,
     listCommitsTouchingPathsSince,
     setActiveAgent,
-    createDirectAgentHandler,
+    createAgentHandler,
 }) {
     const MAX_REPAIR_ATTEMPTS = 2;
     let currentPlanName = plan.planName;
@@ -615,7 +628,7 @@ async function executeReadyPlanWithRepair({
             false,
             "Harns",
         );
-        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+        setActiveAgent(agentName, createAgentHandler(agentName), uiAPI);
         const repairOutcome = await runPlanningAgent({
             agentName,
             initialRequest: [
@@ -943,7 +956,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
  * @param {typeof removeWorktreeRegistryEntryFn} opts.removeWorktreeRegistryEntry
  * @param {typeof shouldCleanupMergedWorktreesFn} opts.shouldCleanupMergedWorktrees
  * @param {typeof setActiveAgentFn} opts.setActiveAgent
- * @param {typeof createDirectAgentHandlerFn} opts.createDirectAgentHandler
+ * @param {typeof createAgentHandlerFn} opts.createAgentHandler
  * @returns {Promise<"handled" | "review">}
  */
 async function handlePlanRecovery({
@@ -971,7 +984,7 @@ async function handlePlanRecovery({
     removeWorktreeRegistryEntry,
     shouldCleanupMergedWorktrees,
     setActiveAgent,
-    createDirectAgentHandler,
+    createAgentHandler,
 }) {
     let worktreeContext = await resolveRecoveryWorktree(plan, { findWorktreeById, findWorktreeByPlanName });
     while (true) {
@@ -1056,7 +1069,7 @@ async function handlePlanRecovery({
                 loadPlan,
                 listCommitsTouchingPathsSince,
                 setActiveAgent,
-                createDirectAgentHandler,
+                createAgentHandler,
             });
             return "handled";
         }
@@ -1138,7 +1151,7 @@ async function handlePlanRecovery({
                 loadPlan,
                 listCommitsTouchingPathsSince,
                 setActiveAgent,
-                createDirectAgentHandler,
+                createAgentHandler,
             });
             return "handled";
         }
@@ -1555,7 +1568,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         listCommitsTouchingPathsSince: listCommitsTouchingPathsSinceDep,
         restoreWorktreeTree: restoreWorktreeTreeDep,
         setActiveAgent: setActiveAgentDep,
-        createDirectAgentHandler: createDirectAgentHandlerDep,
+        createAgentHandler: createAgentHandlerDep,
         getRootAgentName: getRootAgentNameDep,
         listPlans: listPlansDep,
         findPlansByParent: findPlansByParentDep,
@@ -1592,7 +1605,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const listCommitsTouchingPathsSince = listCommitsTouchingPathsSinceDep || listCommitsTouchingPathsSinceFn;
     const restoreWorktreeTree = restoreWorktreeTreeDep || restoreWorktreeTreeFn;
     const setActiveAgent = setActiveAgentDep || setActiveAgentFn;
-    const createDirectAgentHandler = createDirectAgentHandlerDep || createDirectAgentHandlerFn;
+    const createAgentHandler = createAgentHandlerDep || createAgentHandlerFn;
     const getRootAgentName = getRootAgentNameDep || getRootAgentNameFn;
     const findPlansByParent = findPlansByParentDep || findPlansByParentFn;
     const resolveSiblingChildPlanDependencies = resolveSiblingChildPlanDependenciesDep ||
@@ -1670,6 +1683,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
 
     let skipRouterRestore = false;
     const initialAgentName = getRootAgentName() || AGENTS.ROUTER;
+    let restoreAgentName = initialAgentName;
 
     try {
         uiAPI.appendSystemMessage(`Loading plan: ${planArg}`, false, "Harns");
@@ -1684,8 +1698,10 @@ export async function runLoadPlanCommand(argv, options = {}) {
 
         const triageMeta = plan.attrs;
         const agentName = triageMeta.classification === "PROJECT" ? AGENTS.ARCHITECT : AGENTS.PLANNER;
+        const planFlowRestoreAgent = selectPlanFlowRestoreAgent(initialAgentName, agentName);
 
         if (["in_progress", "failed", "implemented"].includes(plan.attrs.status)) {
+            restoreAgentName = planFlowRestoreAgent;
             const result = await handlePlanRecovery({
                 plan,
                 agentName,
@@ -1711,7 +1727,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 removeWorktreeRegistryEntry,
                 shouldCleanupMergedWorktrees,
                 setActiveAgent,
-                createDirectAgentHandler,
+                createAgentHandler,
             });
             if (result === "handled") return;
         }
@@ -1797,6 +1813,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 if (!answer) return;
 
                 if (answer === "proceed") {
+                    restoreAgentName = planFlowRestoreAgent;
                     if (plan.attrs.status === "approved") {
                         const ready = await prepareApprovedPlanForWork(
                             plan,
@@ -1822,12 +1839,13 @@ export async function runLoadPlanCommand(argv, options = {}) {
                         loadPlan,
                         listCommitsTouchingPathsSince,
                         setActiveAgent,
-                        createDirectAgentHandler,
+                        createAgentHandler,
                     });
                     return;
                 }
 
                 if (answer === "review") {
+                    restoreAgentName = planFlowRestoreAgent;
                     // Re-opening for review: discard the slicer's tasks so the
                     // architect → slicer flow regenerates them against any revisions.
                     await stripTasksFromPlanFile(plan);
@@ -1842,7 +1860,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                         plan.attrs.status = "feedback";
                     }
 
-                    setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+                    setActiveAgent(agentName, createAgentHandler(agentName), uiAPI);
 
                     const reviewResult = await submitPlanForReview({
                         cwd: CWD,
@@ -1941,7 +1959,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
 
         // Not approved — kick off the planning agent. plan_written handles review/save/execute.
         uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
-        setActiveAgent(agentName, createDirectAgentHandler(agentName), uiAPI);
+        restoreAgentName = planFlowRestoreAgent;
+        setActiveAgent(agentName, createAgentHandler(agentName), uiAPI);
 
         const outcome = await runPlanningAgent({
             agentName,
@@ -1969,7 +1988,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         }
     } finally {
         if (!skipRouterRestore) {
-            restorePreviousAgentFlow(uiAPI, initialAgentName, deps);
+            restorePreviousAgentFlow(uiAPI, restoreAgentName, deps);
         }
     }
 }

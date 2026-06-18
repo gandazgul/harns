@@ -18,8 +18,8 @@ query
 
 ### Triage & Classification
 
-**Triage**: The Router's structured classification of a User Request by workflow type and complexity. _Avoid_:
-Assessment, evaluation, analysis
+**Triage**: Structured classification of a User Request by workflow type and complexity, usually performed by the
+Router. _Avoid_: Assessment, evaluation, analysis
 
 **Triage Report**: The structured output of Triage containing classification, complexity, summary, and affected paths.
 _Avoid_: Triage result, classification result
@@ -108,8 +108,8 @@ _Avoid_: Source, provenance
 **Agent**: A specialized LLM-powered role with a dedicated Agent Definition, model binding, and tool set. _Avoid_: Bot,
 assistant, model
 
-**Router**: The default triage Agent that classifies a User Request and identifies its Affected Paths. _Avoid_:
-Dispatcher, orchestrator, classifier, triager
+**Router**: The default Agent Definition prompted to perform Triage and emit a Triage Report. _Avoid_: Dispatcher,
+orchestrator, classifier, triager
 
 **Operator**: The execution Agent for `QUICK_FIX` work. _Avoid_: Executor, fixer, worker
 
@@ -140,10 +140,14 @@ _Avoid_: Agent name, file name
 **Agent Session**: One invocation of an Agent with merged Agent Definition data, bound tools, extensions, and message
 history. _Avoid_: Run, interaction, conversation
 
+**Agent Handler**: The runtime handler for the active Agent that runs one Agent Session turn, applies any explicit Agent
+Definition or workflow-scoped Custom Tools, and interprets workflow Custom Tool outcomes. _Avoid_: Agent-specific
+handler, special agent handler
+
 ### Execution & Tools
 
-**Workflow Orchestrator**: The runtime coordinator that consumes tool outcomes and starts the next Agent Session.
-_Avoid_: Router, dispatcher agent
+**Workflow Orchestrator**: The runtime coordinator that consumes workflow Custom Tool outcomes and starts the next Agent
+Session. _Avoid_: Router, dispatcher agent
 
 **Workflow Decision**: An ephemeral runtime instruction with `kind` and `payload` fields that tells workflow callers
 what to do next after interpreting tool outcomes, Agent Session results, or Plan Status; it does not change Plan Status
@@ -172,8 +176,8 @@ final summary
 
 **Custom Tool**: A Harns-defined tool registered alongside built-in pi tools. _Avoid_: Internal tool, Harns tool
 
-**Triage-Report Tool**: The `triage_report` Custom Tool that emits a Triage Report and ends the Router turn. _Avoid_:
-Classification tool, triage result tool
+**Triage-Report Tool**: The `triage_report` Custom Tool that emits a Triage Report and ends the current Agent turn.
+_Avoid_: Classification tool, triage result tool
 
 **Plan-Written Tool**: The `plan_written` Custom Tool that starts the Review Loop and returns the Plan outcome. _Avoid_:
 Review tool, approval tool
@@ -213,7 +217,10 @@ command definition, prompt command
 
 ## Relationships
 
-- A **User Request** is classified by the **Router** into exactly one **Triage Report**.
+- A **User Request** is classified by an Agent emitting exactly one **Triage Report** through the **Triage-Report
+  Tool**.
+- The **Router** is the default Agent used for fresh Triage, but the **Workflow Orchestrator** reacts to the
+  **Triage-Report Tool** outcome rather than to the **Router** Agent Name.
 - A **Triage Report** contains exactly one **Classification**, one **Complexity**, one summary, and zero or more
   **Affected Paths**.
 - A **QUICK_FIX** is executed directly by the **Operator** and creates no **Plan**.
@@ -243,6 +250,8 @@ command definition, prompt command
 - `QUICK_FIX` work ends when the **Operator** emits **Task Completion**; the **Operator** is responsible for any needed
   self-verification before that signal.
 - Every **Agent Session** loads exactly one **Agent Definition** after bundled, home, and local layers are merged.
+- Every active Agent turn uses the same **Agent Handler**; boot, `/agent`, `return_to_router`, and workflow restores
+  must not install Agent-specific handlers.
 - **Core Memories** are injected into every **Agent Session** by the **Mnemosyne** extension.
 - **Prompt Templates** become slash commands in the **TUI**.
 - A **Workflow Decision** may cause workflow code to record a **Plan Event**, but it is not itself durable state.
@@ -255,8 +264,8 @@ command definition, prompt command
 
 > **Dev:** "A user submitted the **User Request** 'add JWT auth to the API'. What happens first?"
 >
-> **Domain expert:** "The **Router** performs **Triage** and emits one **Triage Report** with a **Classification**,
-> **Complexity**, summary, and **Affected Paths**."
+> **Domain expert:** "The **Router** is the default Agent for fresh **Triage**. It emits one **Triage Report** with a
+> **Classification**, **Complexity**, summary, and **Affected Paths**."
 >
 > **Dev:** "Since that spans multiple files, is it a **FEATURE**?"
 >
@@ -275,8 +284,8 @@ command definition, prompt command
 
 ## Flagged ambiguities
 
-- "router", "dispatcher", and "orchestrator" were used interchangeably; resolved: **Router** classifies User Requests,
-  while **Workflow Orchestrator** coordinates post-triage Agent Sessions.
+- "router", "dispatcher", and "orchestrator" were used interchangeably; resolved: **Router** is an Agent, while the
+  **Workflow Orchestrator** coordinates workflow steps after Custom Tool outcomes.
 - "agent def" and "agent config" appeared as aliases; resolved: use **Agent Definition** for the markdown source, and
   use **Agent Name** or **Agent Display Name** only for identifiers.
 - "feedback" can mean any response in ordinary prose; resolved: **Feedback** means Plannotator annotations returned to a

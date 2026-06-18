@@ -291,7 +291,7 @@ export function shouldRunWorkflowValidation(triageMeta) {
  *   removeWorktreeRegistryEntry?: typeof removeWorktreeRegistryEntry,
  *   updateWorktreeRegistryEntry?: typeof updateWorktreeRegistryEntry,
  *   setActiveAgent?: typeof setActiveAgent,
- *   createDirectAgentHandler?: (agentName: string) => import('../session/types.js').AgentMessageHandler,
+ *   createAgentHandler?: (agentName: string) => import('../session/types.js').AgentMessageHandler,
  *   loadReviewerPrompt?: typeof loadReviewerPrompt,
  *   shouldCleanupMergedWorktrees?: typeof shouldCleanupMergedWorktrees,
  * }} [args.__deps] Test-only injection point.
@@ -610,8 +610,8 @@ export async function runValidationLoop({
     }
 
     if (finalAgentName) {
-        const createDirectAgentHandler = __deps?.createDirectAgentHandler ||
-            (await import("../session/direct-agent.js")).createDirectAgentHandler;
-        setActiveAgentImpl(finalAgentName, createDirectAgentHandler(finalAgentName), uiAPI);
+        const createAgentHandler = __deps?.createAgentHandler ||
+            (await import("../session/agent-handler.js")).createAgentHandler;
+        setActiveAgentImpl(finalAgentName, createAgentHandler(finalAgentName), uiAPI);
     }
 }

@@ -43,6 +43,10 @@ follow-up messages stay in the same topic and context.
 Use `/new` for a fresh routed session, or `/agent router` when you want the next message in the current session to go
 back through triage.
 
+Router is not a special session mode. It is the default Agent for fresh triage. Boot, `/agent`, workflow restores, and
+`return_to_router` all activate Agents through the same Agent Handler. Workflow progression is driven by Custom Tool
+outcomes such as `triage_report`, `plan_written`, and `task_completed`, not by special-casing a particular Agent name.
+
 ## Resume compaction
 
 When resuming a large session, Harns can offer to compact the session first. The threshold is controlled by
