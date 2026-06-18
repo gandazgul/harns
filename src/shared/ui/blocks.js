@@ -484,8 +484,9 @@ export class PromptSelectBlock {
      * @param {string} promptTitle
      * @param {import("@earendil-works/pi-tui").SelectItem[]} items
      * @param {string} [hint]
+     * @param {import("@earendil-works/pi-tui").SelectListLayoutOptions} [layout]
      */
-    constructor(promptTitle, items, hint = "") {
+    constructor(promptTitle, items, hint = "", layout = {}) {
         this.container = new Container();
 
         // Raw prompt + hint, re-baked into Text on invalidate so theme swaps recolor live.
@@ -503,7 +504,7 @@ export class PromptSelectBlock {
         this.container.addChild(this.searchBlock);
 
         // Body with SelectList
-        this.list = new SearchableSelectList(items, Math.min(items.length, 10), getSelectListTheme());
+        this.list = new SearchableSelectList(items, Math.min(items.length, 10), getSelectListTheme(), layout);
         this.bodyBlock = new StyledBlock("selectedBg", 2, 0, this.list);
         this.container.addChild(this.bodyBlock);
 

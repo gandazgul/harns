@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { runLoadPlanCommand } from "./index.js";
 import { resolveSiblingChildPlanDependencies, savePlan } from "../../plan-store.js";
 import { AGENTS } from "../../constants.js";
@@ -276,6 +276,139 @@ Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", as
     assertEquals(prompts[1].options[1].label, "epic-b/02-second [draft] — Second child");
 });
 
+Deno.test("runLoadPlanCommand Epic details include child FEATURE statuses", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("view", "cancel");
+
+    await runLoadPlanCommand(["epic-details"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "epic-details",
+                    path: "plans/epic-details.md",
+                    body: "## Context\nEpic context\n\n## Objective\nEpic objective",
+                    markdown: "## Context\nEpic context\n\n## Objective\nEpic objective",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_work",
+                    },
+                }),
+            findPlansByParent: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-details/01-first",
+                        path: "plans/epic-details/01-first.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "First child",
+                            affectedPaths: [],
+                            status: "ready_for_work",
+                        },
+                    },
+                    {
+                        name: "epic-details/02-second",
+                        path: "plans/epic-details/02-second.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Second child",
+                            affectedPaths: [],
+                            status: "verified",
+                        },
+                    },
+                ]),
+            createAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    const detailMessage = messages.find((message) => message.includes("Child FEATURE plans:")) || "";
+    assertStringIncludes(detailMessage, "Summary:        Epic summary");
+    assertStringIncludes(detailMessage, "Epic child progress:");
+    assertStringIncludes(detailMessage, "epic-details/01-first [ready_for_work] — First child");
+    assertStringIncludes(detailMessage, "epic-details/02-second [verified] — Second child");
+});
+
+Deno.test("runLoadPlanCommand Epic child selection can view FEATURE details", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("pick_child", "epic-detail-child/01-child", "view", "back", null, "cancel");
+    let executed = false;
+
+    await runLoadPlanCommand(["epic-detail-child"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ planName) => {
+                if (planName === "epic-detail-child/01-child") {
+                    return Promise.resolve({
+                        planName,
+                        path: "plans/epic-detail-child/01-child.md",
+                        body: "## Context\nChild context\n\n## Objective\nChild objective",
+                        markdown: "## Context\nChild context\n\n## Objective\nChild objective",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Child summary",
+                            affectedPaths: ["src/child.js"],
+                            status: "ready_for_work",
+                        },
+                    });
+                }
+                return Promise.resolve({
+                    planName: "epic-detail-child",
+                    path: "plans/epic-detail-child.md",
+                    body: "epic body",
+                    markdown: "epic body",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_work",
+                    },
+                });
+            },
+            findPlansByParent: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-detail-child/01-child",
+                        path: "plans/epic-detail-child/01-child.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Child summary",
+                            affectedPaths: [],
+                            status: "ready_for_work",
+                        },
+                    },
+                ]),
+            executePlan: () => {
+                executed = true;
+                return Promise.resolve(undefined);
+            },
+            createAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(executed, false);
+    const detailMessage = messages.find((message) => message.includes("FEATURE: epic-detail-child/01-child")) || "";
+    assertStringIncludes(detailMessage, "Child context");
+    assertStringIncludes(detailMessage, "Child objective");
+});
+
 Deno.test("runLoadPlanCommand Epic done-enough confirm records lifecycle event", async () => {
     const { uiAPI, selections, messages } = makeUi();
     selections.push("done_enough", "confirm", "cancel");
@@ -515,7 +648,7 @@ Deno.test("runLoadPlanCommand Epic child selection can be canceled", async () =>
 
 Deno.test("runLoadPlanCommand Epic child selection delegates to FEATURE load behavior", async () => {
     const { uiAPI, selections } = makeUi();
-    selections.push("pick_child", "epic-d/01-child", "proceed");
+    selections.push("pick_child", "epic-d/01-child", "load", "proceed");
     /** @type {string[]} */
     const resolved = [];
     let executedPlanName = "";

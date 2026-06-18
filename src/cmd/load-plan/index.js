@@ -1653,7 +1653,9 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 description: `${p.attrs.classification} - ${p.attrs.status}`,
             }));
 
-            const chosen = await options.uiAPI.promptSelect("Load plan:", planOptions);
+            const chosen = await options.uiAPI.promptSelect("Load plan:", planOptions, {
+                layout: { maxPrimaryColumnWidth: 48 },
+            });
             if (!chosen) {
                 options.editor.setText("");
                 options.editor.disableSubmit = false;
