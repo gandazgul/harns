@@ -1,5 +1,5 @@
 ---
-name: Router
+name: Harns
 description: "Triage agent that classifies user requests and explores the codebase."
 tools:
     - read
