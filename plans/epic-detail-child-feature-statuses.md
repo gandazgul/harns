@@ -3,7 +3,7 @@ classification: "FEATURE"
 complexity: "LOW"
 summary: "Improve the Epic detailed view in `load-plan` by listing child features and their statuses. Additionally, improve the navigation flow to allow users to view details of a specific child feature before loading it, or simply refine the \"Pick a child FEATURE plan\" flow to provide more context."
 affectedPaths:
-  - "src/cmd/load-plan/index.js"
+    - "src/cmd/load-plan/index.js"
 createdAt: "2026-06-18T00:00:00.000Z"
 updatedAt: "2026-06-18T16:45:49.550Z"
 status: "implemented"
@@ -11,6 +11,7 @@ origin: "internal"
 failureReason: "CI validation failed after 3 repair attempts."
 worktreeStatus: "validation_failed"
 ---
+
 # Improve Epic Details with Child FEATURE Statuses
 
 ## Context

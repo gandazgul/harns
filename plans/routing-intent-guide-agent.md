@@ -105,52 +105,30 @@ Operator, Planner, Architect, or Ideator. It must not have edit/write/materializ
 
 ## Reuse Opportunities
 
-Existing functions, modules, or patterns to reuse:
-
-- `src/shared/workflow/orchestrator.js::dispatchPostTriage` — existing dispatch point for Router tool results; extend
-  instead of adding a second router path.
-- `src/shared/workflow/orchestrator.js::readLatestTriageOutcome` — best place to normalize legacy `classification` tool
-  details to canonical `routingIntent`.
-- `src/tools/triage-report.js::createTriageReportTool` — evolve the existing custom tool instead of adding a new routing
-  tool.
+- `src/shared/workflow/orchestrator.js::dispatchPostTriage` — existing dispatch point for Router tool results.
+- `src/tools/triage-report.js` — existing Custom Tool should evolve instead of adding another tool.
 - `src/shared/session/session.js::resolveEffectiveSessionToolNames` — already gates `return_to_router` by runtime
-  option; no new tool-gating mechanism is needed.
-- Existing read/code/memory tool sets in `router.md` and `ideator.md` — useful basis for Guide’s tool list.
-- Existing `return_to_router` wording in `operator.md`, `engineer.md`, `tester.md`, and `doc-writer.md` — copy the
-  scope-boundary pattern for Planner/Architect/Ideator/Guide.
+  option.
+- Existing read-mostly tool sets in `router.md`/`ideator.md` — useful basis for Guide tools.
 
 ## Implementation Steps
 
-- [ ] Update constants: add `AGENTS.GUIDE = "guide"`; replace `CLASSIFICATIONS` with `ROUTING_INTENTS`; keep all changes
-      in pure JavaScript/JSDoc.
-- [ ] Update `createTriageReportTool` to define `routingIntent` with the five Routing Intent values, revise the tool
-      description to say Routing Intent, and normalize direct legacy `classification` params inside `execute`.
-- [ ] Ensure triage tool details are canonical: always include `routingIntent`; include `classification` only when the
-      routing intent is `FEATURE` or `PROJECT` (or when preserving a legacy `QUICK_FIX` test fixture is explicitly
-      necessary), so non-plan intents cannot leak into Plan Front Matter.
-- [ ] Update Router prompt instructions and examples so the Router calls
-      `triage_report({ routingIntent, complexity, summary, affectedPaths })` and never answers the user directly.
-- [ ] Add `src/agent-definitions/guide.md` with front matter name/description/tools and body instructions for
-      read-mostly answers, code/doc exploration, concise responses, no edits/materialization, and `return_to_router` on
-      actionable scope changes.
-- [ ] Add `return_to_router` to user-facing agents that currently lack it (`ideator.md`, `planner.md`, `architect.md`)
-      with concise “requests outside your scope” guidance. Do not add it to workflow-only Init, Slicer, or Reviewer
-      prompts.
-- [ ] Update `readLatestTriageOutcome` to return `null` only when neither `routingIntent` nor legacy `classification` is
-      present; normalize legacy details to `routingIntent` for downstream code.
-- [ ] Update `buildTriageBlock` to print `Routing Intent: ...`; for `FEATURE`/`PROJECT`, also print
-      `Plan Classification: ...` or keep a clearly plan-scoped classification line for Planner/Architect compatibility.
-- [ ] Update `dispatchPostTriage` to branch by normalized routing intent:
-  - [ ] `INQUIRY`: set active Agent to Guide, apply pending root swap, run one root turn with the decorated request, and
-        return without checking `task_completed` or validation.
-  - [ ] `IDEATION`: set active Agent to Ideator, apply pending root swap, run one root turn with the decorated request,
-        and return without checking `task_completed` or validation.
-  - [ ] `QUICK_FIX`: keep Operator dispatch and `task_completed` warning behavior unchanged.
-  - [ ] `FEATURE`/`PROJECT`: keep planning/approval/execution/validation behavior unchanged, passing plan-compatible
-        triage metadata to `runPlanningAgent`, `executePlan`, and validation.
-- [ ] Add a Guide attention nudge in `src/shared/session/agents.js` and update the scheduled nudge test if required.
-- [ ] Update tests for triage schema/execution, orchestrator dispatch, legacy normalization, Guide tool policy, and
-      attention nudges.
+- [ ] Add `AGENTS.GUIDE = "guide"` and a bundled `src/agent-definitions/guide.md` with read/code/doc/memory tools plus
+      `return_to_router`; no edit/write/multi_file_edit/task_completed/plan_written.
+- [ ] Change triage constants/tool schema to use `routingIntent` with the five values; keep compatibility for existing
+      `classification` reads where low-risk.
+- [ ] Update Router prompt: `INQUIRY` for direct questions/general help, `IDEATION` only for explicit ideation signals,
+      `QUICK_FIX` for small materializing work, `FEATURE`/`PROJECT` for Plan-producing work.
+- [ ] Update `dispatchPostTriage` to route `INQUIRY -> Guide` and `IDEATION -> Ideator` without expecting
+      `task_completed`, Plan creation, execution, or validation.
+- [ ] Keep `QUICK_FIX -> Operator` behavior unchanged, including `task_completed` expectation and no workflow
+      validation.
+- [ ] Keep `FEATURE -> Planner` and `PROJECT -> Architect` behavior unchanged except for consuming `routingIntent`
+      instead of `classification` in triage metadata.
+- [ ] Add/normalize `return_to_router` in user-facing Agent Definitions with concise scope-boundary instructions; do not
+      add it to Init, Slicer, or Reviewer workflow prompts.
+- [ ] Update tests for triage schema, dispatch routing, Guide tool policy, and backward-compatible legacy
+      `classification` handling if retained.
 
 ## Verification Plan
 
@@ -158,24 +136,16 @@ Existing functions, modules, or patterns to reuse:
 - Manual: ask Router “where is model routing configured?” and confirm it routes to Guide, answers directly, and does not
   call `task_completed`.
 - Manual: ask Router “grill me on adding a new provider” and confirm it routes to Ideator.
-- Manual: ask Router for a small edit and confirm `QUICK_FIX -> Operator` still works and still expects
-  `task_completed`.
+- Manual: ask Router for a small edit and confirm `QUICK_FIX -> Operator` still works.
 - Manual: ask Router for a plan-sized feature and confirm `FEATURE -> Planner` still writes Plan Front Matter with
   `classification: FEATURE`.
-- Manual: from Guide, ask for an actual code change and confirm Guide uses `return_to_router` with a self-contained
-  handoff rather than editing.
 
 ## Edge Cases & Considerations
 
-- Backward compatibility matters for existing tests/session tool results that still contain `classification`; normalize
-  them at the boundary rather than keeping routing code on the old field.
-- Avoid creating a second user-facing Classification concept. `routingIntent` is the route; Plan Front Matter
-  `classification` is only plan metadata.
-- Guide should prefer direct helpful answers for `INQUIRY`, but it should not silently implement or create docs/plans
-  when a conversation becomes actionable.
+- Avoid letting `INQUIRY` or `IDEATION` leak into Plan Front Matter `classification`.
+- Guide should not silently implement when a conversation becomes actionable; it should call `return_to_router` with a
+  self-contained handoff.
 - Router should prefer Guide over Ideator unless the user explicitly asks for ideation, grilling, research, option
-  analysis, current external facts, or PRD synthesis.
-- Ideator may update small durable docs such as `CONTEXT.md`/ADRs during its interview loop, but Router should not send
-  ordinary “where/how does this work?” questions there.
-- Adding `return_to_router` to agent front matter is safe because `resolveEffectiveSessionToolNames` already hides it
-  unless the session allows Router returns.
+  analysis, or PRD synthesis.
+- Existing tests and code may still refer to `classification`; either migrate carefully or support legacy reads during
+  transition.
