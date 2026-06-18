@@ -1,11 +1,10 @@
 /**
  * @module shared/workflow/orchestrator
- * Session-level orchestrator for the triage flow.
+ * Workflow Orchestrator for Triage outcomes.
  *
- * New interactive sessions start with the router agent. When the router calls
- * `triage_report`, the tool terminates the router's turn and returns the
- * classification. This orchestrator wakes up at that point, reads the outcome,
- * and dispatches the next agent:
+ * When any active Agent calls `triage_report`, the tool terminates that Agent's
+ * turn and returns a Triage Report. The active Agent handler consumes the tool
+ * outcome and dispatches the next Agent:
  *
  * QUICK_FIX → Operator
  * FEATURE   → Planner   → on `approved_execute`, runs `executePlan`
@@ -24,10 +23,9 @@
 import { AGENTS, CWD } from "../../constants.js";
 import { ensurePlansDir, loadPlan } from "../../plan-store.js";
 import { applyPendingRootSwap, setActiveAgent } from "../interactive/chat-session.js";
-import { createDirectAgentHandler } from "../session/direct-agent.js";
-import { runAgentSession, runRootTurn } from "../session/session.js";
+import { runRootTurn } from "../session/session.js";
 import { getAgentDisplayName } from "../session/agents.js";
-import { consumePendingSwitchHandoff, getRootAgentName } from "../session/session-state.js";
+import { consumePendingSwitchHandoff } from "../session/session-state.js";
 import { decidePostExecution, decidePostPlanning } from "./decisions.js";
 import { executePlan, readLatestTaskCompletedOutcome, runPlanningAgent } from "./workflow.js";
 import { runValidationLoop, shouldRunWorkflowValidation } from "./validation.js";
@@ -46,10 +44,12 @@ export { runLocalCI, runValidationLoop } from "./validation.js";
  * Read the latest triage_report tool result's details from a message stream.
  *
  * @param {import('@earendil-works/pi-agent-core').AgentMessage[]} messages
+ * @param {number} [fromIndex]
  * @returns {TriageOutcome | null}
  */
-export function readLatestTriageOutcome(messages) {
-    for (let i = messages.length - 1; i >= 0; i--) {
+export function readLatestTriageOutcome(messages, fromIndex) {
+    const start = fromIndex != null ? fromIndex : 0;
+    for (let i = messages.length - 1; i >= start; i--) {
         const msg = messages[i];
         if (
             msg && "role" in msg && msg.role === "toolResult" &&
@@ -80,7 +80,7 @@ function buildTriageBlock(triage) {
 }
 
 /**
- * Dispatch the next agent based on the router's triage classification, then
+ * Dispatch the next Agent based on a Triage Report's Classification, then
  * (for FEATURE/PROJECT) execute the approved plan.
  *
  * @param {Object} args
@@ -91,7 +91,7 @@ function buildTriageBlock(triage) {
  * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} args.sessionManager
  * @param {{
  *   applyPendingRootSwap?: typeof applyPendingRootSwap,
- *   createDirectAgentHandler?: typeof createDirectAgentHandler,
+ *   createAgentHandler?: (agentName: string) => import('../session/types.js').AgentMessageHandler,
  *   readLatestTaskCompletedOutcome?: typeof readLatestTaskCompletedOutcome,
  *   decidePostPlanning?: typeof decidePostPlanning,
  *   decidePostExecution?: typeof decidePostExecution,
@@ -112,7 +112,8 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
     const triageBlock = buildTriageBlock(triage);
     const decoratedRequest = ["## User Request", userRequest, "", triageBlock].join("\n");
     const applyPendingRootSwapImpl = __deps?.applyPendingRootSwap || applyPendingRootSwap;
-    const createDirectAgentHandlerImpl = __deps?.createDirectAgentHandler || createDirectAgentHandler;
+    const createAgentHandlerImpl = __deps?.createAgentHandler ||
+        (await import("../session/agent-handler.js")).createAgentHandler;
     const runValidationLoopImpl = __deps?.runValidationLoop || runValidationLoop;
     const decidePostPlanningImpl = __deps?.decidePostPlanning || decidePostPlanning;
     const decidePostExecutionImpl = __deps?.decidePostExecution || decidePostExecution;
@@ -124,7 +125,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         const readLatestTaskCompletedOutcomeImpl = __deps?.readLatestTaskCompletedOutcome ||
             readLatestTaskCompletedOutcome;
 
-        setActiveAgentImpl(AGENTS.OPERATOR, createDirectAgentHandlerImpl(AGENTS.OPERATOR), uiAPI);
+        setActiveAgentImpl(AGENTS.OPERATOR, createAgentHandlerImpl(AGENTS.OPERATOR), uiAPI);
         await applyPendingRootSwapImpl(uiAPI);
 
         const messages = await runRootTurnImpl({
@@ -171,13 +172,13 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         });
 
         if (decision.kind === "stay_with_agent" || decision.kind === "save_plan") {
-            setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);
+            setActiveAgentImpl(agentName, createAgentHandlerImpl(agentName), uiAPI);
             return;
         }
 
         if (decision.kind !== "execute_plan") {
             uiAPI.appendSystemMessage(`Workflow halted: ${String(decision.payload.reason || "unknown reason")}`);
-            setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);
+            setActiveAgentImpl(agentName, createAgentHandlerImpl(agentName), uiAPI);
             return;
         }
 
@@ -210,39 +211,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
                 });
             }
         } else if (executionDecision.kind === "stay_with_agent") {
-            setActiveAgentImpl(agentName, createDirectAgentHandlerImpl(agentName), uiAPI);
+            setActiveAgentImpl(agentName, createAgentHandlerImpl(agentName), uiAPI);
         }
     }
-}
-
-/**
- * Build the onMessage handler used as the active agent at the start of a
- * chat session. Runs the router agent, reads its triage outcome, and
- * dispatches the next agent.
- *
- * @returns {import('../session/types.js').AgentMessageHandler}
- */
-export function createRouterOrchestratorHandler() {
-    return async (userRequest, images, uiAPI, sessionManager) => {
-        if (!uiAPI) throw new Error("router orchestrator handler: uiAPI is required");
-
-        // Use the live root AgentSession when the router is already established as root
-        // (the normal startup case). Fallback to transient for tests/edge cases where the
-        // root was not pre-built.
-        const useRoot = getRootAgentName() === AGENTS.ROUTER;
-        const messages = useRoot
-            ? await runRootTurn({ agentName: AGENTS.ROUTER, userRequest, images, uiAPI })
-            : await runAgentSession({
-                agentName: AGENTS.ROUTER,
-                userRequest,
-                images,
-                uiAPI,
-                sessionManager,
-            });
-
-        const triage = readLatestTriageOutcome(messages);
-        if (!triage) return;
-
-        await dispatchPostTriage({ triage, userRequest, images, uiAPI, sessionManager });
-    };
 }

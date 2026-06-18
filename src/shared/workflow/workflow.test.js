@@ -2,7 +2,6 @@ import { assertEquals, assertMatch, assertStringIncludes, assertThrows } from "@
 import {
     buildSlicerRequest,
     createSlicerFinalizeTool,
-    createSlicerMessageHandler,
     ensureSlicerTasks,
     executePlan,
     executeProjectTasks,
@@ -881,31 +880,6 @@ Deno.test("runSlicerAgent returns ok=true when session resolves", async () => {
     assertEquals(loadedPaths, ["/tmp/bundled-agent-definitions/workflow-prompts/slicer-prompt.md:slicer"]);
     assertEquals(captured.agentName, "slicer");
     assertStringIncludes(captured.userRequest, "my-plan");
-});
-
-Deno.test("createSlicerMessageHandler preserves Slicer-only custom tools on follow-up turns", async () => {
-    /** @type {any} */
-    let captured = null;
-    const handler = createSlicerMessageHandler("epic-a", {
-        ensureBundledAgentDefFile: (relativePath) => Promise.resolve(`/tmp/${relativePath}`),
-        loadAgentDefFromPath: () => Promise.resolve(/** @type {any} */ ({ displayName: "Slicer" })),
-        createSlicerDraftTool: () => /** @type {any} */ ({ name: "slicer_write_feature_drafts" }),
-        createSlicerFinalizeTool: () => /** @type {any} */ ({ name: "slicer_finalize_decomposition" }),
-        runRootTurn: (opts) => {
-            captured = opts;
-            return Promise.resolve([]);
-        },
-    });
-
-    await handler("write the drafts", [], noopUiAPI, /** @type {any} */ ({ id: "root-session" }));
-
-    assertEquals(captured.agentName, "slicer");
-    assertEquals(captured.sessionManager, { id: "root-session" });
-    assertEquals(captured.allowReturnToRouter, false);
-    assertEquals(captured.customTools.map((/** @type {{ name: string }} */ tool) => tool.name), [
-        "slicer_write_feature_drafts",
-        "slicer_finalize_decomposition",
-    ]);
 });
 
 Deno.test("runSlicerAgent surfaces session errors as { ok:false, error }", async () => {
