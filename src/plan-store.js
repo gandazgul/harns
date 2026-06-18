@@ -169,6 +169,8 @@ const KNOWN_FRONT_MATTER_KEYS = new Set([
     "worktreeStatus",
 ]);
 
+const HIDDEN_PLAN_DIRS = new Set(["archived"]);
+
 /**
  * Escape a scalar for YAML double-quoted style.
  * @param {unknown} value
@@ -741,6 +743,7 @@ async function collectPlans(dir, prefix, results) {
     for await (const entry of Deno.readDir(dir)) {
         const entryPath = join(dir, entry.name);
         if (entry.isDirectory) {
+            if (prefix.length === 0 && HIDDEN_PLAN_DIRS.has(entry.name)) continue;
             await collectPlans(entryPath, [...prefix, entry.name], results);
             continue;
         }
