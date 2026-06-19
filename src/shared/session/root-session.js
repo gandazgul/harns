@@ -36,6 +36,17 @@ export function getHarnsSessionDir(cwd) {
 }
 
 /**
+ * Resolve the image-artifact directory for a persisted root session.
+ *
+ * @param {string} cwd
+ * @param {string} sessionId
+ * @returns {string}
+ */
+export function getHarnsSessionImageDir(cwd, sessionId) {
+    return join(getHarnsSessionDir(cwd), `${sessionId}_images`);
+}
+
+/**
  * Ensure a directory exists.
  *
  * @param {string} dir

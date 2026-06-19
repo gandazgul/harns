@@ -53,6 +53,7 @@ function isEditorEmpty(editor) {
  * @property {() => boolean} isCtrlCPendingExit
  * @property {() => void} [toggleStartupHelp]
  * @property {() => void} cycleThinkingLevel
+ * @property {(image: import('../session/types.js').ImageAttachment) => Promise<import('../session/types.js').ImageAttachment | null>} [handleImagePaste]
  * @property {() => void} [clearPendingSteeringMessages]  Callback to clear pending steering messages on cancel
  */
 
@@ -80,6 +81,7 @@ export function installKeybindings(ctx) {
         isCtrlCPendingExit,
         toggleStartupHelp,
         cycleThinkingLevel,
+        handleImagePaste,
         clearPendingSteeringMessages,
     } = ctx;
 
@@ -137,11 +139,21 @@ export function installKeybindings(ctx) {
         if (matchesKey(data, Key.ctrl("v"))) {
             const img = await readClipboardImage();
             if (img) {
-                pastedImages.push(img);
-                previewImages.addChild(
-                    new Text(theme.fg("dim", `[Attached image: ${img.mimeType}]`)),
+                const attachment = /** @type {import('../session/types.js').ImageAttachment | null} */ (
+                    handleImagePaste ? await handleImagePaste(img) : img
                 );
-                tui.requestRender();
+                if (attachment) {
+                    pastedImages.push(attachment);
+                    previewImages.addChild(
+                        new Text(
+                            theme.fg(
+                                "dim",
+                                `[Attached image: ${attachment.ref ? `${attachment.ref} ` : ""}${attachment.mimeType}]`,
+                            ),
+                        ),
+                    );
+                    tui.requestRender();
+                }
             }
             return;
         }
