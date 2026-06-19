@@ -70,7 +70,14 @@ import {
     resolveAgentDefsDir as _resolveAgentDefsDir,
     resolveSessionToolNames,
 } from "./agents.js";
-import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsManager } from "../settings.js";
+import {
+    getCustomSetting,
+    getMergedCustomSetting,
+    getRtkExcludedBinaries,
+    getSettingsDir,
+    getSettingsManager,
+} from "../settings.js";
+import { modelSupportsImageInput, prepareImagesForModel, resolveVisionFallbackModel } from "./image-attachments.js";
 import { recordActiveAgent } from "./active-agent-session.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
@@ -798,8 +805,8 @@ async function resolveModel(modelOverride, agentDef, agentName, modelRegistry = 
 
     throw new Error(
         `No configured model found${agentName ? ` for agent "${agentName}"` : ""}. Select one with /model, ` +
-        "or configure activeModelPreset/modelPresets, agents.<agent>.model, defaultProvider/defaultModel, " +
-        "or an agent definition model.",
+            "or configure activeModelPreset/modelPresets, agents.<agent>.model, defaultProvider/defaultModel, " +
+            "or an agent definition model.",
     );
 }
 
@@ -990,7 +997,7 @@ export async function buildAgentSession({
             ...returnToRouterTool,
             execute(_toolCallId, params, _signal, _onUpdate, _context) {
                 return executeReturnToRouter(
-                    /** @type {{ reason: string }} */(params),
+                    /** @type {{ reason: string }} */ (params),
                     uiAPI,
                 );
             },
@@ -1102,11 +1109,11 @@ export async function buildAgentSession({
     }
     if (resolvedThinkingLevel) {
         session.setThinkingLevel(
-            /** @type {import('@earendil-works/pi-agent-core').ThinkingLevel} */(resolvedThinkingLevel),
+            /** @type {import('@earendil-works/pi-agent-core').ThinkingLevel} */ (resolvedThinkingLevel),
         );
         // Keep the session-state footer in sync with what the AgentSession is using
         setThinkingLevel(
-            /** @type {"off"|"minimal"|"low"|"medium"|"high"|"xhigh"} */(resolvedThinkingLevel),
+            /** @type {"off"|"minimal"|"low"|"medium"|"high"|"xhigh"} */ (resolvedThinkingLevel),
         );
     }
 
@@ -1316,7 +1323,8 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
             case "auto_retry_start": {
                 if (uiAPI) {
                     uiAPI.appendSystemMessage(
-                        `[Retry ${event.attempt}/${event.maxAttempts}] ${sanitizeApiErrorMessage(event.errorMessage)
+                        `[Retry ${event.attempt}/${event.maxAttempts}] ${
+                            sanitizeApiErrorMessage(event.errorMessage)
                         } — waiting ${event.delayMs}ms...`,
                     );
                 }
@@ -1980,8 +1988,9 @@ export async function expandSkillCommand(skillName, additionalInstructions) {
         body = body.trim();
 
         // Build the XML block (matches Pi's format exactly)
-        const skillBlock = `<skill name="${skill.name}" location="${skill.path}">\nReferences are relative to ${skill.path.replace(/\/SKILL\.md$/, "")
-            }.\n\n${body}\n</skill>`;
+        const skillBlock = `<skill name="${skill.name}" location="${skill.path}">\nReferences are relative to ${
+            skill.path.replace(/\/SKILL\.md$/, "")
+        }.\n\n${body}\n</skill>`;
 
         // Prepend an invocation header so the LLM understands this is an active command,
         // not just a passive skill reference.
@@ -2045,8 +2054,8 @@ function getFilePathForTool(toolName, args) {
             const path = typeof args.path === "string"
                 ? args.path
                 : typeof args.file_path === "string"
-                    ? args.file_path
-                    : null;
+                ? args.file_path
+                : null;
             return path;
         }
         case "multi_file_edit": {
@@ -2056,8 +2065,8 @@ function getFilePathForTool(toolName, args) {
                     typeof edit.path === "string"
                         ? edit.path
                         : typeof edit.file_path === "string"
-                            ? edit.file_path
-                            : null
+                        ? edit.file_path
+                        : null
                 )
                 .filter(Boolean);
             const uniquePaths = [...new Set(paths)];
