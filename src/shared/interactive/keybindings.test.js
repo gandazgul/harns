@@ -1,10 +1,13 @@
 import { assertEquals } from "@std/assert";
+import { __setClipboardDepsForTest } from "../clipboard.js";
+import { initHarnsTheme } from "../ui/theme.js";
 import { installKeybindings } from "./keybindings.js";
 
 const RAW_KEY = {
     escape: "\x1b",
     ctrlC: "\x03",
     ctrlO: "\x0f",
+    ctrlV: "\x16",
     shiftEnter: "\x1b[13;2u",
     altEnter: "\x1b[13;3u",
     backspace: "\x7f",
@@ -223,4 +226,89 @@ Deno.test("installKeybindings checks editor emptiness through public getText", a
     assertEquals(ctx.previewImages.children, []);
     assertEquals(ctx.stats.dequeues, 1);
     assertEquals(ctx.stats.originalInputs, []);
+});
+
+Deno.test("installKeybindings delegates pasted images through handleImagePaste", async () => {
+    initHarnsTheme();
+    const enc = new TextEncoder();
+    const outputs = [
+        { success: true, stdout: "image\n" },
+        { success: true, stdout: "" },
+        { success: true, stdout: "YQ==\n" },
+    ];
+    class FakeCommand {
+        /** @param {string} _command @param {{ args?: string[] }} _opts */
+        constructor(_command, _opts) {}
+        output() {
+            const next = outputs.shift();
+            if (!next) throw new Error("missing fake output");
+            return Promise.resolve({ success: next.success, stdout: enc.encode(next.stdout), stderr: enc.encode("") });
+        }
+    }
+    __setClipboardDepsForTest(
+        /** @type {any} */ ({
+            os: "darwin",
+            Command: FakeCommand,
+            makeTempFile: () => Promise.resolve("/tmp/harns-clip.png"),
+            remove: () => Promise.resolve(),
+        }),
+    );
+    try {
+        /** @type {any[]} */
+        const handled = [];
+        const ctx = makeContext({
+            handleImagePaste: (/** @type {any} */ image) => {
+                handled.push(image);
+                return Promise.resolve({ ...image, ref: "attachment:abc" });
+            },
+        });
+        installKeybindings(ctx);
+
+        await ctx.editor.handleInput(RAW_KEY.ctrlV);
+
+        assertEquals(handled, [{ base64: "YQ==", mimeType: "image/png" }]);
+        assertEquals(ctx.pastedImages, [{ base64: "YQ==", mimeType: "image/png", ref: "attachment:abc" }]);
+        assertEquals(ctx.previewImages.children.length, 1);
+        assertEquals(ctx.stats.renderCount, 1);
+    } finally {
+        __setClipboardDepsForTest();
+    }
+});
+
+Deno.test("installKeybindings does not mutate previews when handleImagePaste blocks", async () => {
+    const enc = new TextEncoder();
+    const outputs = [
+        { success: true, stdout: "image\n" },
+        { success: true, stdout: "" },
+        { success: true, stdout: "YQ==\n" },
+    ];
+    class FakeCommand {
+        /** @param {string} _command @param {{ args?: string[] }} _opts */
+        constructor(_command, _opts) {}
+        output() {
+            const next = outputs.shift();
+            if (!next) throw new Error("missing fake output");
+            return Promise.resolve({ success: next.success, stdout: enc.encode(next.stdout), stderr: enc.encode("") });
+        }
+    }
+    __setClipboardDepsForTest(
+        /** @type {any} */ ({
+            os: "darwin",
+            Command: FakeCommand,
+            makeTempFile: () => Promise.resolve("/tmp/harns-clip.png"),
+            remove: () => Promise.resolve(),
+        }),
+    );
+    try {
+        const ctx = makeContext({ handleImagePaste: () => Promise.resolve(null) });
+        installKeybindings(ctx);
+
+        await ctx.editor.handleInput(RAW_KEY.ctrlV);
+
+        assertEquals(ctx.pastedImages, []);
+        assertEquals(ctx.previewImages.children, []);
+        assertEquals(ctx.stats.renderCount, 0);
+    } finally {
+        __setClipboardDepsForTest();
+    }
 });
