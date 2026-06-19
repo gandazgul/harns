@@ -11,7 +11,7 @@
  */
 
 /**
- * @typedef {{ base64: string, mimeType: string }} ImageAttachment
+ * @typedef {{ base64: string, mimeType: string, ref?: string, path?: string }} ImageAttachment
  */
 
 /**
