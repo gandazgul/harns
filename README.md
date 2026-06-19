@@ -17,8 +17,8 @@ It is built on top of [Pi](https://pi.dev), with a Deno CLI, an interactive TUI,
 Most coding harnesses optimize for getting an agent typing quickly. Harns optimizes for getting the right kind of work
 done with the right amount of ceremony.
 
-- **Triage is explicit.** Every routed request becomes `QUICK_FIX`, `FEATURE`, or `PROJECT`, with complexity and
-  affected paths recorded before execution.
+- **Triage is explicit.** Every routed request gets a routing intent: `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or
+  `PROJECT`. Implementation work records complexity and affected paths before execution.
 - **Planning is a product surface, not a prompt vibe.** Non-trivial work becomes a markdown plan in `plans/`, goes
   through Plannotator review, and can be approved, revised, saved, re-opened, or executed later.
 - **Architecture and decomposition are separate jobs.** Large `PROJECT` work is designed by the Architect as an Epic,
@@ -33,7 +33,7 @@ done with the right amount of ceremony.
   validation command and then a semantic review loop against the original plan. PROJECT Epics validate through their
   child FEATURE plans.
 - **Context is durable.** Sessions live under `~/.hns/sessions/`, settings under `~/.hns/settings.json`, plans in the
-  repo, and Mnemosyne keeps recallable project and global memory.
+  repo, and [Mnemosyne](https://github.com/gandazgul/mnemosyne) keeps recallable project and global memory.
 
 Use Harns when you want an agent workflow that leaves durable plans, review points, validation notes, and a clear record
 of why each change happened. Use a lighter harness when you only want a one-shot chat wrapper around edit tools.
@@ -44,6 +44,13 @@ of why each change happened. Use a lighter harness when you only want a one-shot
 graph TD
     U[User request] --> R[Router Agent]
     R --> TR[Triage report]
+
+    TR -->|inquiry| G[Guide answers or explains]
+    G --> GD[Done]
+
+    TR -->|ideation| I[Ideator researches and sharpens idea]
+    I --> IR[PRD or synthesis]
+    IR --> R2[Return to Router when ready for implementation]
 
     TR -->|quick fix| O[Operator executes directly]
     O --> TC1{Completion signal received}
@@ -101,13 +108,15 @@ End users run the standalone `hns` binary. Contributors use Deno.
 
 Interactive agent workflows require these binaries in `PATH`:
 
-- `mnemosyne` for project/global memory
-- `cymbal` for code search, symbol lookup, impact analysis, and tracing
+- [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for project/global memory
+- [`cymbal`](https://github.com/1broseidon/cymbal) for code search, symbol lookup, impact analysis, and tracing
 
-Harns also uses [RTK](https://github.com/rtk-ai/rtk) when `rtk` is available in `PATH`. RTK rewrites eligible
-agent-initiated shell commands before execution so agents see compact command output. RTK is optional and fail-open: if
-it is missing, Harns skips the rewrite hook and shows a short warning on the first few boots for each project. Manual
-`!` and `!!` shell commands are never rewritten. Manage command exclusions in RTK's own configuration.
+Harns also uses [`rtk`](https://github.com/rtk-ai/rtk) when [`rtk`](https://github.com/rtk-ai/rtk) is available in
+`PATH`. [`rtk`](https://github.com/rtk-ai/rtk) rewrites eligible agent-initiated shell commands before execution so
+agents see compact command output. [`rtk`](https://github.com/rtk-ai/rtk) is optional and fail-open: if it is missing,
+Harns skips the rewrite hook and shows a short warning on the first few boots for each project. Manual `!` and `!!`
+shell commands are never rewritten. Manage command exclusions in [`rtk`](https://github.com/rtk-ai/rtk)'s own
+configuration.
 
 Harns stores its own data under `~/.hns/`:
 
@@ -154,10 +163,10 @@ hns router "fix the failing parser test"
 ```
 
 Interactive sessions are optimized for one topic at a time. A new session starts with Router, but after Router hands off
-to a specialist, that specialist remains active so follow-up messages keep the useful working context. Use `/new` to
-start a fresh session, or `/agent router` when you want the next message in the same session to go through triage again.
-Router is the default triage Agent, not a special runtime path; workflow steps are triggered by tools like
-`triage_report`, `plan_written`, and `task_completed`.
+to Guide, Ideator, Operator, Planner, Architect, or another specialist, that specialist remains active so follow-up
+messages keep the useful working context. Use `/new` to start a fresh session, or `/agent router` when you want the next
+message in the same session to go through triage again. Router is the default triage Agent, not a special runtime path;
+workflow steps are triggered by tools like `triage_report`, `plan_written`, and `task_completed`.
 
 ## Common Commands
 
@@ -199,7 +208,8 @@ External tools can own skill installation and updates. Harns should interoperate
 
 Plans are markdown files with YAML front matter in `plans/`. Harns records:
 
-- classification: `QUICK_FIX`, `FEATURE`, or `PROJECT`
+- routing intent: `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT` for routed requests
+- plan classification: `FEATURE` or `PROJECT` for saved implementation plans
 - complexity: `LOW`, `MEDIUM`, or `HIGH`
 - summary and affected paths
 - status: `draft`, `feedback`, `approved`, `ready_for_decomposition`, `ready_for_work`, `in_progress`, `failed`,
@@ -237,6 +247,8 @@ matter for name, model, description, and tools.
 | Agent      | Purpose                                                             |
 | ---------- | ------------------------------------------------------------------- |
 | Router     | Default triage Agent that calls `triage_report`.                    |
+| Guide      | Answers `INQUIRY` requests and provides direct help or explanation. |
+| Ideator    | Researches and sharpens `IDEATION` requests before planning.        |
 | Operator   | Executes small `QUICK_FIX` tasks and operational work directly.     |
 | Planner    | Writes reviewable plans for `FEATURE` work.                         |
 | Architect  | Designs `PROJECT` plans without implementing code.                  |
@@ -245,7 +257,6 @@ matter for name, model, description, and tools.
 | Tester     | Writes, updates, and runs tests for assigned work.                  |
 | Doc Writer | Updates markdown documentation only.                                |
 | Reviewer   | Compares the final diff against the original plan.                  |
-| Ideator    | Researches and sharpens vague ideas before implementation planning. |
 
 ### Agent Overrides
 
@@ -298,7 +309,7 @@ The codebase is pure JavaScript with JSDoc typing. Do not add TypeScript files o
 src/
   agent-definitions/   bundled agent markdown definitions
   cmd/                 command handlers and registry
-  extensions/          Cymbal and Mnemosyne integrations
+  extensions/          external tool integrations
   prompt-templates/    bundled slash-command prompt templates
   shared/
     interactive/       TUI chat loop, slash dispatch, keybindings
@@ -314,12 +325,12 @@ docs/                  ADRs, PRDs, and feature docs
 
 ## Troubleshooting
 
-### Mnemosyne or Cymbal Is Missing
+### [Mnemosyne](https://github.com/gandazgul/mnemosyne) or [Cymbal](https://github.com/1broseidon/cymbal) Is Missing
 
 Interactive agent workflows require both binaries in `PATH`.
 
-- Mnemosyne: [https://github.com/gandazgul/mnemosyne#quick-start]
-- Cymbal: [https://github.com/1broseidon/cymbal#install]
+- [Mnemosyne](https://github.com/gandazgul/mnemosyne): [quick start](https://github.com/gandazgul/mnemosyne#quick-start)
+- [Cymbal](https://github.com/1broseidon/cymbal): [install](https://github.com/1broseidon/cymbal#install)
 
 ### Plan Review UI Does Not Open
 
@@ -346,7 +357,8 @@ Confirm the compiled Plannotator package can resolve:
 1. Create a branch.
 2. Make focused changes.
 3. Run `deno task ci`.
-4. Open a PR with a summary, affected flow (`QUICK_FIX`, `FEATURE`, or `PROJECT`), and validation notes.
+4. Open a PR with a summary, affected routing intent or flow (`INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or
+   `PROJECT`), and validation notes.
 
 ## License
 

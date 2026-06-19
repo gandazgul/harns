@@ -65,10 +65,12 @@ Implemented v1:
             User decides scope: execute one FEATURE as MVP, all of them, or defer some
 ```
 
-The classification-to-execution pipeline becomes:
+The routing-intent-to-execution pipeline becomes:
 
-| Classification | Behavior                                                                                                    |
+| Routing intent | Behavior                                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `INQUIRY`      | Guide answers directly; no implementation workflow                                                          |
+| `IDEATION`     | Ideator researches, interviews, or drafts a PRD/synthesis before routing implementation back through Router |
 | `QUICK_FIX`    | Operator executes directly (unchanged)                                                                      |
 | `FEATURE`      | Planner writes plan, review, execute, validate, merge (unchanged)                                           |
 | `PROJECT`      | Architect writes Epic → approved → Slicer decomposes into FEATUREs → each FEATURE follows FEATURE lifecycle |

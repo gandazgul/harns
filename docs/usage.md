@@ -17,9 +17,11 @@ hns router "fix the bug in the parser"
 
 Router is the default Agent for fresh triage. It calls `triage_report`, and that tool outcome starts the workflow:
 
-| Classification | Use when                                            | Typical path                                                                                                          |
+| Routing intent | Use when                                            | Typical path                                                                                                          |
 | -------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `QUICK_FIX`    | Small, low-risk changes or questions.               | Operator executes directly and self-verifies.                                                                         |
+| `INQUIRY`      | The user needs an answer, explanation, or guidance. | Guide answers directly and can return to Router if the request becomes executable work.                               |
+| `IDEATION`     | The user wants to explore or sharpen an idea.       | Ideator interviews, researches, and produces a PRD or synthesis before routing implementation back through Router.    |
+| `QUICK_FIX`    | Small, low-risk executable work.                    | Operator executes directly and self-verifies.                                                                         |
 | `FEATURE`      | Non-trivial implementation needs a reviewable plan. | Planner writes a plan, user approves it, Engineer executes it, Harns validates it.                                    |
 | `PROJECT`      | Large work needs architecture and slicing.          | Architect designs the Epic, interactive Slicer creates child FEATURE plans, execution proceeds one feature at a time. |
 
@@ -31,8 +33,9 @@ Start an interactive session with:
 hns
 ```
 
-A new interactive session starts with Router. After `triage_report` dispatches to a specialist, that specialist remains
-the active root agent so follow-up messages stay in the same working context.
+A new interactive session starts with Router. After `triage_report` dispatches to Guide, Ideator, Operator, Planner,
+Architect, or another specialist, that specialist remains the active root agent so follow-up messages stay in the same
+working context.
 
 Use:
 
@@ -40,6 +43,13 @@ Use:
 - `/agent router` to send the next message in the same session back through Router.
 - `/resume` to browse recent sessions.
 - `/session` to inspect the active session.
+
+### Image attachments with text-only models
+
+If the active model supports image input, Harns sends pasted images directly to it. If the active model is text-only,
+configure [`visionFallback.model`](settings.md#visionfallback) to let Harns save pasted images as session attachments
+and expose the `see_image` tool to the active agent. Without a configured fallback, image paste/submission is blocked
+with a link back to the `visionFallback` settings section.
 
 ## Agents
 
