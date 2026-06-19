@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { AGENTS } from "../../constants.js";
-import { applyAttentionNudge, getGlobalAgentMdPaths, readGlobalAgentMd } from "./session.js";
+import { applyAttentionNudge, getGlobalAgentMdPaths, readGlobalAgentMd, runPrompt } from "./session.js";
 
 Deno.test("readGlobalAgentMd falls back from ~/.hns/HARNS.md to ~/.hns/AGENTS.md", async () => {
     const tempHome = await Deno.makeTempDir({ prefix: "harns-agents-md-" });
@@ -88,4 +88,68 @@ Deno.test("applyAttentionNudge only injects scheduled long-lived agent nudges", 
             "User asks",
         ].join("\n"),
     );
+});
+
+Deno.test("runPrompt sends fallback image markers without raw image content to text-only model", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const originalCwd = Deno.cwd();
+    const tempHome = await Deno.makeTempDir({ prefix: "harns-runprompt-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "harns-runprompt-project-" });
+    try {
+        Deno.env.set("HOME", tempHome);
+        Deno.chdir(tempProject);
+        await Deno.mkdir(".hns", { recursive: true });
+        await Deno.writeTextFile(".hns/settings.json", JSON.stringify({ visionFallback: { model: "test/vision" } }));
+        const fallbackModel = { provider: "test", id: "vision", input: ["text", "image"] };
+        /** @type {Array<{ text: string, options: any }>} */
+        const prompts = [];
+        const session = /** @type {any} */ ({
+            model: { provider: "test", id: "text", input: ["text"] },
+            modelRegistry: {
+                find: () => fallbackModel,
+                hasConfiguredAuth: () => true,
+            },
+            prompt: (/** @type {string} */ text, /** @type {any} */ options) => {
+                prompts.push({ text, options });
+                return Promise.resolve();
+            },
+            agent: { waitForIdle: () => Promise.resolve(), state: { messages: [] } },
+        });
+        const subscriberState = /** @type {any} */ ({
+            resetTurn: () => {},
+            endThinking: () => {},
+            drainInvokedToolNames: () => [],
+        });
+
+        await runPrompt({
+            session,
+            agentDef: {
+                name: "operator",
+                displayName: "Operator",
+                model: "",
+                description: "Test operator",
+                tools: [],
+                systemPrompt: "system",
+            },
+            agentName: "operator",
+            userRequest: "please inspect",
+            finalSystemPrompt: "system",
+            images: /** @type {import('./types.js').ImageAttachment[]} */ ([{
+                base64: "abc",
+                mimeType: "image/png",
+                ref: "attachment:123",
+            }]),
+            subscriberState,
+        });
+
+        assertEquals(prompts.length, 1);
+        assertEquals(prompts[0].text, "please inspect\n\n[Image attached: attachment:123 image/png]");
+        assertEquals(prompts[0].options.images, undefined);
+    } finally {
+        Deno.chdir(originalCwd);
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        await Deno.remove(tempHome, { recursive: true });
+        await Deno.remove(tempProject, { recursive: true });
+    }
 });

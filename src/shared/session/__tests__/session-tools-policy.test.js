@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { CWD } from "../../../constants.js";
 import { __resetSettingsForTests } from "../../settings.js";
@@ -212,5 +212,160 @@ Deno.test("buildAgentSession wires task_completed with agent displayName", async
         __resetSettingsForTests();
         await Deno.remove(tempHome, { recursive: true });
         await Deno.remove(debugLogPath);
+    }
+});
+
+/**
+ * @param {string} tempHome
+ */
+async function writeVisionModelConfig(tempHome) {
+    await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
+    await Deno.writeTextFile(
+        join(tempHome, ".hns", "models.json"),
+        JSON.stringify({
+            providers: {
+                test: {
+                    baseUrl: "https://example.invalid/v1",
+                    api: "openai-completions",
+                    apiKey: "test-key",
+                    models: [
+                        { id: "text", input: ["text"] },
+                        { id: "vision", input: ["text", "image"] },
+                    ],
+                },
+            },
+        }),
+    );
+}
+
+Deno.test("buildAgentSession injects see_image only for text-only model with vision fallback", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const tempHome = await Deno.makeTempDir({ prefix: "harns-see-image-injection-" });
+    /** @type {import('@earendil-works/pi-coding-agent').AgentSession[]} */
+    const sessions = [];
+    try {
+        Deno.env.set("HOME", tempHome);
+        __resetSettingsForTests();
+        await writeVisionModelConfig(tempHome);
+        await Deno.writeTextFile(
+            join(tempHome, ".hns", "settings.json"),
+            JSON.stringify({
+                visionFallback: { model: "test/vision" },
+            }),
+        );
+
+        const textBuilt = await buildAgentSession({
+            agentName: "operator",
+            modelOverride: "test/text",
+            _agentDefOverride: {
+                name: "operator",
+                displayName: "Operator",
+                model: "",
+                description: "Test operator",
+                tools: ["read"],
+                systemPrompt: "Test operator prompt.",
+            },
+        });
+        sessions.push(textBuilt.session);
+        assertEquals(textBuilt.tools.includes("see_image"), true);
+        assert(textBuilt.finalCustomTools.find((tool) => tool.name === "see_image"));
+        const seeImage = /** @type {any} */ (textBuilt.finalCustomTools.find((tool) => tool.name === "see_image"));
+        assert(seeImage, "expected see_image custom tool");
+        assert(seeImage.execute, "expected see_image execute");
+
+        const visionBuilt = await buildAgentSession({
+            agentName: "operator",
+            modelOverride: "test/vision",
+            _agentDefOverride: {
+                name: "operator",
+                displayName: "Operator",
+                model: "",
+                description: "Test operator",
+                tools: ["read"],
+                systemPrompt: "Test operator prompt.",
+            },
+        });
+        sessions.push(visionBuilt.session);
+        assertEquals(visionBuilt.tools.includes("see_image"), false);
+        assertEquals(Boolean(visionBuilt.finalCustomTools.find((tool) => tool.name === "see_image")), false);
+    } finally {
+        for (const session of sessions) session.dispose();
+        __resetSettingsForTests();
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        await Deno.remove(tempHome, { recursive: true });
+    }
+});
+
+Deno.test("buildAgentSession omits see_image for text-only model without fallback", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const tempHome = await Deno.makeTempDir({ prefix: "harns-see-image-no-fallback-" });
+    /** @type {import('@earendil-works/pi-coding-agent').AgentSession | undefined} */
+    let session;
+    try {
+        Deno.env.set("HOME", tempHome);
+        __resetSettingsForTests();
+        await writeVisionModelConfig(tempHome);
+        await Deno.writeTextFile(join(tempHome, ".hns", "settings.json"), JSON.stringify({}));
+
+        const built = await buildAgentSession({
+            agentName: "operator",
+            modelOverride: "test/text",
+            _agentDefOverride: {
+                name: "operator",
+                displayName: "Operator",
+                model: "",
+                description: "Test operator",
+                tools: ["read"],
+                systemPrompt: "Test operator prompt.",
+            },
+        });
+        session = built.session;
+        assertEquals(built.tools.includes("see_image"), false);
+    } finally {
+        session?.dispose();
+        __resetSettingsForTests();
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        await Deno.remove(tempHome, { recursive: true });
+    }
+});
+
+Deno.test("buildAgentSession fails clearly for invalid vision fallback", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const tempHome = await Deno.makeTempDir({ prefix: "harns-see-image-invalid-fallback-" });
+    try {
+        Deno.env.set("HOME", tempHome);
+        __resetSettingsForTests();
+        await writeVisionModelConfig(tempHome);
+        await Deno.writeTextFile(
+            join(tempHome, ".hns", "settings.json"),
+            JSON.stringify({
+                visionFallback: { model: "not-valid" },
+            }),
+        );
+
+        await assertRejects(
+            () =>
+                buildAgentSession({
+                    agentName: "operator",
+                    modelOverride: "test/text",
+                    _agentDefOverride: {
+                        name: "operator",
+                        displayName: "Operator",
+                        model: "",
+                        description: "Test operator",
+                        tools: ["read"],
+                        systemPrompt: "Test operator prompt.",
+                    },
+                }),
+            Error,
+            "Invalid visionFallback.model",
+        );
+    } finally {
+        __resetSettingsForTests();
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        await Deno.remove(tempHome, { recursive: true });
     }
 });

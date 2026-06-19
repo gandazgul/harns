@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { join } from "@std/path";
 import {
     __resetPendingSteeringForTests,
     __setSettingsManagerForPersistenceTests,
@@ -16,8 +17,10 @@ import {
 } from "./chat-session.js";
 import {
     addSubAgentSession,
+    clearUserModelOverride,
     getActiveOnMessage,
     getPendingRootSwap,
+    getRootAgentSession,
     getSubAgentSessions,
     removeSubAgentSession,
     setActiveUiAPI,
@@ -26,6 +29,7 @@ import {
     setRootAgentSession,
 } from "../session/session-state.js";
 import { __resetSettingsForTests } from "../settings.js";
+import { __getRootSessionMetadataForTests, ensureRootAgentSession } from "../session/session.js";
 
 /**
  * @param {string} prefix
@@ -335,5 +339,84 @@ Deno.test("trackPendingSteeringMessage only consumes queue updates from the sess
         assertEquals(renders, 2);
     } finally {
         __resetPendingSteeringForTests();
+    }
+});
+
+Deno.test("setActiveModel rebuilds root session tool set when switching between vision and text-only models", async () => {
+    const originalOpenAiKey = Deno.env.get("OPENAI_API_KEY");
+    const originalCwd = Deno.cwd();
+    const tempProject = await Deno.makeTempDir({ prefix: "harns-model-switch-project-" });
+    try {
+        await withTempHome("harns-model-switch-home-", async (tempHome) => {
+            Deno.chdir(tempProject);
+            Deno.env.set("OPENAI_API_KEY", "test-key");
+            await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
+            await Deno.writeTextFile(
+                join(tempHome, ".hns", "models.json"),
+                JSON.stringify({
+                    providers: {
+                        test: {
+                            baseUrl: "https://example.invalid/v1",
+                            api: "openai-completions",
+                            apiKey: "test-key",
+                            models: [
+                                { id: "text", input: ["text"] },
+                                { id: "vision", input: ["text", "image"] },
+                            ],
+                        },
+                    },
+                }),
+            );
+            await Deno.writeTextFile(
+                join(tempHome, ".hns", "settings.json"),
+                JSON.stringify({
+                    visionFallback: { model: "test/vision" },
+                }),
+            );
+            __resetSettingsForTests();
+            clearUserModelOverride();
+            setActiveUiAPI(/** @type {any} */ ({ appendSystemMessage: () => {}, requestRender: () => {} }));
+
+            await ensureRootAgentSession({
+                agentName: "operator",
+                modelOverride: "test/text",
+                _agentDefOverride: {
+                    name: "operator",
+                    displayName: "Operator",
+                    model: "",
+                    description: "Test operator",
+                    tools: ["read"],
+                    systemPrompt: "Test operator prompt.",
+                },
+            });
+            let session = getRootAgentSession();
+            assertEquals(
+                __getRootSessionMetadataForTests(/** @type {any} */ (session)).tools.includes("see_image"),
+                true,
+            );
+
+            await setActiveModel("vision", "test");
+            session = getRootAgentSession();
+            assertEquals(
+                __getRootSessionMetadataForTests(/** @type {any} */ (session)).tools.includes("see_image"),
+                false,
+            );
+
+            await setActiveModel("text", "test");
+            session = getRootAgentSession();
+            assertEquals(
+                __getRootSessionMetadataForTests(/** @type {any} */ (session)).tools.includes("see_image"),
+                true,
+            );
+        });
+    } finally {
+        getRootAgentSession()?.dispose();
+        setRootAgentSession(null);
+        setRootAgentName(null);
+        setActiveUiAPI(null);
+        Deno.chdir(originalCwd);
+        if (originalOpenAiKey === undefined) Deno.env.delete("OPENAI_API_KEY");
+        else Deno.env.set("OPENAI_API_KEY", originalOpenAiKey);
+        await Deno.remove(tempProject, { recursive: true });
     }
 });
