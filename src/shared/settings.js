@@ -7,6 +7,7 @@ const HARNS_CUSTOM_SETTING_KEYS = [
     "agents",
     "activeModelPreset",
     "modelPresets",
+    "visionFallback",
     "compactOnResumeThresholdPercent",
     "verification_command",
     "cleanupMergedWorktrees",
@@ -374,6 +375,38 @@ export function getMergedCustomSetting(key) {
     }
 
     return projectVal;
+}
+
+/**
+ * Whether merged execution worktrees should be removed after successful merge-back.
+ * Defaults to true; set `cleanupMergedWorktrees: false` in global or project
+ * settings to keep merged worktree checkouts for inspection.
+ *
+ * @returns {boolean}
+ */
+/**
+ * Resolve the configured vision fallback model string.
+ *
+ * Resolution order:
+ * 1. Active preset `modelPresets.<activeModelPreset>.visionFallback.model`
+ * 2. Top-level `visionFallback.model`
+ * 3. Disabled when unset or not a string
+ *
+ * @returns {string | undefined}
+ */
+export function getResolvedVisionFallbackModelSetting() {
+    const activeModelPreset = /** @type {string | undefined} */ (getMergedCustomSetting("activeModelPreset"));
+    if (activeModelPreset) {
+        const modelPresets = /** @type {Record<string, { visionFallback?: { model?: unknown } }> | undefined} */ (
+            getMergedCustomSetting("modelPresets")
+        );
+        const presetModel = modelPresets?.[activeModelPreset]?.visionFallback?.model;
+        if (typeof presetModel === "string" && presetModel.trim()) return presetModel.trim();
+    }
+
+    const visionFallback = /** @type {{ model?: unknown } | undefined} */ (getMergedCustomSetting("visionFallback"));
+    const model = visionFallback?.model;
+    return typeof model === "string" && model.trim() ? model.trim() : undefined;
 }
 
 /**

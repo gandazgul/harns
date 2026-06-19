@@ -43,6 +43,7 @@ import rtkExtension from "../../extensions/rtk/index.js";
 import { ensureCymbalBinary, ensureMnemosyneBinary, hasRtkBinary } from "../runtime-preflight.js";
 import { executeReturnToRouter, returnToRouterTool } from "../../tools/return-to-router.js";
 import { createUserInterviewTool } from "../../tools/user-interview.js";
+import { createSeeImageTool } from "../../tools/see-image.js";
 import { discoverProviderModel, getModelRegistry } from "../models/model-registry.js";
 import { parseProviderModel } from "../models/model-validation.js";
 import {
@@ -50,6 +51,7 @@ import {
     getActiveModelState,
     getRootAgentName,
     getRootAgentSession,
+    getRootSessionManager,
     getSubAgentSessions,
     isUserModelOverride,
     popAgentInfo,
@@ -69,6 +71,7 @@ import {
     resolveSessionToolNames,
 } from "./agents.js";
 import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsManager } from "../settings.js";
+import { modelSupportsImageInput, prepareImagesForModel, resolveVisionFallbackModel } from "./image-attachments.js";
 import { recordActiveAgent } from "./active-agent-session.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
@@ -596,11 +599,21 @@ export async function steerRootSessionWithTarget(text, images) {
     // on the agent would be lost — the agent loop has already exited.
     // Return null so the caller queues it for the next submission instead.
     if (!session.isStreaming) return null;
-    /** @type {Array<{type: "image", data: string, mimeType: string}>} */
-    const imageContent = images && images.length > 0
-        ? images.map((img) => ({ type: /** @type {"image"} */ ("image"), data: img.base64, mimeType: img.mimeType }))
-        : [];
-    await session.steer(text, imageContent.length > 0 ? imageContent : undefined);
+    const activeModel = session.model || { input: ["text", "image"] };
+    const fallback = images && images.length > 0 && session.model && !modelSupportsImageInput(session.model)
+        ? await resolveVisionFallbackModel(session.modelRegistry)
+        : undefined;
+    const preparedImages = prepareImagesForModel({
+        text,
+        images,
+        activeModel,
+        fallbackModelRef: fallback?.modelRef,
+    });
+    if (!preparedImages.ok) throw new Error(preparedImages.message);
+    await session.steer(
+        preparedImages.text,
+        preparedImages.images && preparedImages.images.length > 0 ? preparedImages.images : undefined,
+    );
     return session;
 }
 
@@ -931,7 +944,9 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  *   tools: string[],
  *   finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[],
  *   resolvedModel: any,
- *   resolvedThinkingLevel: string | undefined
+ *   resolvedThinkingLevel: string | undefined,
+ *   imageMode?: string,
+ *   visionFallbackModelRef?: string
  * }>}
  */
 export async function buildAgentSession({
@@ -953,10 +968,19 @@ export async function buildAgentSession({
     await ensureCymbalBinary();
     const agentDef = _agentDefOverride || await loadAgentDef(agentName);
 
+    const modelRegistry = getModelRegistry();
+    const resolvedModel = await resolveModel(modelOverride, agentDef, agentName, modelRegistry);
+    const activeModelSupportsImages = modelSupportsImageInput(resolvedModel);
+    const visionFallback = activeModelSupportsImages ? undefined : await resolveVisionFallbackModel(modelRegistry);
+    const effectiveSessionManager = sessionManager || SessionManager.inMemory(sessionCwd);
+
     const customToolNames = (customTools || []).map((t) => t.name);
-    const tools = resolveEffectiveSessionToolNames(agentDef.tools, toolNames, customToolNames, { allowReturnToRouter });
+    let tools = resolveEffectiveSessionToolNames(agentDef.tools, toolNames, customToolNames, { allowReturnToRouter });
 
     const finalCustomTools = [...(customTools || [])];
+    if (!activeModelSupportsImages && visionFallback && !tools.includes("see_image")) {
+        tools = [...tools, "see_image"];
+    }
 
     // Auto-wire internal custom tools if requested by name and not already provided.
     // This keeps agent frontmatter declarative: adding/removing tool names controls availability,
@@ -1008,6 +1032,15 @@ export async function buildAgentSession({
         finalCustomTools.push(createMultiFileEditTool(sessionCwd));
     }
 
+    if (tools.includes("see_image") && visionFallback && !finalCustomTools.find((t) => t.name === "see_image")) {
+        finalCustomTools.push(createSeeImageTool({
+            cwd: sessionCwd,
+            sessionManager: effectiveSessionManager,
+            fallbackModel: visionFallback.model,
+            modelRegistry,
+        }));
+    }
+
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools, sessionCwd);
     const promptState = { text: finalSystemPrompt };
@@ -1027,9 +1060,6 @@ export async function buildAgentSession({
     });
     await loader.reload();
 
-    const modelRegistry = getModelRegistry();
-    const resolvedModel = await resolveModel(modelOverride, agentDef, agentName, modelRegistry);
-
     if (!sessionManager && shouldWriteDebugLog(debugLogPath)) {
         const debugMsg =
             `[Harns] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
@@ -1045,7 +1075,7 @@ export async function buildAgentSession({
         tools,
         customTools: finalCustomTools,
         resourceLoader: loader,
-        sessionManager: sessionManager || SessionManager.inMemory(),
+        sessionManager: effectiveSessionManager,
         ...(resolvedModel ? { model: resolvedModel } : {}),
     });
 
@@ -1084,7 +1114,18 @@ export async function buildAgentSession({
     // Ensure extension lifecycle hooks (e.g. session_start) are activated for this agent invocation.
     await session.bindExtensions({});
 
-    return { session, agentDef, promptState, tools, finalCustomTools, resolvedModel, resolvedThinkingLevel };
+    const imageMode = activeModelSupportsImages ? "direct" : (visionFallback ? "fallback" : "blocked");
+    return {
+        session,
+        agentDef,
+        promptState,
+        tools,
+        finalCustomTools,
+        resolvedModel,
+        resolvedThinkingLevel,
+        imageMode,
+        visionFallbackModelRef: visionFallback?.modelRef,
+    };
 }
 
 /**
@@ -1517,7 +1558,7 @@ export function attachUiSubscribers(session, agentDef, uiAPI, debugLogPath) {
  *
  * @returns {Promise<import('@earendil-works/pi-agent-core').AgentMessage[]>}
  */
-async function runPrompt({
+export async function runPrompt({
     session,
     agentDef,
     agentName,
@@ -1533,13 +1574,20 @@ async function runPrompt({
 }) {
     subscriberState.resetTurn();
 
+    const fallback = images && images.length > 0 && !modelSupportsImageInput(session.model)
+        ? await resolveVisionFallbackModel(session.modelRegistry)
+        : undefined;
+    const preparedImages = prepareImagesForModel({
+        text: userRequest,
+        images,
+        activeModel: session.model,
+        fallbackModelRef: fallback?.modelRef,
+    });
+    if (!preparedImages.ok) throw new Error(preparedImages.message);
+
     const requestOptions = {};
-    if (images && images.length > 0) {
-        requestOptions.images = images.map((img) => ({
-            type: /** @type {"image"} */ ("image"),
-            data: img.base64,
-            mimeType: img.mimeType,
-        }));
+    if (preparedImages.images && preparedImages.images.length > 0) {
+        requestOptions.images = preparedImages.images;
     }
 
     const debugEnabled = shouldWriteDebugLog(debugLogPath);
@@ -1559,7 +1607,7 @@ async function runPrompt({
             `System Prompt:`,
             finalSystemPrompt,
             `User Request:`,
-            userRequest,
+            preparedImages.text,
             "",
         ].join("\n");
         appendDebugLog(debugLogPath, logEntry);
@@ -1569,7 +1617,7 @@ async function runPrompt({
     let promptError = null;
 
     try {
-        await session.prompt(userRequest, requestOptions);
+        await session.prompt(preparedImages.text, requestOptions);
         await session.agent.waitForIdle();
     } catch (error) {
         promptError = error instanceof Error ? error : new Error(String(error));
@@ -1640,8 +1688,17 @@ export function applyAttentionNudge(agentName, userRequest, rootTurnCount) {
     ].join("\n");
 }
 
-/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, promptState: { text: string }, subscriberState: SubscriberState, agentName: string, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[], rootTurnCount: number }>} */
+/** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, promptState: { text: string }, subscriberState: SubscriberState, agentName: string, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[], rootTurnCount: number, imageMode?: string, visionFallbackModelRef?: string }>} */
 const rootSessionMetadata = new WeakMap();
+
+/**
+ * Test-only access to root session metadata.
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
+ * @returns {any}
+ */
+export function __getRootSessionMetadataForTests(session) {
+    return rootSessionMetadata.get(session);
+}
 
 /**
  * Eagerly build and install the root AgentSession for the given agent.
@@ -1676,7 +1733,16 @@ export async function ensureRootAgentSession(opts) {
         setRootAgentName(null);
     }
 
-    const { session, agentDef, promptState, tools, finalCustomTools, resolvedModel } = await buildAgentSession({
+    const {
+        session,
+        agentDef,
+        promptState,
+        tools,
+        finalCustomTools,
+        resolvedModel,
+        imageMode,
+        visionFallbackModelRef,
+    } = await buildAgentSession({
         ...opts,
         allowReturnToRouter: opts.allowReturnToRouter ?? true,
     });
@@ -1696,6 +1762,8 @@ export async function ensureRootAgentSession(opts) {
         tools,
         finalCustomTools,
         rootTurnCount: 0,
+        imageMode,
+        visionFallbackModelRef,
     });
 
     return session;
@@ -1871,72 +1939,19 @@ export async function reloadRootAgentSession(uiAPI) {
     const meta = rootSessionMetadata.get(session);
     if (!meta) return false;
 
-    // 0. Re-read settings.json from disk so all getters below see fresh values
     const settings = getSettingsManager();
     await settings.reload();
 
-    // 1. Re-run system prompt assembly (HARNS.md, memories, skills)
-    const newSystemPrompt = await assembleFinalSystemPrompt(meta.agentDef, meta.tools, meta.finalCustomTools);
-    meta.promptState.text = newSystemPrompt;
-
-    // 2. Reload the session (prompts, skills, extensions)
-    await session.reload();
-
-    // 3. Apply theme from (freshly reloaded) settings
     const { discoverAndRegisterThemes, setTheme } = await import("../ui/theme.js");
     await discoverAndRegisterThemes();
     const persistedTheme = settings.getTheme();
-    if (persistedTheme) {
-        setTheme(persistedTheme);
-    }
+    if (persistedTheme) setTheme(persistedTheme);
 
-    // 4. Resolve and apply model from settings
-    const modelRegistry = getModelRegistry();
-    if (!isUserModelOverride()) {
-        // 4a. Try per-agent configured model override (agents.<name>.model or active preset)
-        const rootName = getRootAgentName() || "";
-        const configuredModelStr = getConfiguredAgentModel(rootName);
-        if (configuredModelStr) {
-            const parsed = parseProviderModel(configuredModelStr);
-            if (parsed.ok) {
-                const found = modelRegistry.find(parsed.provider, parsed.id) ||
-                    await discoverProviderModel(modelRegistry, parsed.provider, parsed.id);
-                if (found && modelRegistry.hasConfiguredAuth(found)) {
-                    await session.setModel(found);
-                    if (uiAPI?.setAgentInfo) {
-                        uiAPI.setAgentInfo(meta.agentDef.displayName, `${found.provider}/${found.id}`);
-                    }
-                }
-            }
-        } else {
-            // 4b. Fallback: default model from settings
-            const defaultProvider = settings.getDefaultProvider();
-            const defaultModelId = settings.getDefaultModel();
-            if (defaultProvider && defaultModelId) {
-                const found = modelRegistry.find(defaultProvider, defaultModelId);
-                if (found && modelRegistry.hasConfiguredAuth(found)) {
-                    await session.setModel(found);
-                    if (uiAPI?.setAgentInfo) {
-                        uiAPI.setAgentInfo(meta.agentDef.displayName, `${found.provider}/${found.id}`);
-                    }
-                }
-            }
-        }
-    }
-
-    // 5. Apply thinking level — settings per-agent > settings default > frontmatter
-    const rootName = getRootAgentName() || "";
-    const newThinkingLevel = getConfiguredAgentThinkingLevel(rootName) || settings.getDefaultThinkingLevel() ||
-        meta.agentDef.thinkingLevel;
-    if (newThinkingLevel !== undefined) {
-        session.setThinkingLevel(
-            /** @type {import('@earendil-works/pi-agent-core').ThinkingLevel} */ (newThinkingLevel),
-        );
-        // Keep the session-state footer in sync with what the AgentSession is using
-        setThinkingLevel(
-            /** @type {"off"|"minimal"|"low"|"medium"|"high"|"xhigh"} */ (newThinkingLevel),
-        );
-    }
+    await ensureRootAgentSession({
+        agentName: meta.agentName,
+        uiAPI,
+        sessionManager: getRootSessionManager() || undefined,
+    });
 
     return true;
 }
