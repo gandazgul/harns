@@ -64,7 +64,7 @@ pass those extension paths to `DefaultResourceLoader`, and report ignored resour
 - `src/cmd/install/index.test.js` - cover install summaries for themes, compatible extensions, ignored extensions, and
   skills.
 - `src/shared/session/session.js` - resolve compatible extension paths and pass them to `DefaultResourceLoader` via
-  `additionalExtensionPaths` while retaining built-in Mnemosyne/Cymbal/RTK factories.
+  `additionalExtensionPaths` while retaining built-in Mnemosyne/Cymbal/rtk factories.
 - `src/shared/session/session-catalog.test.js` - verify compatible extension paths are included in session resource
   loading and incompatible package extensions are excluded.
 - `src/shared/extensions/harns-extension-manifest.js` - add pure JS helpers for reading package metadata and filtering

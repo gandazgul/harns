@@ -44,12 +44,12 @@ deno task compile
 
 Development and interactive workflow testing use these binaries in `PATH`:
 
-- `mnemosyne` for memory-backed agent behavior.
-- `cymbal` for code intelligence.
-- `rtk` for compact command-output rewriting. Harns runtime treats RTK as optional, but the repository's Deno tasks use
-  it for compact lint/test/check output.
+- [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for memory-backed agent behavior.
+- [`cymbal`](https://github.com/1broseidon/cymbal) for code intelligence.
+- [`rtk`](https://github.com/rtk-ai/rtk) for compact command-output rewriting. Harns runtime treats rtk as optional, but
+  the repository's Deno tasks use it for compact lint/test/check output.
 
-  **How Harns integrates RTK at runtime:**
+  **How Harns integrates rtk at runtime:**
 
   During session setup (`src/shared/session/session.js`), Harns checks whether `rtk` is on `PATH`. If found, it
   registers the `rtkExtension` from `src/extensions/rtk/index.js` as a `tool_call` event handler.
@@ -57,7 +57,7 @@ Development and interactive workflow testing use these binaries in `PATH`:
   The extension listens for agent-initiated `bash` tool calls and runs `rtk rewrite "<original command>"` via `pi.exec`.
   If the rewrite succeeds and returns a different command, Harns mutates the bash tool input in place so the agent sees
   compact output from the piped command. The extension skips non-`bash` tools, empty commands, and commands already
-  prefixed with `rtk`. If RTK is missing or the rewrite fails for any reason, the original command runs unchanged
+  prefixed with `rtk`. If rtk is missing or the rewrite fails for any reason, the original command runs unchanged
   (fail-open). Manual `!`/`!!` shell shortcuts are never rewritten — the hook only intercepts programmatic agent bash
   tool calls.
 
@@ -99,7 +99,7 @@ docs/                  ADRs, PRDs, and feature docs
 5. For docs-only or config-only changes, run `deno fmt`.
 6. Open a PR with:
    - a summary,
-   - the affected flow (`QUICK_FIX`, `FEATURE`, or `PROJECT`),
+   - the affected routing intent or flow (`INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT`),
    - validation notes,
    - any follow-up work or known gaps.
 
@@ -107,6 +107,8 @@ docs/                  ADRs, PRDs, and feature docs
 
 Harns itself is plan-by-default for non-trivial work. Contributions should preserve that product shape:
 
+- `INQUIRY` handling should stay answer-focused through Guide.
+- `IDEATION` handling should clarify ideas through Ideator before routing implementation work.
 - `QUICK_FIX` work should stay small and self-verified.
 - `FEATURE` work should be traceable to a reviewable plan when the blast radius is non-trivial.
 - `PROJECT` work should be represented as an Epic: Architect owns the design, interactive Slicer owns child FEATURE

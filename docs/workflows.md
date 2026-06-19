@@ -1,14 +1,28 @@
 # Plans and Workflows
 
-Harns routes work by workflow type so small fixes stay fast and larger changes get reviewable plans.
+Harns routes requests by intent so answers stay lightweight, ideas get sharpened before planning, small fixes stay fast,
+and larger changes get reviewable plans.
 
-## Triage classes
+## Routing intents
 
-| Class       | Meaning                                                            |
-| ----------- | ------------------------------------------------------------------ |
-| `QUICK_FIX` | Small, low-risk work that can be handled directly.                 |
-| `FEATURE`   | Non-trivial work that needs a plan before implementation.          |
-| `PROJECT`   | Large work that needs architecture, approval, and feature slicing. |
+| Intent      | Meaning                                                             | Primary role |
+| ----------- | ------------------------------------------------------------------- | ------------ |
+| `INQUIRY`   | Direct answer, explanation, repository guidance, or general help.   | Guide        |
+| `IDEATION`  | Research, interview, PRD, or idea-sharpening before implementation. | Ideator      |
+| `QUICK_FIX` | Small, low-risk executable work that can be handled directly.       | Operator     |
+| `FEATURE`   | Non-trivial implementation that needs a plan first.                 | Planner      |
+| `PROJECT`   | Large work that needs architecture, approval, and feature slicing.  | Architect    |
+
+## INQUIRY
+
+An `INQUIRY` is handled by Guide. It is for answers, explanations, repository guidance, and other non-executable help.
+Guide should answer directly and can send the user back to Router if the conversation turns into implementation work.
+
+## IDEATION
+
+An `IDEATION` request is handled by Ideator. It is for exploring an unclear idea, interviewing the user, researching
+options, or drafting a PRD/synthesis before implementation planning. When the user is ready to build, the next
+implementation request should go back through Router so it can be classified as `FEATURE` or `PROJECT`.
 
 ## QUICK_FIX
 

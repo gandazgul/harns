@@ -34,7 +34,7 @@ Harns works best when these optional-but-expected binaries are available on `PAT
 
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for project and global memory.
 - [`cymbal`](https://github.com/1broseidon/cymbal) for code search, symbol lookup, impact analysis, and tracing.
-- [`rtk`](https://github.com/rtk-ai/rtk) for compact command-output rewriting. RTK is optional and fail-open.
+- [`rtk`](https://github.com/rtk-ai/rtk) for compact command-output rewriting. rtk is optional and fail-open.
 
 ### 3. Authenticate a model provider
 
@@ -72,9 +72,11 @@ hns "fix the failing parser test"
 hns router "fix the failing parser test"
 ```
 
-Router is the default Agent for fresh triage. Its `triage_report` classifies the request as one of:
+Router is the default Agent for fresh triage. Its `triage_report` assigns one routing intent:
 
-- `QUICK_FIX` - execute directly with minimal ceremony.
+- `INQUIRY` - answer directly through Guide for general help, explanations, and repository questions.
+- `IDEATION` - hand off to Ideator for interviews, research, PRDs, or idea sharpening before implementation planning.
+- `QUICK_FIX` - execute directly with minimal ceremony through Operator.
 - `FEATURE` - write a reviewable plan before implementation.
 - `PROJECT` - design the larger effort as an Epic, then interactively slice it into independently executable child
   FEATURE plans.
@@ -83,8 +85,9 @@ Router is the default Agent for fresh triage. Its `triage_report` classifies the
 
 ### Work through the router by default
 
-Use `hns "request"` when you want Harns to choose the right workflow. Router records the classification, complexity, and
-affected paths through `triage_report`; that tool outcome hands off to the right role.
+Use `hns "request"` when you want Harns to choose the right workflow. Router records the routing intent through
+`triage_report`; implementation intents also record complexity and affected paths. That tool outcome hands off to Guide,
+Ideator, Operator, Planner, or Architect as appropriate.
 
 ### Talk to a specific agent when you know what you need
 
@@ -95,9 +98,9 @@ hns agent engineer "..."   # start with Engineer instead of Router
 
 Inside the TUI, use `/agent <name>` to switch agents.
 
-User-selectable bundled agents include `router`, `operator`, `planner`, `architect`, `engineer`, `tester`, `doc-writer`,
-and `ideator`. Harns also uses workflow-only pseudo-agents such as Slicer and Reviewer during plan readiness and
-validation; they do not appear in normal `/agent` listings.
+User-selectable bundled agents include `router`, `guide`, `ideator`, `operator`, `planner`, `architect`, `engineer`,
+`tester`, and `doc-writer`. Harns also uses workflow-only pseudo-agents such as Slicer and Reviewer during plan
+readiness and validation; they do not appear in normal `/agent` listings.
 
 ### Use plans for non-trivial work
 
