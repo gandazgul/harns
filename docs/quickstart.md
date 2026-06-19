@@ -42,11 +42,11 @@ deno task compile
 
 Interactive Harns workflows expect these tools to be available when you want the full experience:
 
-- `mnemosyne` - project/global memory.
-- `cymbal` - symbol-aware code search and impact analysis.
-- `rtk` - optional compact shell-output rewriting.
+- [`mnemosyne`](https://github.com/gandazgul/mnemosyne) - project/global memory.
+- [`cymbal`](https://github.com/1broseidon/cymbal) - symbol-aware code search and impact analysis.
+- [`rtk`](https://github.com/rtk-ai/rtk) - optional compact shell-output rewriting.
 
-Harns still starts if RTK is missing. Memory and code-intelligence features require their corresponding binaries.
+Harns still starts if rtk is missing. Memory and code-intelligence features require their corresponding binaries.
 
 ## Authenticate
 
@@ -99,9 +99,10 @@ hns "summarize this repository and tell me how to run its checks"
 hns router "summarize this repository and tell me how to run its checks"
 ```
 
-Router is the default Agent for fresh triage. It calls `triage_report` to classify the request as a `QUICK_FIX`,
-`FEATURE`, or `PROJECT`; that tool outcome hands off to the appropriate workflow. PROJECT work becomes an Epic design
-plan first, then the interactive Slicer breaks it into child FEATURE plans after approval.
+Router is the default Agent for fresh triage. It calls `triage_report` to assign a routing intent: `INQUIRY`,
+`IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT`. That tool outcome hands off to Guide for answers, Ideator for idea
+sharpening, Operator for small fixes, Planner for FEATURE plans, or Architect for PROJECT Epics. PROJECT work becomes an
+Epic design plan first, then the interactive Slicer breaks it into child FEATURE plans after approval.
 
 ## Common commands
 

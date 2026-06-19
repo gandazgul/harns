@@ -24,6 +24,10 @@ the root agent model, the root agent thinking level, prompt templates, skills, a
     "defaultThinkingLevel": "medium",
     "theme": "catppuccin-mocha",
 
+    "visionFallback": {
+        "model": "lmstudio/google/gemma-4-12B-it"
+    },
+
     "agents": {
         "router": {
             "model": "openai/gpt-5-mini",

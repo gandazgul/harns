@@ -37,8 +37,8 @@ Inside the TUI:
 
 ## Root-agent behavior
 
-New sessions start with Router. After Router hands off to a specialist, that specialist remains the active root agent so
-follow-up messages stay in the same topic and context.
+New sessions start with Router. After Router hands off to Guide, Ideator, Operator, Planner, Architect, or another
+specialist, that specialist remains the active root agent so follow-up messages stay in the same topic and context.
 
 Use `/new` for a fresh routed session, or `/agent router` when you want the next message in the current session to go
 back through triage.
