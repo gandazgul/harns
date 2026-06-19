@@ -134,6 +134,60 @@ Each preset has the same `agents.<agentName>.model` and `agents.<agentName>.thin
 key. Presets are partial: if the active preset does not define a value for an agent, Harns falls back to that agent's
 base `agents` entry.
 
+### visionFallback
+
+Type: object with `model` string in `provider/model_id` format.
+
+`visionFallback` configures a vision-capable fallback model for image inspection when the active agent model is
+text-only. Vision-capable active models keep receiving images directly and do not get the `see_image` tool.
+
+Resolution order:
+
+1. Active preset `modelPresets.<activeModelPreset>.visionFallback.model`.
+2. Top-level `visionFallback.model`.
+3. Disabled when unset.
+
+Example with LM Studio and Gemma 4 12B:
+
+```jsonc
+{
+    "visionFallback": {
+        "model": "lmstudio/google/gemma-4-12B-it"
+    },
+
+    "activeModelPreset": "local",
+    "modelPresets": {
+        "local": {
+            "visionFallback": {
+                "model": "lmstudio/google/gemma-4-12B-it"
+            },
+            "agents": {
+                "engineer": {
+                    "model": "lmstudio/some-text-only-code-model"
+                }
+            }
+        }
+    }
+}
+```
+
+Gemma 4 12B is a recommended local image-description fallback when available in LM Studio. Configure the LM Studio
+provider/model in Harns' model registry with image input support and auth/base URL as usual, then set
+`visionFallback.model` to that `provider/model_id`.
+
+Behavior:
+
+- Vision-capable active model: images are sent directly; `see_image` is not injected just because fallback exists.
+- Text-only active model with fallback: image paste/submission is allowed, Harns warns that `visionFallback.model` will
+  describe images, raw image bytes are withheld from the primary model, and `see_image` can inspect `attachment:<uuid>`
+  or safe project-relative image paths.
+- Text-only active model without fallback: image paste/submission is blocked non-destructively with:
+
+```text
+Cannot attach image: current model does not support vision and no visionFallback.model is configured.
+See docs/settings.md#visionfallback to configure an image fallback model.
+```
+
 ### Resolution Order
 
 Model resolution for an agent invocation:
@@ -164,6 +218,7 @@ These keys are read by Harns outside the upstream Pi `SettingsManager` schema.
 | `agents`                          | object  | agent-name map          | global + project | Base per-agent `model` and `thinkingLevel` overrides.                                                                                                                              |
 | `activeModelPreset`               | string  | unset                   | global + project | Selects a named preset from `modelPresets`.                                                                                                                                        |
 | `modelPresets`                    | object  | preset-name map         | global + project | Named per-agent override sets.                                                                                                                                                     |
+| `visionFallback`                  | object  | unset                   | global + project | Vision-capable fallback model used by `see_image` when the active model is text-only.                                                                                              |
 | `compactOnResumeThresholdPercent` | integer | `1`-`100`, default `50` | global + project | `/resume` offers compaction when estimated context reaches this percentage of the selected model context window.                                                                   |
 | `verification_command`            | string  | no default              | project          | Command used by workflow validation. Saved when Harns asks for a validation command.                                                                                               |
 | `cleanupMergedWorktrees`          | boolean | default `true`          | global + project | When true, successful merge-back removes the execution checkout, deletes its registry entry, and clears plan worktree metadata. Set false to keep merged worktrees for inspection. |

@@ -6,6 +6,7 @@ import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import {
     __resetSettingsForTests,
+    getResolvedVisionFallbackModelSetting,
     migratePiSettingsOnce,
     preserveHarnsCustomSettingsForWrite,
     setCustomSetting,
@@ -172,6 +173,46 @@ Deno.test("preserveHarnsCustomSettingsForWrite lets explicit new custom values w
     assertEquals(JSON.parse(preserveHarnsCustomSettingsForWrite(previous, next)), {
         activeModelPreset: "crof.ai",
     });
+});
+
+Deno.test("preserveHarnsCustomSettingsForWrite keeps visionFallback", () => {
+    const previous = JSON.stringify({ visionFallback: { model: "lmstudio/gemma" } });
+    const next = JSON.stringify({ theme: "new-theme" });
+
+    assertEquals(JSON.parse(preserveHarnsCustomSettingsForWrite(previous, next)), {
+        theme: "new-theme",
+        visionFallback: { model: "lmstudio/gemma" },
+    });
+});
+
+Deno.test("getResolvedVisionFallbackModelSetting prefers active preset over top-level", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const originalCwd = Deno.cwd();
+    const tempHome = await Deno.makeTempDir({ prefix: "harns-vision-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "harns-vision-project-" });
+    try {
+        Deno.env.set("HOME", tempHome);
+        Deno.chdir(tempProject);
+        await Deno.mkdir(".hns", { recursive: true });
+        await Deno.writeTextFile(
+            ".hns/settings.json",
+            JSON.stringify({
+                visionFallback: { model: "top/model" },
+                activeModelPreset: "local",
+                modelPresets: { local: { visionFallback: { model: "preset/model" } } },
+            }),
+        );
+        __resetSettingsForTests();
+
+        assertEquals(getResolvedVisionFallbackModelSetting(), "preset/model");
+    } finally {
+        __resetSettingsForTests();
+        Deno.chdir(originalCwd);
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        await Deno.remove(tempHome, { recursive: true });
+        await Deno.remove(tempProject, { recursive: true });
+    }
 });
 
 Deno.test("migratePiSettingsOnce copies legacy Pi settings when Harns settings are missing", async () => {

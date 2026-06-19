@@ -57,6 +57,12 @@ import { renderBootBanner } from "./boot-banner.js";
 import { handleBashCommand } from "./bash-interceptor.js";
 import { handleSlashCommand } from "./slash-dispatch.js";
 import { installKeybindings } from "./keybindings.js";
+import {
+    modelSupportsImageInput,
+    persistImageAttachment,
+    preflightImageAttachments,
+    resolveVisionFallbackModel,
+} from "../session/image-attachments.js";
 
 const CHAT_PROMPT_AGENT_NAME = AGENTS.OPERATOR;
 
@@ -437,9 +443,22 @@ export async function setActiveModel(model, provider) {
         console.error(`Failed to persist model selection: ${e}`);
     }
 
-    // Apply the model change to the running session so subsequent turns use it.
+    // Rebuild the root session so image capability changes update the available tool set.
     const session = getRootAgentSession();
-    if (session) {
+    const rootAgentName = getRootAgentName();
+    if (session && rootAgentName) {
+        try {
+            await ensureRootAgentSession({
+                agentName: rootAgentName,
+                modelOverride: provider ? `${provider}/${model}` : model,
+                uiAPI: getActiveUiAPIState() || undefined,
+                sessionManager: getRootSessionManager() || undefined,
+            });
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            getActiveUiAPIState()?.appendSystemMessage?.(`Failed to switch model: ${msg}`, true);
+        }
+    } else if (session && typeof session.setModel === "function") {
         const modelRegistry = getModelRegistry();
         const found = modelRegistry.find(provider || "", model);
         if (found && modelRegistry.hasConfiguredAuth(found)) {
@@ -827,6 +846,53 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         uiAPI.appendSystemMessage(`Failed to initialize root agent "${initialAgentInternalName}": ${msg}`);
     }
 
+    /** @type {Set<string>} */
+    const warnedImageRefs = new Set();
+
+    /** @param {import('../session/types.js').ImageAttachment} image */
+    function imageWarningKey(image) {
+        return image.ref || image.path || `${image.mimeType}:${image.base64.slice(0, 24)}`;
+    }
+
+    /**
+     * @param {import('../session/types.js').ImageAttachment[]} images
+     * @returns {Promise<{ ok: true, warning?: string } | { ok: false, message: string }>}
+     */
+    async function preflightCurrentImages(images) {
+        const session = getRootAgentSession();
+        const activeModel = session?.model;
+        let fallbackModelRef = undefined;
+        if (images.length > 0 && !modelSupportsImageInput(activeModel)) {
+            try {
+                fallbackModelRef = (await resolveVisionFallbackModel(session?.modelRegistry || getModelRegistry()))
+                    ?.modelRef;
+            } catch (error) {
+                return { ok: false, message: error instanceof Error ? error.message : String(error) };
+            }
+        }
+        const result = preflightImageAttachments(images, { activeModel, fallbackModelRef });
+        if (!result.ok) return result;
+        return { ok: true, warning: result.warning };
+    }
+
+    /**
+     * @param {import('../session/types.js').ImageAttachment} image
+     * @returns {Promise<import('../session/types.js').ImageAttachment | null>}
+     */
+    async function handleImagePaste(image) {
+        const persisted = await persistImageAttachment(image, rootSessionManager, Deno.cwd());
+        const preflight = await preflightCurrentImages([persisted]);
+        if (!preflight.ok) {
+            uiAPI.appendSystemMessage(preflight.message);
+            return null;
+        }
+        if (preflight.warning) {
+            uiAPI.appendSystemMessage(preflight.warning);
+            warnedImageRefs.add(imageWarningKey(persisted));
+        }
+        return persisted;
+    }
+
     // ── Init auto-offer: conditionally offer /init on first TUI visit ──
     if (!initDone) {
         const alreadyOffered = await isInitOfferedFn();
@@ -1140,16 +1206,30 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         }
     }
 
-    editor.onSubmit = (text) => {
+    editor.onSubmit = async (text) => {
         // end the logo blink and make it static
         endBlink();
 
         const userRequest = text.trim();
         if (!userRequest) return;
 
+        const images = [...pastedImages];
+        if (images.length > 0) {
+            const preflight = await preflightCurrentImages(images);
+            if (!preflight.ok) {
+                uiAPI.appendSystemMessage(preflight.message);
+                tui.requestRender();
+                return;
+            }
+            const unwarnedImages = images.filter((image) => !warnedImageRefs.has(imageWarningKey(image)));
+            if (preflight.warning && unwarnedImages.length > 0) {
+                uiAPI.appendSystemMessage(preflight.warning);
+                for (const image of unwarnedImages) warnedImageRefs.add(imageWarningKey(image));
+            }
+        }
+
         editor.addToHistory?.(userRequest);
 
-        const images = [...pastedImages];
         pastedImages.length = 0;
         previewImages.clear();
         editor.setText("");
@@ -1281,6 +1361,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         isCtrlCPendingExit: () => ctrlCPendingExit,
         toggleStartupHelp: () => setHelpExpanded(!helpExpanded),
         cycleThinkingLevel,
+        handleImagePaste,
         clearPendingSteeringMessages: () => {
             pendingSteeringMessages.clear();
             for (const unsubscribe of pendingSteeringUnsubs.values()) {
