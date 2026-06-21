@@ -24,6 +24,10 @@ Router. _Avoid_: Assessment, evaluation, analysis
 **Triage Report**: The structured output of Triage containing routing intent, complexity, summary, and affected paths.
 _Avoid_: Triage result, classification result
 
+**Diagnostic Triage**: Read-only Triage for user-reported broken behavior that gathers enough evidence to estimate
+likely blast radius without reproducing, instrumenting, or fixing the issue. _Avoid_: Diagnosis, debugging,
+mini-debugger
+
 **Routing Intent**: The top-level intent emitted by Triage that decides which Agent receives the User Request:
 `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT`. _Avoid_: Classification, route type, request kind, category
 
@@ -198,6 +202,9 @@ Current PROJECT Epics do not use Task Dispatch. _Avoid_: Decomposition, child FE
 **Task Completion**: The `task_completed` signal an execution Agent emits when its assigned work is complete. _Avoid_:
 Done message, final response
 
+**Scope Escalation**: An execution-time discovery that a `QUICK_FIX` likely needs FEATURE or PROJECT workflow before
+continuing. _Avoid_: Surprise return, silent reroute
+
 **Integration Point**: The final tester-owned Task in a legacy non-Epic PROJECT Task graph that depends on every prior
 Task and checks cross-slice integration before Workflow Validation. _Avoid_: Final verification task, cross-slice
 verification task, acceptance gate
@@ -261,8 +268,10 @@ command definition, prompt command
   Tool**.
 - The **Router** is the default Agent used for fresh Triage, but the **Workflow Orchestrator** reacts to the
   **Triage-Report Tool** outcome rather than to the **Router** Agent Name.
-- A **Triage Report** contains exactly one **Classification**, one **Complexity**, one summary, and zero or more
+- A **Triage Report** contains exactly one **Routing Intent**, one **Complexity**, one summary, and zero or more
   **Affected Paths**.
+- **Diagnostic Triage** is a read-only specialization of **Triage** used for unknown-cause broken behavior; it still
+  emits a normal **Routing Intent** rather than a bug-specific intent.
 - A **QUICK_FIX** is executed directly by the **Operator** and creates no **Plan**.
 - A **FEATURE** is planned by the **Planner**, reviewed through one **Review Loop**, and executed by the **Engineer**
   after approval.
@@ -301,6 +310,8 @@ command definition, prompt command
   FEATURE Plans; the Epic itself is a decomposition container.
 - `QUICK_FIX` work ends when the **Operator** emits **Task Completion**; the **Operator** is responsible for any needed
   self-verification before that signal.
+- A **Scope Escalation** should present the larger-scope finding to the user and ask whether to continue via Router
+  rather than abruptly calling the **Return-to-Router Tool**.
 - Every **Agent Session** loads exactly one **Agent Definition** after bundled, home, and local layers are merged.
 - Every active Agent turn uses the same **Agent Handler**; boot, `/agent`, `return_to_router`, and workflow restores
   must not install Agent-specific handlers.
@@ -317,7 +328,7 @@ command definition, prompt command
 > **Dev:** "A user submitted the **User Request** 'add JWT auth to the API'. What happens first?"
 >
 > **Domain expert:** "The **Router** is the default Agent for fresh **Triage**. It emits one **Triage Report** with a
-> **Classification**, **Complexity**, summary, and **Affected Paths**."
+> **Routing Intent**, **Complexity**, summary, and **Affected Paths**."
 >
 > **Dev:** "Since that spans multiple files, is it a **FEATURE**?"
 >
