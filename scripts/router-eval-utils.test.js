@@ -5,6 +5,7 @@ import {
     routingIntentDistance,
     scoreAgainstHuman,
     toCsv,
+    withRouterJudgementMetrics,
 } from "./router-eval-utils.js";
 
 Deno.test("CSV utilities round-trip quoted cells", () => {
@@ -38,6 +39,7 @@ Deno.test("scoreAgainstHuman reports agreement and correction counts", () => {
         { humanJudgement: "FEATURE", routerDecision: "QUICK_FIX" },
         { humanJudgement: "INQUIRY", routerDecision: "INQUIRY" },
         { humanJudgement: "", routerDecision: "PROJECT" },
+        { humanJudgement: "IDEATION", routerDecision: "" },
     ], "routerDecision");
 
     assertEquals(score, {
@@ -46,6 +48,24 @@ Deno.test("scoreAgainstHuman reports agreement and correction counts", () => {
         agreementRate: 0.5,
         meanDistance: 0.5,
         invalidRows: 0,
+        unscoredRows: 1,
         corrections: { "QUICK_FIX->FEATURE": 1 },
     });
+});
+
+Deno.test("withRouterJudgementMetrics annotates Router agreement columns", () => {
+    assertEquals(
+        withRouterJudgementMetrics({
+            routerDecision: "FEATURE",
+            humanJudgement: "QUICK_FIX",
+        }),
+        {
+            routerDecision: "FEATURE",
+            humanJudgement: "QUICK_FIX",
+            routerAgreesWithHuman: "FALSE",
+            routerCorrection: "FEATURE->QUICK_FIX",
+            routerDistanceFromHuman: 1,
+            routerDisagreementKind: "scope_overestimated",
+        },
+    );
 });
