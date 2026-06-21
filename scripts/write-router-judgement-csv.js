@@ -1,36 +1,22 @@
 /**
  * @module scripts/write-router-judgement-csv
  *
- * Generate a human-reviewable Router judgement CSV from Gemma-reviewed JSONL.
+ * Generate a human-reviewable Router judgement CSV from extracted Router decisions.
  */
 
 import { parseArgs } from "@std/cli/parse-args";
 import {
-    classifyRoutingIntentDisagreement,
     indexRowsByDecisionId,
     parseCsv,
-    routingIntentDistance,
+    ROUTER_JUDGEMENT_COLUMNS,
     toCsv,
+    withRouterJudgementMetrics,
 } from "./router-eval-utils.js";
 
-const DEFAULT_INPUT = "/private/tmp/harns-router-decisions-reviewed.jsonl";
+const DEFAULT_INPUT = "/private/tmp/harns-router-decisions.jsonl";
 const DEFAULT_OUTPUT = "router-judgements.csv";
 
-export const JUDGEMENT_COLUMNS = [
-    "decisionId",
-    "timestamp",
-    "attribution",
-    "requestText",
-    "routerDecision",
-    "humanJudgement",
-    "humanNotes",
-    "gemmaJudgement",
-    "gemmaAgreesWithRouter",
-    "gemmaCorrection",
-    "gemmaDistanceFromRouter",
-    "gemmaDisagreementKind",
-    "gemmaReason",
-];
+export const JUDGEMENT_COLUMNS = ROUTER_JUDGEMENT_COLUMNS;
 
 /**
  * @param {string} text
@@ -50,15 +36,9 @@ export function parseJsonlRows(text) {
  * @returns {Record<string, unknown>}
  */
 export function buildJudgementCsvRow(row, existing) {
-    const review = row.gemmaReview && typeof row.gemmaReview === "object"
-        ? /** @type {{ agrees?: boolean, routingIntent?: string, reason?: string }} */ (row.gemmaReview)
-        : {};
     const routerDecision = typeof row.routingIntent === "string" ? row.routingIntent : "";
-    const gemmaJudgement = review.agrees === true ? routerDecision : review.routingIntent || "";
-    const gemmaAgreesWithRouter = review.agrees === true;
-    const gemmaCorrection = gemmaAgreesWithRouter ? "" : `${routerDecision}->${gemmaJudgement}`;
 
-    return {
+    return withRouterJudgementMetrics({
         decisionId: row.decisionId,
         timestamp: row.timestamp,
         attribution: row.attribution,
@@ -66,13 +46,9 @@ export function buildJudgementCsvRow(row, existing) {
         routerDecision,
         humanJudgement: existing?.humanJudgement || "",
         humanNotes: existing?.humanNotes || "",
-        gemmaJudgement,
-        gemmaAgreesWithRouter: gemmaAgreesWithRouter ? "TRUE" : "FALSE",
-        gemmaCorrection,
-        gemmaDistanceFromRouter: routingIntentDistance(routerDecision, gemmaJudgement) ?? "",
-        gemmaDisagreementKind: classifyRoutingIntentDisagreement(routerDecision, gemmaJudgement),
-        gemmaReason: gemmaAgreesWithRouter ? "" : review.reason || "",
-    };
+        routerSummary: typeof row.summary === "string" ? row.summary : "",
+        routerAffectedPaths: Array.isArray(row.affectedPaths) ? row.affectedPaths.join("; ") : "",
+    });
 }
 
 /**
@@ -111,10 +87,10 @@ export async function main(argv) {
 
     if (args.help) {
         console.log([
-            "Usage: deno run -A scripts/write-router-judgement-csv.js --in reviewed.jsonl --out router-judgements.csv",
+            "Usage: deno run -A scripts/write-router-judgement-csv.js --in router-decisions.jsonl --out router-judgements.csv",
             "",
             "Options:",
-            `  --in, -i <path>       Gemma-reviewed JSONL (default: ${DEFAULT_INPUT})`,
+            `  --in, -i <path>       Extracted Router decisions JSONL (default: ${DEFAULT_INPUT})`,
             `  --out, -o <path>      CSV output (default: ${DEFAULT_OUTPUT})`,
             "  --no-preserve         Do not preserve existing humanJudgement/humanNotes values from the output CSV",
         ].join("\n"));

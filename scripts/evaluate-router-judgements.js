@@ -25,38 +25,36 @@ function parseNumber(value) {
 export function summarizeJudgements(rows) {
     const labelledRows = rows.filter((row) => row.humanJudgement?.trim()).length;
     const router = scoreAgainstHuman(rows, "routerDecision");
-    const gemma = scoreAgainstHuman(rows, "gemmaJudgement");
 
     return {
         labelledRows,
         unlabelledRows: rows.length - labelledRows,
         router,
-        gemma,
     };
 }
 
 /**
  * @param {ReturnType<typeof summarizeJudgements>} summary
- * @param {{ minGemmaAgreementRate?: number, maxGemmaMeanDistance?: number }} thresholds
+ * @param {{ minRouterAgreementRate?: number, maxRouterMeanDistance?: number }} thresholds
  * @returns {string[]}
  */
 export function checkThresholds(summary, thresholds) {
     /** @type {string[]} */
     const failures = [];
     if (
-        thresholds.minGemmaAgreementRate !== undefined &&
-        summary.gemma.agreementRate < thresholds.minGemmaAgreementRate
+        thresholds.minRouterAgreementRate !== undefined &&
+        summary.router.agreementRate < thresholds.minRouterAgreementRate
     ) {
         failures.push(
-            `Gemma agreement ${summary.gemma.agreementRate} < threshold ${thresholds.minGemmaAgreementRate}`,
+            `Router agreement ${summary.router.agreementRate} < threshold ${thresholds.minRouterAgreementRate}`,
         );
     }
     if (
-        thresholds.maxGemmaMeanDistance !== undefined &&
-        summary.gemma.meanDistance > thresholds.maxGemmaMeanDistance
+        thresholds.maxRouterMeanDistance !== undefined &&
+        summary.router.meanDistance > thresholds.maxRouterMeanDistance
     ) {
         failures.push(
-            `Gemma mean distance ${summary.gemma.meanDistance} > threshold ${thresholds.maxGemmaMeanDistance}`,
+            `Router mean distance ${summary.router.meanDistance} > threshold ${thresholds.maxRouterMeanDistance}`,
         );
     }
     return failures;
@@ -74,8 +72,8 @@ export function buildBaseline(summary, csvPath) {
         labelledRows: summary.labelledRows,
         metrics: summary,
         thresholds: {
-            minGemmaAgreementRate: Number(Math.max(0, summary.gemma.agreementRate - 0.05).toFixed(4)),
-            maxGemmaMeanDistance: Number((summary.gemma.meanDistance + 0.1).toFixed(4)),
+            minRouterAgreementRate: Number(Math.max(0, summary.router.agreementRate - 0.05).toFixed(4)),
+            maxRouterMeanDistance: Number((summary.router.meanDistance + 0.1).toFixed(4)),
         },
     };
 }
@@ -85,7 +83,7 @@ export function buildBaseline(summary, csvPath) {
  */
 export async function main(argv) {
     const args = parseArgs(argv, {
-        string: ["csv", "baseline", "baseline-out", "min-gemma-agreement", "max-gemma-mean-distance"],
+        string: ["csv", "baseline", "baseline-out", "min-router-agreement", "max-router-mean-distance"],
         boolean: ["help"],
         alias: { h: "help" },
     });
@@ -101,8 +99,8 @@ export async function main(argv) {
             `  --csv <path>                       Judgement CSV (default: ${DEFAULT_CSV})`,
             "  --baseline <path>                  Read thresholds from a previous baseline JSON",
             "  --baseline-out <path>              Write current metrics and suggested thresholds",
-            "  --min-gemma-agreement <number>     Fail if Gemma agreement is below this rate, e.g. 0.80",
-            "  --max-gemma-mean-distance <number> Fail if Gemma mean distance is above this value",
+            "  --min-router-agreement <number>    Fail if Router agreement is below this rate, e.g. 0.90",
+            "  --max-router-mean-distance <number> Fail if Router mean distance is above this value",
         ].join("\n"));
         return;
     }
@@ -111,17 +109,17 @@ export async function main(argv) {
     const rows = parseCsv(await Deno.readTextFile(csvPath));
     const summary = summarizeJudgements(rows);
 
-    /** @type {{ minGemmaAgreementRate?: number, maxGemmaMeanDistance?: number }} */
+    /** @type {{ minRouterAgreementRate?: number, maxRouterMeanDistance?: number }} */
     const thresholds = {
-        minGemmaAgreementRate: parseNumber(args["min-gemma-agreement"]),
-        maxGemmaMeanDistance: parseNumber(args["max-gemma-mean-distance"]),
+        minRouterAgreementRate: parseNumber(args["min-router-agreement"]),
+        maxRouterMeanDistance: parseNumber(args["max-router-mean-distance"]),
     };
 
     if (args.baseline) {
         const baseline = JSON.parse(await Deno.readTextFile(args.baseline));
         const baselineThresholds = baseline?.thresholds || {};
-        thresholds.minGemmaAgreementRate ??= parseNumber(baselineThresholds.minGemmaAgreementRate);
-        thresholds.maxGemmaMeanDistance ??= parseNumber(baselineThresholds.maxGemmaMeanDistance);
+        thresholds.minRouterAgreementRate ??= parseNumber(baselineThresholds.minRouterAgreementRate);
+        thresholds.maxRouterMeanDistance ??= parseNumber(baselineThresholds.maxRouterMeanDistance);
     }
 
     const failures = checkThresholds(summary, thresholds);
