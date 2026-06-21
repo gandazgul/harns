@@ -1,12 +1,6 @@
 ---
 name: ketch
-description: >
-    Web search, library documentation lookup, and URL content extraction via the ketch CLI.
-    Use ketch search when the user asks for current information, facts, or topics that require
-    searching the web. Use ketch docs when the user asks about library APIs, frameworks, or
-    package documentation. Use ketch scrape when the user provides a URL and wants the page
-    content extracted as clean markdown. Do not use for general file reading, git operations,
-    or tasks unrelated to web search, docs lookup, or scraping.
+description: Use this skill when the user asks for current information, facts, or web search results — even if they don't say "search" or "look up". Use when they ask about library APIs, frameworks, or package documentation. Use when they provide a URL and you need the page content as clean markdown. Do not use for file reading, git operations, or anything unrelated to web access.
 compatibility: Requires ketch CLI v0.8.0+ installed and available in PATH. Needs internet access.
 allowed-tools: Bash(ketch:*) Bash(jq:*)
 metadata:

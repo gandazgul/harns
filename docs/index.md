@@ -100,8 +100,11 @@ Inside the TUI, use `/agent <name>` to switch agents.
 
 User-selectable bundled agents include `router`, `guide`, `ideator`, `operator`, `planner`, `architect`, `engineer`, and
 `tester`. Harns also uses workflow-only pseudo-agents such as Slicer and Reviewer during plan readiness and validation;
-they do not appear in normal `/agent` listings. Documentation work is guided by the bundled `documentation` skill rather
-than a separate docs agent.
+they do not appear in normal `/agent` listings.
+
+Documentation work no longer has a dedicated agent. It is handled through the bundled `documentation` skill, which any
+agent (Operator, Engineer, etc.) loads automatically when a task involves updating Markdown project docs. The full list
+of bundled skills is available under [`docs/customization.md`](customization.md).
 
 ### Use plans for non-trivial work
 

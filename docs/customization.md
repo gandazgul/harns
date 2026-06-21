@@ -63,6 +63,12 @@ Harns loads skills from:
 Each skill lives in a directory with a `SKILL.md` file. Skills are advertised by name and description, and full
 instructions are loaded when invoked.
 
+Bundled skills include `documentation` (Markdown project docs), `ketch` (web search and doc lookup), `diagnose`
+(disciplined bug diagnosis), `prototype` (throwaway prototypes to validate design), `improve-codebase-architecture`
+(deepening and refactoring), and `write-a-skill` (creating new agent skills). The `documentation` skill is the
+replacement for the former dedicated docs-writer agent — any agent can load it when a task involves updating Markdown
+documentation.
+
 ## Themes
 
 Harns includes an embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
