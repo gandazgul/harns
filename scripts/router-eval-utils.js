@@ -6,6 +6,22 @@
 
 import { ROUTING_INTENTS } from "../src/constants.js";
 
+export const ROUTER_JUDGEMENT_COLUMNS = [
+    "decisionId",
+    "timestamp",
+    "attribution",
+    "requestText",
+    "routerDecision",
+    "humanJudgement",
+    "humanNotes",
+    "routerAgreesWithHuman",
+    "routerCorrection",
+    "routerDistanceFromHuman",
+    "routerDisagreementKind",
+    "routerSummary",
+    "routerAffectedPaths",
+];
+
 const ROUTING_INTENT_ORDER = new Map(ROUTING_INTENTS.map((intent, index) => [intent, index]));
 const NON_MATERIALIZING = new Set(["INQUIRY", "IDEATION"]);
 const MATERIALIZING = new Set(["QUICK_FIX", "FEATURE", "PROJECT"]);
@@ -165,22 +181,52 @@ export function indexRowsByDecisionId(rows) {
 }
 
 /**
+ * @param {Record<string, unknown>} row
+ * @returns {Record<string, unknown>}
+ */
+export function withRouterJudgementMetrics(row) {
+    const routerDecision = normalizeRoutingIntentCell(row.routerDecision);
+    const humanJudgement = normalizeRoutingIntentCell(row.humanJudgement);
+    const agrees = routerDecision && humanJudgement && routerDecision === humanJudgement;
+    const correction = routerDecision && humanJudgement && routerDecision !== humanJudgement
+        ? `${routerDecision}->${humanJudgement}`
+        : "";
+    const isScored = Boolean(routerDecision && humanJudgement);
+
+    return {
+        ...row,
+        routerDecision,
+        humanJudgement,
+        routerAgreesWithHuman: isScored ? (agrees ? "TRUE" : "FALSE") : "",
+        routerCorrection: correction,
+        routerDistanceFromHuman: isScored ? routingIntentDistance(routerDecision, humanJudgement) ?? "" : "",
+        routerDisagreementKind: isScored ? classifyRoutingIntentDisagreement(routerDecision, humanJudgement) : "",
+    };
+}
+
+/**
  * @param {Array<Record<string, string>>} rows
  * @param {string} candidateColumn
- * @returns {{ total: number, agreementCount: number, agreementRate: number, meanDistance: number, invalidRows: number, corrections: Record<string, number> }}
+ * @returns {{ total: number, agreementCount: number, agreementRate: number, meanDistance: number, invalidRows: number, unscoredRows: number, corrections: Record<string, number> }}
  */
 export function scoreAgainstHuman(rows, candidateColumn) {
     let total = 0;
     let agreementCount = 0;
     let distanceSum = 0;
     let invalidRows = 0;
+    let unscoredRows = 0;
     /** @type {Record<string, number>} */
     const corrections = {};
 
     for (const row of rows) {
         const human = normalizeRoutingIntentCell(row.humanJudgement);
-        const candidate = normalizeRoutingIntentCell(row[candidateColumn]);
         if (!human) continue;
+        const rawCandidate = oneLine(row[candidateColumn]);
+        if (!rawCandidate) {
+            unscoredRows++;
+            continue;
+        }
+        const candidate = normalizeRoutingIntentCell(rawCandidate);
         total++;
         if (!candidate) {
             invalidRows++;
@@ -201,6 +247,7 @@ export function scoreAgainstHuman(rows, candidateColumn) {
         agreementRate: total ? Number((agreementCount / total).toFixed(4)) : 0,
         meanDistance: total ? Number((distanceSum / total).toFixed(4)) : 0,
         invalidRows,
+        unscoredRows,
         corrections: Object.fromEntries(Object.entries(corrections).sort((a, b) => b[1] - a[1])),
     };
 }
