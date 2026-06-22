@@ -22,10 +22,10 @@
         "proper-lockfile": "npm:proper-lockfile@^4.1.2"
     },
     "tasks": {
-        "ci": "deno task check && rtk deno lint && deno fmt --check && deno task test",
+        "ci": "deno task check && deno lint && deno fmt --check && deno task test",
         "cli": "deno run -A src/cli.js",
-        "test": "rtk deno test -A",
-        "check": "rtk deno check --doc src/**/*.js",
+        "test": "deno test -A --reporter=dot",
+        "check": "deno check --doc src/**/*.js",
         "compile": "deno run -A ./scripts/compile.js"
     },
     "fmt": {
