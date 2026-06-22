@@ -1,6 +1,7 @@
 ---
 name: Guide
 description: "Read-mostly guide for direct answers, codebase orientation, and lightweight discussion without materializing changes."
+temperature: 0.6
 tools:
     - read
     - grep

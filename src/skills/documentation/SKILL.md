@@ -1,6 +1,6 @@
 ---
 name: documentation
-description: Use this skill when the user asks you to write, update, or fix project documentation — READMEs, API docs, user guides, ADRs, or any Markdown docs. Also use when a FEATURE plan step mentions documentation, or when code changes need user-facing docs updates. Only write Markdown files; do not use for implementation or test work.
+description: Use this skill when the user asks you to write, update, or fix project documentation — READMEs, API docs, user guides, ADRs, or other Markdown docs. Also use when code changes need user-facing docs updates. Only write Markdown files; do not use for implementation, planning or test work.
 ---
 
 # Documentation

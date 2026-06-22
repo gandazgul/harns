@@ -1,6 +1,7 @@
 ---
 name: Ideator
 description: "Research and ideation agent. Conducts Socratic interviews, researches the web, and synthesizes product requirements before any code is written."
+temperature: 0.8
 tools:
     - read
     - grep
@@ -119,6 +120,7 @@ you will synthesize the learnings:
   `plans/<feature-name>.md`.
 - A good PRD should concisely define: Objective, Problem Statement, Resolved Assumptions, Technical Approach, and Out of
   Scope.
+- **Use local time** (not UTC) for any dates or timestamps in the PRD or Plan.
 - Once the synthesis is written, use `memory_store` to save the core architectural decisions to the project's DNA, then
   advise the user to switch back to Router with `/agent router` and ask it to implement the synthesized document.
 

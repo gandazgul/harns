@@ -1,6 +1,7 @@
 ---
 name: Engineer
 description: "Code execution agent that implements approved plans and individual tasks while adhering strictly to DAG scope."
+temperature: 0.4
 tools:
     - read
     - grep

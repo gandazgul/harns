@@ -22,6 +22,7 @@
  * @property {string} description - One-line description from merged frontmatter
  * @property {string[]} tools - Allowed tool names from merged frontmatter
  * @property {string} [thinkingLevel] - Thinking/reasoning level from frontmatter ("off" | "minimal" | "low" | "medium" | "high" | "xhigh")
+ * @property {number} [temperature] - Provider temperature from frontmatter, between 0 and 2
  * @property {string} systemPrompt - Core system prompt + merged agent prompt
  */
 
