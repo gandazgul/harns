@@ -31,11 +31,13 @@ the root agent model, the root agent thinking level, prompt templates, skills, a
     "agents": {
         "router": {
             "model": "openai/gpt-5-mini",
-            "thinkingLevel": "minimal"
+            "thinkingLevel": "minimal",
+            "temperature": 0.1
         },
         "engineer": {
             "model": "anthropic/claude-sonnet-4-5",
-            "thinkingLevel": "high"
+            "thinkingLevel": "high",
+            "temperature": 0.4
         }
     },
 
@@ -45,11 +47,13 @@ the root agent model, the root agent thinking level, prompt templates, skills, a
             "agents": {
                 "router": {
                     "model": "openai/gpt-5-mini",
-                    "thinkingLevel": "minimal"
+                    "thinkingLevel": "minimal",
+                    "temperature": 0.1
                 },
                 "engineer": {
                     "model": "anthropic/claude-haiku-4-5",
-                    "thinkingLevel": "low"
+                    "thinkingLevel": "low",
+                    "temperature": 0.3
                 }
             }
         },
@@ -57,11 +61,13 @@ the root agent model, the root agent thinking level, prompt templates, skills, a
             "agents": {
                 "router": {
                     "model": "anthropic/claude-sonnet-4-5",
-                    "thinkingLevel": "medium"
+                    "thinkingLevel": "medium",
+                    "temperature": 0.1
                 },
                 "engineer": {
                     "model": "anthropic/claude-opus-4-5",
-                    "thinkingLevel": "xhigh"
+                    "thinkingLevel": "xhigh",
+                    "temperature": 0.4
                 }
             }
         }
@@ -95,7 +101,8 @@ Maps agent names to base per-agent overrides:
     "agents": {
         "router": {
             "model": "openai/gpt-5-mini",
-            "thinkingLevel": "minimal"
+            "thinkingLevel": "minimal",
+            "temperature": 0.1
         }
     }
 }
@@ -106,6 +113,8 @@ Agent object values:
 - `model`: string in `provider/model_id` format. The provider and model id must exist in the model registry and have
   configured auth.
 - `thinkingLevel`: one of `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`.
+- `temperature`: number from `0` to `2`. Lower values are better for mechanical classification and operational work;
+  higher values are useful for exploratory agents such as Ideator, Planner, and Architect.
 
 ### `activeModelPreset`
 
@@ -134,9 +143,9 @@ Defines named groups of agent overrides:
 }
 ```
 
-Each preset has the same `agents.<agentName>.model` and `agents.<agentName>.thinkingLevel` shape as the base `agents`
-key. Presets are partial: if the active preset does not define a value for an agent, Harns falls back to that agent's
-base `agents` entry.
+Each preset has the same `agents.<agentName>.model`, `agents.<agentName>.thinkingLevel`, and
+`agents.<agentName>.temperature` shape as the base `agents` key. Presets are partial: if the active preset does not
+define a value for an agent, Harns falls back to that agent's base `agents` entry.
 
 ### visionFallback
 
@@ -240,13 +249,20 @@ Thinking level resolution:
 3. `defaultThinkingLevel`.
 4. Layered agent definition frontmatter `thinkingLevel` (`./.hns` > `~/.hns` > bundled).
 
+Temperature resolution:
+
+1. Active preset `modelPresets.<activeModelPreset>.agents.<agent>.temperature`.
+2. Base `agents.<agent>.temperature`.
+3. Layered agent definition frontmatter `temperature` (`./.hns` > `~/.hns` > bundled).
+4. Unset, letting the provider/model default apply.
+
 ## Harns Custom Keys
 
 These keys are read by Harns outside the upstream Pi `SettingsManager` schema.
 
 | Key                               | Type    | Values / default        | Scope            | Description                                                                                                                                                                        |
 | --------------------------------- | ------- | ----------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents`                          | object  | agent-name map          | global + project | Base per-agent `model` and `thinkingLevel` overrides.                                                                                                                              |
+| `agents`                          | object  | agent-name map          | global + project | Base per-agent `model`, `thinkingLevel`, and `temperature` overrides.                                                                                                              |
 | `activeModelPreset`               | string  | unset                   | global + project | Selects a named preset from `modelPresets`.                                                                                                                                        |
 | `modelPresets`                    | object  | preset-name map         | global + project | Named per-agent override sets.                                                                                                                                                     |
 | `visionFallback`                  | object  | unset                   | global + project | Vision-capable fallback model used by `see_image` when the active model is text-only.                                                                                              |

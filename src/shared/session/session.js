@@ -15,6 +15,7 @@ import {
     DefaultResourceLoader,
     SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createEditWithFallbackToolDefinition } from "../../tools/edit-with-fallback.js";
 import { createHarnsGrepToolDefinition } from "../../tools/grep.js";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
@@ -85,6 +86,8 @@ const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
 
 /** Regex to detect an HTML body in an error message (e.g. from a 404 page). */
 const HTML_ERROR_RE = /^(.*?\b404\b.*?)(?:<!DOCTYPE|<html|<body)/i;
+const UNSUPPORTED_TEMPERATURE_RE =
+    /\bunsupported (?:parameter|field|argument)\b[^.:\n]*(?::|\b)\s*["']?temperature["']?|\btemperature\b[^.:\n]*\bunsupported\b/i;
 
 /**
  * Replace 404 error messages that contain an HTML body with a clean generic
@@ -692,6 +695,156 @@ export function getConfiguredAgentThinkingLevel(agentName) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {number | undefined}
+ */
+export function normalizeAgentTemperature(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+    if (value < 0 || value > 2) return undefined;
+    return value;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function getErrorMessage(value) {
+    if (value instanceof Error) return value.message;
+    if (value && typeof value === "object" && "errorMessage" in value) {
+        return String(/** @type {{ errorMessage?: unknown }} */ (value).errorMessage ?? "");
+    }
+    return String(value ?? "");
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isUnsupportedTemperatureError(error) {
+    return UNSUPPORTED_TEMPERATURE_RE.test(getErrorMessage(error));
+}
+
+/**
+ * Some provider/model APIs reject `temperature` even though pi-ai exposes it as
+ * a generic stream option. Retry once without temperature when the provider
+ * reports that exact incompatibility before emitting assistant content.
+ *
+ * @param {import('@earendil-works/pi-ai').AssistantMessageEventStream | Promise<import('@earendil-works/pi-ai').AssistantMessageEventStream>} firstSource
+ * @param {() => import('@earendil-works/pi-ai').AssistantMessageEventStream | Promise<import('@earendil-works/pi-ai').AssistantMessageEventStream>} retryWithoutTemperature
+ * @returns {import('@earendil-works/pi-ai').AssistantMessageEventStream}
+ */
+function createTemperatureFallbackStream(firstSource, retryWithoutTemperature) {
+    const output = createAssistantMessageEventStream();
+
+    /**
+     * @param {import('@earendil-works/pi-ai').AssistantMessageEventStream | Promise<import('@earendil-works/pi-ai').AssistantMessageEventStream>} sourcePromise
+     * @param {boolean} canRetry
+     * @returns {Promise<"retry" | "done">}
+     */
+    async function forward(sourcePromise, canRetry) {
+        const source = await sourcePromise;
+        let emittedAssistantContent = false;
+        for await (const event of source) {
+            if (
+                event.type === "error" &&
+                !emittedAssistantContent &&
+                canRetry &&
+                isUnsupportedTemperatureError(event.error)
+            ) {
+                return "retry";
+            }
+            if (event.type !== "error" && event.type !== "done") {
+                emittedAssistantContent = true;
+            }
+            output.push(event);
+        }
+        return "done";
+    }
+
+    (async () => {
+        const result = await forward(firstSource, true);
+        if (result === "retry") {
+            await forward(retryWithoutTemperature(), false);
+        }
+        output.end();
+    })();
+
+    return output;
+}
+
+/**
+ * @param {object | undefined} options
+ * @returns {object | undefined}
+ */
+function omitTemperatureOption(options) {
+    if (!options) return undefined;
+    const { temperature: _temperature, ...withoutTemperature } =
+        /** @type {{ temperature?: unknown, [key: string]: unknown }} */ (options);
+    return withoutTemperature;
+}
+
+/**
+ * Get the configured temperature override for an agent from merged (global + project) settings.
+ *
+ * Resolution order:
+ * 1. If `activeModelPreset` is set and names a preset in `modelPresets`,
+ *    and that preset has an `agents.<agentName>.temperature` entry, use that.
+ * 2. Otherwise, fall back to `agents.<agentName>.temperature` from base config.
+ *
+ * @param {string} agentName
+ * @returns {number | undefined}
+ */
+export function getConfiguredAgentTemperature(agentName) {
+    const agents = /** @type {Record<string, { temperature?: unknown }> | undefined} */ (
+        getMergedCustomSetting("agents")
+    );
+
+    const activeModelPreset = /** @type {string | undefined} */ (
+        getMergedCustomSetting("activeModelPreset")
+    );
+    if (activeModelPreset) {
+        const modelPresets =
+            /** @type {Record<string, { agents?: Record<string, { temperature?: unknown }> }> | undefined} */ (
+                getMergedCustomSetting("modelPresets")
+            );
+        const preset = modelPresets?.[activeModelPreset];
+        const presetTemperature = normalizeAgentTemperature(preset?.agents?.[agentName]?.temperature);
+        if (presetTemperature !== undefined) return presetTemperature;
+    }
+
+    return normalizeAgentTemperature(agents?.[agentName]?.temperature);
+}
+
+/**
+ * Apply an agent-level temperature as the default for provider requests in a session.
+ *
+ * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
+ * @param {number | undefined} temperature
+ */
+export function applySessionTemperature(session, temperature) {
+    if (temperature === undefined) return;
+    const originalStreamFn = session.agent.streamFn;
+    session.agent.streamFn = (model, context, options) => {
+        const optionsWithTemperature = {
+            ...options,
+            temperature,
+        };
+        try {
+            const firstSource = originalStreamFn(model, context, optionsWithTemperature);
+            return createTemperatureFallbackStream(
+                firstSource,
+                () => originalStreamFn(model, context, omitTemperatureOption(options)),
+            );
+        } catch (error) {
+            if (isUnsupportedTemperatureError(error)) {
+                return originalStreamFn(model, context, omitTemperatureOption(options));
+            }
+            throw error;
+        }
+    };
+}
+
+/**
  * Resolve the model to use for an agent invocation, based on the following priority:
  * 1) Active model state from a manual /model switch
  * 2) Invocation-specific model override (for example, prompt-template frontmatter)
@@ -919,6 +1072,13 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
     const bundledAgentDefsPath = await getBundledAgentDefsPath();
     finalSystemPrompt = finalSystemPrompt.replace("{{BUNDLED_AGENT_DEFS_DIR}}", bundledAgentDefsPath);
 
+    // Append timezone so LLMs can reconcile the midnight boundary between the
+    // local date (pi-coding-agent's "Current date: YYYY-MM-DD") and UTC timestamps
+    // in session data and memories. No duplicated date line — pi-coding-agent's
+    // buildSystemPrompt already appends that after this function returns.
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    finalSystemPrompt += `\nTimezone: ${tz}`;
+
     return finalSystemPrompt;
 }
 
@@ -951,6 +1111,7 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
  *   finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[],
  *   resolvedModel: any,
  *   resolvedThinkingLevel: string | undefined,
+ *   resolvedTemperature: number | undefined,
  *   imageMode?: string,
  *   visionFallbackModelRef?: string
  * }>}
@@ -1085,6 +1246,10 @@ export async function buildAgentSession({
         ...(resolvedModel ? { model: resolvedModel } : {}),
     });
 
+    const resolvedTemperature = (agentName ? getConfiguredAgentTemperature(agentName) : undefined) ??
+        agentDef.temperature;
+    applySessionTemperature(session, resolvedTemperature);
+
     if (extensionsResult?.errors?.length) {
         for (const err of extensionsResult.errors) {
             const msg = `[Harns] Extension warning (${err.path}): ${err.error}`;
@@ -1129,6 +1294,7 @@ export async function buildAgentSession({
         finalCustomTools,
         resolvedModel,
         resolvedThinkingLevel,
+        resolvedTemperature,
         imageMode,
         visionFallbackModelRef: visionFallback?.modelRef,
     };

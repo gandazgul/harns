@@ -1,6 +1,7 @@
 ---
 name: Tester
 description: "Test-writing agent responsible for creating, running, and updating test suites following existing project conventions."
+temperature: 0.4
 tools:
     - read
     - grep

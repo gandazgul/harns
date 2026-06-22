@@ -1,6 +1,7 @@
 ---
 name: Architect
 description: "System design and planning agent. Conducts Socratic interviews, researches technical approaches, writes ADRs, and produces design plans."
+temperature: 0.6
 tools:
     - read
     - grep
@@ -92,7 +93,7 @@ Front matter is mandatory and must be parseable by Harns plan parsing. Include a
 - `complexity` (LOW|MEDIUM|HIGH)
 - `summary`
 - `affectedPaths` (array)
-- `createdAt` (ISO timestamp)
+- `createdAt` (Local time ISO timestamp, get it with `date`)
 - `status` draft
 
 ## Important Rules

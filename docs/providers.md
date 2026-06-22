@@ -54,11 +54,13 @@ Harns can assign different models to different agents:
     "agents": {
         "router": {
             "model": "openai/gpt-5-mini",
-            "thinkingLevel": "minimal"
+            "thinkingLevel": "minimal",
+            "temperature": 0.1
         },
         "engineer": {
             "model": "anthropic/claude-sonnet-4-5",
-            "thinkingLevel": "high"
+            "thinkingLevel": "high",
+            "temperature": 0.4
         }
     }
 }
