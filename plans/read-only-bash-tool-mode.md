@@ -3,19 +3,20 @@ classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Add an opt-in Bubblewrap-backed read-only mode for the agent bash tool, configurable per agent such as router."
 affectedPaths:
-  - "src/tools/read-only-bash.js"
-  - "src/tools/read-only-bash.test.js"
-  - "src/shared/settings.js"
-  - "src/shared/settings.test.js"
-  - "src/shared/session/session.js"
-  - "src/shared/session/__tests__/session-tools-policy.test.js"
-  - "docs/settings.md"
-  - "README.md"
+    - "src/tools/read-only-bash.js"
+    - "src/tools/read-only-bash.test.js"
+    - "src/shared/settings.js"
+    - "src/shared/settings.test.js"
+    - "src/shared/session/session.js"
+    - "src/shared/session/__tests__/session-tools-policy.test.js"
+    - "docs/settings.md"
+    - "README.md"
 createdAt: "2026-06-22T02:05:18Z"
 updatedAt: "2026-06-22T02:46:32.243Z"
 status: "draft"
 origin: "internal"
 ---
+
 # Read-Only Bash Tool Mode
 
 ## Context
