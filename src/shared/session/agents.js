@@ -186,6 +186,16 @@ function normalizeToolNames(tools) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {number | undefined}
+ */
+function normalizeTemperature(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+    if (value < 0 || value > 2) return undefined;
+    return value;
+}
+
+/**
  * Resolve final requested tool names for a session while enforcing agent policy.
  *
  * - `toolNames` may narrow the agent's tool set but cannot add tools outside `agentTools`.
@@ -257,7 +267,7 @@ export async function listAvailableAgents() {
  * @returns {Promise<import('./types.js').AgentDefinition>}
  */
 async function loadAgentDefFromPaths(agentName, filePaths) {
-    /** @type {{ name?: string, model?: string, description?: string, promptOverride?: boolean, thinkingLevel?: string, tools?: unknown[], [key: string]: unknown }} */
+    /** @type {{ name?: string, model?: string, description?: string, promptOverride?: boolean, thinkingLevel?: string, temperature?: unknown, tools?: unknown[], [key: string]: unknown }} */
     let mergedAttrs = {};
     /** @type {string[]} */
     let mergedTools = [];
@@ -313,6 +323,7 @@ async function loadAgentDefFromPaths(agentName, filePaths) {
             ["off", "minimal", "low", "medium", "high", "xhigh"].includes(mergedAttrs.thinkingLevel)
         ? mergedAttrs.thinkingLevel
         : undefined;
+    const temperature = normalizeTemperature(mergedAttrs.temperature);
 
     const mergedPromptBody = promptSegments.join("\n\n").trim();
     const CORE_SYSTEM_PROMPT = await Deno.readTextFile(join(__dirname, "SYSTEM_PROMPT_TEMPLATE.md"));
@@ -332,6 +343,7 @@ async function loadAgentDefFromPaths(agentName, filePaths) {
         model,
         description,
         thinkingLevel,
+        temperature,
         tools,
         systemPrompt,
     };

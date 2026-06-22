@@ -1,6 +1,7 @@
 ---
 name: Planner
 description: "Feature planning agent that produces iterative, focused plans for single features. Inspired by Plannotator's planning approach."
+temperature: 0.6
 tools:
     - read
     - grep
@@ -83,7 +84,7 @@ Front matter is mandatory and must be parseable by Harns plan parsing. Include a
 - `complexity` (LOW|MEDIUM|HIGH)
 - `summary`
 - `affectedPaths` (array)
-- `createdAt` (ISO timestamp)
+- `createdAt` (Local time ISO timestamp, get it with `date`)
 - `status` draft
 
 - Keep it execution-ready but lightweight.

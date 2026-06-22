@@ -1,6 +1,7 @@
 ---
 name: Operator
 description: "Operational agent that executes small tasks — commits, fixes, config changes, and anything that doesn't need a plan."
+temperature: 0.6
 tools:
     - read
     - grep
