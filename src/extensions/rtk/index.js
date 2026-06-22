@@ -11,14 +11,20 @@
 const DEFAULT_EXCLUDED_BINARIES = ["git"];
 
 /**
- * Check whether a command starts with one of the excluded binaries.
+ * Check whether a command contains one of the excluded binary names as a word.
+ * Uses \b word boundaries so "git" inside "legit" or "github" does not match,
+ * but "cd repo && git status", "GIT_TRACE=1 git commit", etc. do match.
+ *
  * @param {string} command - The trimmed command string
  * @param {string[]} excluded - List of excluded binary names
  * @returns {boolean}
  */
 function isExcludedCommand(command, excluded) {
-    const firstToken = command.split(/\s+/)[0];
-    return excluded.includes(firstToken);
+    return excluded.some((binary) => {
+        // Escape regex metacharacters in the binary name (e.g. dots, plus)
+        const escaped = binary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`\\b${escaped}\\b`).test(command);
+    });
 }
 
 /**

@@ -82,25 +82,65 @@ Deno.test("rtk extension ignores non-bash, already rewritten, no-op, and failed 
     assertEquals(failingEvent.input.command, "deno test");
 });
 
-Deno.test("rtk extension bypasses RTK for excluded binaries like git", async () => {
+Deno.test("rtk extension bypasses RTK for excluded binaries anywhere in the command", async () => {
     const spy = setup(() => Promise.resolve({ code: 0, stdout: "rtk whatever\n", stderr: "" }));
     const handler = spy.getHandler("tool_call");
     if (!handler) throw new Error("tool_call handler not registered");
 
-    // git commands should not call rtk at all
+    // Direct git commands should not call rtk
     const gitEvent = { toolName: "bash", input: { command: "git status" } };
     await handler(gitEvent, {});
     assertEquals(gitEvent.input.command, "git status");
     assertEquals(spy.calls, [], "should not call rtk for git commands");
 
-    // git with subcommands and flags
+    // Git with subcommands and flags
     const diffEvent = { toolName: "bash", input: { command: "git diff --cached" } };
     await handler(diffEvent, {});
     assertEquals(diffEvent.input.command, "git diff --cached");
     assertEquals(spy.calls, [], "should not call rtk for git diff");
 
-    // other commands still go through rtk
+    // Git in a command chain
+    const chainEvent = { toolName: "bash", input: { command: "cd repo && git status" } };
+    await handler(chainEvent, {});
+    assertEquals(chainEvent.input.command, "cd repo && git status");
+    assertEquals(spy.calls, [], "should not call rtk for chained git commands");
+
+    // Git with env prefix
+    const envEvent = { toolName: "bash", input: { command: "env FOO=1 git commit" } };
+    await handler(envEvent, {});
+    assertEquals(envEvent.input.command, "env FOO=1 git commit");
+    assertEquals(spy.calls, [], "should not call rtk for env-prefixed git commands");
+
+    // Git with env var shorthand
+    const traceEvent = { toolName: "bash", input: { command: "GIT_TRACE=1 git log" } };
+    await handler(traceEvent, {});
+    assertEquals(traceEvent.input.command, "GIT_TRACE=1 git log");
+    assertEquals(spy.calls, [], "should not call rtk for scoped-env git commands");
+
+    // Git via sudo
+    const sudoEvent = { toolName: "bash", input: { command: "sudo git stash" } };
+    await handler(sudoEvent, {});
+    assertEquals(sudoEvent.input.command, "sudo git stash");
+    assertEquals(spy.calls, [], "should not call rtk for sudo git commands");
+
+    // Git via command builtin
+    const cmdEvent = { toolName: "bash", input: { command: "command git status" } };
+    await handler(cmdEvent, {});
+    assertEquals(cmdEvent.input.command, "command git status");
+    assertEquals(spy.calls, [], "should not call rtk for command-builtin git");
+
+    // Non-excluded commands still go through rtk
     const denoEvent = { toolName: "bash", input: { command: "deno test" } };
     await handler(denoEvent, {});
     assertEquals(spy.calls.length, 1, "should call rtk for non-excluded commands");
+
+    // Word-boundary respects substrings (git inside github should NOT match)
+    const hubEvent = { toolName: "bash", input: { command: "github-cli status" } };
+    await handler(hubEvent, {});
+    assertEquals(spy.calls.length, 2, "should call rtk for github-cli (not git)");
+
+    // git inside legit should NOT match
+    const legitEvent = { toolName: "bash", input: { command: "legit status" } };
+    await handler(legitEvent, {});
+    assertEquals(spy.calls.length, 3, "should call rtk for legit (not git)");
 });
