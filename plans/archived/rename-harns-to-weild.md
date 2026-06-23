@@ -3,14 +3,14 @@ classification: "FEATURE"
 complexity: "HIGH"
 summary: "Rename Harns to RunWeild with a clean break from hns/.hns/HARNS-era state, while preserving only the Router display name Harns and keeping the CLI binary as wld."
 affectedPaths:
-  - "src/cli.js"
-  - "src/constants.js"
-  - "src/shared/settings.js"
-  - "src/shared/ui/boot-logo.js"
-  - "src/shared/session/root-session.js"
-  - "src/shared/models/model-registry.js"
-  - "README.md"
-  - "install.sh"
+    - "src/cli.js"
+    - "src/constants.js"
+    - "src/shared/settings.js"
+    - "src/shared/ui/boot-logo.js"
+    - "src/shared/session/root-session.js"
+    - "src/shared/models/model-registry.js"
+    - "README.md"
+    - "install.sh"
 createdAt: "2026-06-22T22:20:48-04:00"
 updatedAt: "2026-06-23T04:55:50.556Z"
 status: "verified"
@@ -18,6 +18,7 @@ origin: "internal"
 verifiedAt: "2026-06-23T04:55:50.556Z"
 routingIntent: "FEATURE"
 ---
+
 # Rename Harns to RunWeild
 
 ## Context
@@ -113,10 +114,12 @@ entry directly encodes the old project binary/package name.
 
 Existing functions, modules, or patterns to reuse:
 
-- `src/constants.js` — use central constants (`CLI_BIN`, the renamed `.wld` metadata-dir constant, worktree prefixes) rather than scattering string literals.
+- `src/constants.js` — use central constants (`CLI_BIN`, the renamed `.wld` metadata-dir constant, worktree prefixes)
+  rather than scattering string literals.
 - `src/shared/settings.js` — keep the existing one-time Pi migration style (`migratePiSettingsOnce`) but target
   `~/.wld`; do not add or keep `~/.hns` migration/fallback behavior.
-- `src/shared/models/model-registry.js` — follow existing `migratePiModelConfigOnce` pattern only for Pi-owned model/auth import into `~/.wld`; do not add Harns-owned config import.
+- `src/shared/models/model-registry.js` — follow existing `migratePiModelConfigOnce` pattern only for Pi-owned
+  model/auth import into `~/.wld`; do not add Harns-owned config import.
 - `src/shared/session/session.js` — preserve existing layered context lookup patterns
   (`RUNWEILD.md`/`AGENTS.md`/external `AGENTS.md`) and local/home/bundled prompt/skill precedence.
 - `src/shared/session/root-session.js` — reuse `encodeCwdForSessionDir` unchanged for session directory names.
@@ -180,7 +183,8 @@ Existing functions, modules, or patterns to reuse:
   - Set the default repo slug to `gandazgul/runweild`.
 - [ ] Step 10: Update all source tests and docs:
   - `src/**/*.test.js`, docs, README, TODO, and agent definitions should use RunWeild/`wld`/`.wld`/`RUNWEILD.md`.
-  - Keep only `src/agent-definitions/router.md` front matter `name: Harns` as the in-repo product-name exception; otherwise source/docs/tests should use RunWeild naming.
+  - Keep only `src/agent-definitions/router.md` front matter `name: Harns` as the in-repo product-name exception;
+    otherwise source/docs/tests should use RunWeild naming.
 - [ ] Step 11: Sweep and clean up:
   - Run `rg -n --hidden --glob '!.git/**' --glob '!.history/**' --glob '!plans/**' -i 'harns|hns|\.hns|HARNS'`.
   - Classify remaining matches as allowed exceptions only if they are the Router display name or excluded
@@ -202,8 +206,10 @@ Existing functions, modules, or patterns to reuse:
   - `deno test -A src/cmd/version/index.test.js src/cmd/install/index.test.js src/cmd/help/index.test.js` if
     present/affected
 - Automated search gates:
-  - `rg -n --hidden --glob '!.git/**' --glob '!.history/**' --glob '!plans/**' -i 'harns|hns|\.hns|HARNS'` should show only the Router display name exception in active source/docs/tests.
-  - `rg -n 'hns-|/hns| hns|HNS_|\.hns' install.sh .github src README.md docs TODO.md` should return no active compatibility or installer-env references.
+  - `rg -n --hidden --glob '!.git/**' --glob '!.history/**' --glob '!plans/**' -i 'harns|hns|\.hns|HARNS'` should show
+    only the Router display name exception in active source/docs/tests.
+  - `rg -n 'hns-|/hns| hns|HNS_|\.hns' install.sh .github src README.md docs TODO.md` should return no active
+    compatibility or installer-env references.
 - Manual:
   - Run `deno run -A src/cli.js --version`; expect RunWeild/wld version output with unchanged target triple.
   - Run `deno run -A src/cli.js --help`; expect `wld` usage examples and no old product branding except Router `Harns`

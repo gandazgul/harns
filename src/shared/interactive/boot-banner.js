@@ -12,7 +12,12 @@ import { hasSnipBinary } from "../runtime-preflight.js";
 import { listLoadedAgentMdFiles, listSkills } from "../session/session.js";
 
 /**
- * @typedef {{ name: string, source: "local" | "home" | "bundled" }} PromptTemplate
+ * @typedef {{
+ *   name: string,
+ *   source: "local" | "home" | "bundled" | "package",
+ *   path?: string,
+ *   packageSource?: string,
+ * }} PromptTemplate
  */
 
 /**
@@ -20,7 +25,13 @@ import { listLoadedAgentMdFiles, listSkills } from "../session/session.js";
  */
 function toUserFacingPromptPath(template) {
     if (template.source === "local") return `./.wld/prompts/${template.name}.md`;
-    return `~/.wld/prompts/${template.name}.md`;
+    if (template.source === "home") return `~/.wld/prompts/${template.name}.md`;
+    if (template.source === "package") {
+        const origin = template.packageSource ? ` from ${template.packageSource}` : "";
+        const path = template.path ? ` (${template.path})` : "";
+        return `package prompt /${template.name}${origin}${path}`;
+    }
+    return `bundled prompt /${template.name}`;
 }
 
 /**
@@ -105,7 +116,7 @@ export async function renderBootBanner({
     }
 
     for (const blocked of blockedPromptTemplates) {
-        if (blocked.source !== "local" && blocked.source !== "home") continue;
+        if (blocked.source === "bundled") continue;
         const userPath = toUserFacingPromptPath(blocked);
         uiAPI.appendSystemMessage(
             `Warning: ${userPath} command can't be invoked because it would override RunWeild built-in commands. Please rename it.`,

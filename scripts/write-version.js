@@ -74,7 +74,9 @@ export function getExactGitTag(runGit = runGitCommand) {
  * @returns {string | undefined}
  */
 export function getGitShortHash(runGit = runGitCommand) {
-    return runGit(["rev-parse", "--short", "HEAD"]);
+    const gitShortHash = runGit(["rev-parse", "--short", "HEAD"]);
+
+    return gitShortHash || undefined;
 }
 
 /**

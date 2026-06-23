@@ -1,49 +1,60 @@
 ---
 classification: "FEATURE"
 complexity: "MEDIUM"
-summary: "Allow Harns to install and load explicitly Harns-compatible Pi-shaped code extension packages while keeping passive themes unchanged and leaving prompt support to a separate plan."
+summary: "Allow RunWeild to install and load explicitly WLD-compatible Pi-shaped code extension packages after clear user consent, while keeping passive themes and prompts unchanged."
 affectedPaths:
     - "src/cmd/install/index.js"
     - "src/cmd/install/index.test.js"
     - "src/shared/session/session.js"
     - "src/shared/session/session-catalog.test.js"
-    - "src/shared/extensions/harns-extension-manifest.js"
-    - "src/shared/extensions/harns-extension-manifest.test.js"
+    - "src/shared/extensions/wld-extension-manifest.js"
+    - "src/shared/extensions/wld-extension-manifest.test.js"
     - "src/cmd/registry.js"
     - "docs/settings.md"
 createdAt: "2026-06-16T16:46:54-04:00"
-status: "draft"
+status: "verified"
 ---
 
-# Allow Harns-Compatible Pi Extensions
+# Allow WLD-Compatible Pi Extensions
 
 ## Context
 
-Harns currently wraps Pi's package manager for install/remove, and external themes are already registered at runtime.
-Themes should continue to work as they do today because JSON theme resources are passive and comparatively harmless.
-Installed Pi extension resources are counted as ignored because arbitrary extension logic is a large footgun: extensions
-can register tools, alter prompts, intercept tool calls, and mutate agent behavior. At the same time, optional code
-extensions are the right shape for features like Colgrep semantic search, where users should opt in instead of making
-the dependency part of core Harns.
+RunWeild currently wraps Pi's package manager for install/remove, and external themes and package prompt templates are
+already registered at runtime. Themes and prompts should continue to work as they do today because they are passive
+resources.
+
+Installed Pi extension resources are counted as ignored because arbitrary extension logic has real power: extensions can
+register tools, alter prompts, intercept tool calls, read project/session data, call external services, and mutate agent
+behavior. At the same time, optional code extensions are the right shape for features like Colgrep semantic search,
+where users should opt in instead of making the dependency part of core RunWeild.
 
 ## Objective
 
-Enable Harns to install and load a narrow class of Pi-shaped code extension packages that explicitly declare Harns
-compatibility. Continue registering themes through the existing theme path. Continue ignoring skills in this feature.
-Prompt templates are passive enough to be handled separately without this compatibility gate. Harns must make executable
-extension loading visible, testable, and opt-in at the package-manifest level.
+Enable RunWeild to install and load a narrow class of Pi-shaped code extension packages that explicitly declare WLD
+compatibility and receive user consent during install. Continue registering themes and prompt templates through their
+existing passive-resource paths. Continue ignoring skills in this feature.
+
+The package metadata annotation is author self-attestation: it means the package author says the extension was made for
+WLD/RunWeild or tested with WLD/RunWeild. It is not vetting by RunWeild and is not a security guarantee. RunWeild must
+make executable extension loading visible, testable, and gated by an explicit user yes/no prompt.
 
 ## Approach
 
-Introduce a Harns compatibility gate on top of Pi package resolution. Pi packages may still use `pi.extensions` to point
-at extension entry files, but Harns only loads those entries when the package also declares a Harns-specific annotation,
-for example:
+Introduce two gates on top of Pi package resolution:
+
+1. **Package self-attestation:** Pi packages may still use `pi.extensions` to point at extension entry files, but
+   RunWeild only considers those entries when the package also declares a WLD-specific annotation.
+2. **User consent:** before any compatible code extension is enabled for loading, RunWeild asks the user to consent
+   after a clear warning that extension code is powerful, not vetted by RunWeild, and may leak data or cause other
+   issues.
+
+Example package metadata:
 
 ```json
 {
     "pi": {
         "extensions": ["./index.js"],
-        "harns": {
+        "wld": {
             "compatible": true,
             "extensionApi": 1,
             "kind": "code-extension"
@@ -52,27 +63,49 @@ for example:
 }
 ```
 
-The exact field name can be adjusted during implementation, but the compatibility marker must live in package metadata,
-not inside the extension's runtime code. Harns should resolve installed packages through Pi's `DefaultPackageManager`,
-continue handing theme resources to the existing theme registry, filter only extension resources to compatible packages,
-pass those extension paths to `DefaultResourceLoader`, and report ignored resources clearly.
+The compatibility marker must live in package metadata, not inside the extension's runtime code. The install flow is the
+consent boundary: if the user agrees, RunWeild persists the package entry with its compatible extension resources
+enabled; after that, installed WLD-compatible extension resources are loaded like any other installed package resource.
+
+When `wld install <source>` finds one or more WLD-compatible code extensions, show a prompt like:
+
+```text
+Package source contains WLD-compatible code extensions: 2
+
+Extensions can register tools, alter prompts, intercept tool calls, read project/session data, and call external
+services. RunWeild has not vetted this extension package. It could leak data, run unwanted commands, or cause other
+issues.
+
+Enable these extensions for loading? [y/N]
+```
+
+If the user answers yes, persist the installed package entry with those compatible extension resources enabled. If the
+user answers no or the install is running non-interactively without an affirmative flag, install and register passive
+resources as usual but leave extension resources out of the persisted package entry and report the compatible extensions
+as skipped.
+
+RunWeild should resolve installed packages through Pi's `DefaultPackageManager`, continue handing theme resources to the
+existing theme registry, keep package prompt handling separate, filter only extension resources to compatible and
+installed package entries, pass those extension paths to `DefaultResourceLoader`, and report ignored resources clearly.
 
 ## Files to Modify
 
-- `src/cmd/install/index.js` - distinguish Harns-compatible extension resources from ignored extension resources in
-  install output.
+- `src/cmd/install/index.js` - distinguish WLD-compatible extension resources from ignored extension resources in
+  install output, warn about extension power, ask for user consent, and include compatible extension resources in the
+  persisted package entry only after an affirmative answer.
 - `src/cmd/install/index.test.js` - cover install summaries for themes, compatible extensions, ignored extensions, and
-  skills.
+  skills; cover consent yes/no and non-interactive default-deny behavior.
 - `src/shared/session/session.js` - resolve compatible extension paths and pass them to `DefaultResourceLoader` via
-  `additionalExtensionPaths` while retaining built-in Mnemosyne/Cymbal/rtk factories.
+  `additionalExtensionPaths` while retaining built-in Mnemosyne/Cymbal/Snip factories.
 - `src/shared/session/session-catalog.test.js` - verify compatible extension paths are included in session resource
-  loading and incompatible package extensions are excluded.
-- `src/shared/extensions/harns-extension-manifest.js` - add pure JS helpers for reading package metadata and filtering
-  resolved Pi extension resources to the Harns-compatible subset.
-- `src/shared/extensions/harns-extension-manifest.test.js` - cover manifest parsing, missing metadata, incompatible
-  packages, local paths, npm/git package metadata, and malformed package files.
-- `src/cmd/registry.js` - update install/reload help text so Harns no longer claims all logic extensions are ignored.
-- `docs/settings.md` - document the Harns extension compatibility marker, install behavior, and security posture.
+  loading only when present in installed package resources; incompatible or skipped package extensions are excluded.
+- `src/shared/extensions/wld-extension-manifest.js` - add pure JS helpers for reading package metadata, interpreting
+  `pi.wld`, and filtering resolved Pi extension resources to the WLD-compatible subset.
+- `src/shared/extensions/wld-extension-manifest.test.js` - cover manifest parsing, missing metadata, incompatible
+  packages, local paths, npm/git package metadata, malformed package files, and enabled/skipped resource filtering.
+- `src/cmd/registry.js` - update install/reload help text so RunWeild no longer claims all logic extensions are ignored.
+- `docs/settings.md` - document the WLD extension compatibility marker, install behavior, consent prompt, and security
+  posture.
 
 ## Reuse Opportunities
 
@@ -86,40 +119,46 @@ pass those extension paths to `DefaultResourceLoader`, and report ignored resour
 
 ## Implementation Steps
 
-- [ ] Add `src/shared/extensions/harns-extension-manifest.js` with helpers that locate the nearest package root for a
-      resolved extension resource, read `package.json`, and return whether the package declares Harns compatibility.
-- [ ] Define the first compatibility contract in code and docs: `pi.harns.compatible: true`, `extensionApi: 1`, and
+- [x] Add `src/shared/extensions/wld-extension-manifest.js` with helpers that locate the nearest package root for a
+      resolved extension resource, read `package.json`, and return whether the package declares WLD compatibility.
+- [x] Define the first compatibility contract in code and docs: `pi.wld.compatible: true`, `extensionApi: 1`, and
       `kind: "code-extension"`.
-- [ ] Update `runInstallCommand` to count compatible extensions separately from ignored extensions, while still ignoring
+- [x] Update `runInstallCommand` to count compatible extensions separately from ignored extensions, while still ignoring
       skills.
-- [ ] Update install tests to assert that compatible extension resources are reported as enabled/loadable and
-      incompatible extension resources are reported as ignored.
-- [ ] Add a session helper that creates a `DefaultPackageManager`, resolves installed resources, filters compatible
-      extension paths, and returns paths suitable for `additionalExtensionPaths`.
-- [ ] Pass the filtered extension paths into `DefaultResourceLoader` without enabling Pi skills or context file loading.
-- [ ] Surface extension load failures through the existing `extensionsResult.errors` reporting path with enough source
+- [x] Add an install consent prompt for compatible extensions. The prompt must default to no and clearly state that
+      extensions are powerful code, not vetted by RunWeild, and may leak data or cause other issues.
+- [x] When the user consents, keep compatible extension resources enabled in the installed package entry. When the user
+      declines, persist `extensions: []` while still allowing passive resources from the package.
+- [x] Update install tests to assert that compatible extension resources are reported as enabled/loadable only after
+      install consent; incompatible or skipped extension resources are reported as ignored/skipped.
+- [x] Add a session helper that creates a `DefaultPackageManager`, resolves installed resources, filters compatible
+      installed extension paths, and returns paths suitable for `additionalExtensionPaths`.
+- [x] Pass the filtered extension paths into `DefaultResourceLoader` without enabling Pi skills or context file loading.
+- [x] Surface extension load failures through the existing `extensionsResult.errors` reporting path with enough source
       information for users to uninstall or fix the package.
-- [ ] Update help/settings docs to explain that Harns extensions are Pi-shaped but must be explicitly annotated as
-      Harns-compatible.
+- [x] Update help/settings docs to explain that WLD extensions are Pi-shaped, must be explicitly annotated as
+      WLD-compatible, and require user consent because they execute trusted code.
 
 ## Verification Plan
 
 - Automated:
-  `deno fmt --check src/cmd/install/index.js src/cmd/install/index.test.js src/shared/session/session.js src/shared/session/session-catalog.test.js src/shared/extensions/harns-extension-manifest.js src/shared/extensions/harns-extension-manifest.test.js src/cmd/registry.js docs/settings.md`
+  `deno fmt --check src/cmd/install/index.js src/cmd/install/index.test.js src/shared/session/session.js src/shared/session/session-catalog.test.js src/shared/extensions/wld-extension-manifest.js src/shared/extensions/wld-extension-manifest.test.js src/cmd/registry.js docs/settings.md`
 - Automated:
-  `deno test src/cmd/install/index.test.js src/shared/extensions/harns-extension-manifest.test.js src/shared/session/session-catalog.test.js`
+  `deno test src/cmd/install/index.test.js src/shared/extensions/wld-extension-manifest.test.js src/shared/session/session-catalog.test.js`
 - Automated: `deno run ci`
-- Manual: install a fixture package with `pi.harns.compatible: true` and confirm Harns reports the extension as
-  loadable.
-- Manual: install a fixture package with plain `pi.extensions` but no Harns marker and confirm Harns reports it as
+- Manual: install a fixture package with `pi.wld.compatible: true`, answer yes to the warning, and confirm RunWeild
+  reports the extension as loadable.
+- Manual: install a fixture package with `pi.wld.compatible: true`, answer no to the warning, and confirm RunWeild keeps
+  passive resources but does not persist/load extension resources.
+- Manual: install a fixture package with plain `pi.extensions` but no WLD marker and confirm RunWeild reports it as
   ignored and does not load it.
 
 ## Edge Cases & Considerations
 
-- Extension code can mutate agent behavior through Pi hooks, so compatibility must be opt-in and documented as trusted
-  code execution.
-- Harns should not auto-load arbitrary `.pi/extensions` directories or plain Pi package extensions just because Pi can
-  discover them.
+- Extension code can mutate agent behavior through Pi hooks and access sensitive local context. Compatibility
+  self-attestation plus install-time user consent is an explicit trusted-code decision, not a sandbox.
+- RunWeild should not auto-load arbitrary `.pi/extensions` directories or plain Pi package extensions just because Pi
+  can discover them.
 - Themes are explicitly out of the new trust gate. They should keep working as passive JSON resources with the existing
   theme precedence and validation behavior.
 - Skills remain ignored. Prompt support is covered by `plans/allow-harns-compatible-extension-prompts.md` and does not
@@ -127,3 +166,5 @@ pass those extension paths to `DefaultResourceLoader`, and report ignored resour
 - Local package paths need the same compatibility gate as npm/git packages.
 - If a package contains both a theme and an incompatible extension, the theme should still register while the extension
   remains ignored.
+- If a package contains passive resources and a compatible extension but the user declines extension consent, themes and
+  prompts should still work while the extension resource is not persisted for loading.

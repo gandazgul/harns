@@ -15,7 +15,7 @@ affectedPaths:
     - "src/cmd/install/index.test.js"
     - "docs/settings.md"
 createdAt: "2026-06-16T16:51:18-04:00"
-status: "draft"
+status: "verified"
 ---
 
 # Allow Pi Package Prompts
@@ -94,19 +94,19 @@ this first prompt-support feature.
 
 ## Implementation Steps
 
-- [ ] Add or reuse a package-resource helper that returns installed `pi.prompts` paths without requiring
+- [x] Add or reuse a package-resource helper that returns installed `pi.prompts` paths without requiring
       `pi.harns.compatible`.
-- [ ] Keep skills excluded even when the same package declares `pi.skills`.
-- [ ] Keep the Harns compatibility marker required only for executable `pi.extensions` resources.
-- [ ] Update `buildAgentSession` to pass package prompt paths to `DefaultResourceLoader.additionalPromptTemplatePaths`
+- [x] Keep skills excluded even when the same package declares `pi.skills`.
+- [x] Keep the Harns compatibility marker required only for executable `pi.extensions` resources.
+- [x] Update `buildAgentSession` to pass package prompt paths to `DefaultResourceLoader.additionalPromptTemplatePaths`
       while leaving `noPromptTemplates: true`.
-- [ ] Update prompt template listing so package prompts are represented with source metadata that can be shown in
+- [x] Update prompt template listing so package prompts are represented with source metadata that can be shown in
       autocomplete and warnings.
-- [ ] Reuse built-in slash invocation filtering to block package prompts named like built-in commands.
-- [ ] Add warning text for blocked package prompts; do not let them appear in slash autocomplete or dispatch.
-- [ ] Update install output so users can see themes, compatible extensions, package prompts, ignored incompatible code
+- [x] Reuse built-in slash invocation filtering to block package prompts named like built-in commands.
+- [x] Add warning text for blocked package prompts; do not let them appear in slash autocomplete or dispatch.
+- [x] Update install output so users can see themes, compatible extensions, package prompts, ignored incompatible code
       extensions, and ignored skills separately.
-- [ ] Document the default policy: built-in commands win; package prompt overrides can be reconsidered later with an
+- [x] Document the default policy: built-in commands win; package prompt overrides can be reconsidered later with an
       explicit manifest opt-in.
 
 ## Verification Plan
