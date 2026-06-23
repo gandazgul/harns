@@ -124,7 +124,7 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
 
     const plan = await loadPlanFn(CWD, planName);
     if (!plan) {
-        uiAPI.appendSystemMessage(`ERROR: Could not load plan ${planName}`, true, "Harns");
+        uiAPI.appendSystemMessage(`ERROR: Could not load plan ${planName}`, true, "RunWeild");
         return { repairRequired: false, executionComplete: false, error: `Could not load plan ${planName}` };
     }
 
@@ -132,17 +132,17 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
 
     if (isEpicPlan(plan.attrs)) {
         const error = `Plan ${planName} is a PROJECT Epic container and cannot be executed directly.`;
-        uiAPI.appendSystemMessage(`ERROR: ${error}`, true, "Harns");
+        uiAPI.appendSystemMessage(`ERROR: ${error}`, true, "RunWeild");
         return { repairRequired: false, executionComplete: false, error };
     }
 
     if (!isExecutablePlanStatus(plan.attrs.status)) {
         const error = `Plan ${planName} is not ready for work (status: ${plan.attrs.status}).`;
-        uiAPI.appendSystemMessage(`ERROR: ${error}`, true, "Harns");
+        uiAPI.appendSystemMessage(`ERROR: ${error}`, true, "RunWeild");
         return { repairRequired: false, executionComplete: false, error };
     }
 
-    uiAPI.appendSystemMessage(`=== Executing Plan: ${planName} ===`, false, "Harns");
+    uiAPI.appendSystemMessage(`=== Executing Plan: ${planName} ===`, false, "RunWeild");
 
     // New Epic-era execution never dispatches PROJECT task DAGs from this facade.
     // Epics are containers handled above; child FEATURE plans and any legacy
@@ -160,7 +160,7 @@ export async function executePlan(planName, triageMeta, uiAPI, structuredTasks, 
     uiAPI.appendSystemMessage(
         `✅ Plan implementation complete: ${planName}`,
         false,
-        "Harns",
+        "RunWeild",
     );
     await recordPlanEventFn({
         cwd: CWD,
@@ -237,7 +237,7 @@ async function runEngineerWithPlan(planName, planBody, uiAPI, sessionManager, ex
                 getAgentDisplayName(AGENTS.ENGINEER)
             } stopped without task_completed; validation is waiting for a completion signal.`,
             false,
-            "Harns",
+            "RunWeild",
         );
     }
 

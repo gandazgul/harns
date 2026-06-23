@@ -1,9 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { runCompactCommand } from "./index.js";
 import { setRootAgentSession } from "../../shared/session/session-state.js";
-import { initHarnsTheme } from "../../shared/ui/theme.js";
+import { initRunWeildTheme } from "../../shared/ui/theme.js";
 
-initHarnsTheme();
+initRunWeildTheme();
 
 /**
  * @returns {{ uiAPI: any, messages: string[] }}

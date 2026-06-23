@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Harns previously treated Router as both an Agent and a workflow entrypoint. The runtime had a Router-specific handler
+RunWeild previously treated Router as both an Agent and a workflow entrypoint. The runtime had a Router-specific handler
 that consumed `triage_report`, while other Agents used a separate handler that consumed `plan_written` and
 `task_completed`.
 
@@ -32,7 +32,7 @@ activate an Agent by installing the same Agent Handler for the chosen Agent Name
 
 Workflow-only Agent Definitions such as Reviewer, Slicer, and Init are still Agents. They may be hidden from `/agent`
 selection and may be run as one-shot workflow Agent Sessions, but they are not special runtime modes. When a
-workflow-only Agent remains active for follow-up turns, such as Slicer during Epic decomposition, Harns uses the same
+workflow-only Agent remains active for follow-up turns, such as Slicer during Epic decomposition, RunWeild uses the same
 Agent Handler with explicit session data for that Agent Definition and its workflow-scoped Custom Tools.
 
 ## Consequences

@@ -1,7 +1,7 @@
 # Customization
 
-Harns keeps Pi's customizable terminal-agent foundation and adds Harns-specific layers for agents, prompts, skills,
-settings, and themes.
+RunWeild keeps Pi's customizable terminal-agent foundation and adds RunWeild-specific layers for agents, prompts,
+skills, settings, and themes.
 
 For the full upstream concepts, see:
 
@@ -12,11 +12,11 @@ For the full upstream concepts, see:
 
 ## Layering model
 
-Harns resolves customization in this order:
+RunWeild resolves customization in this order:
 
-1. Project-local `.hns/`
-2. Home `~/.hns/`
-3. Bundled defaults in the Harns install
+1. Project-local `.wld/`
+2. Home `~/.wld/`
+3. Bundled defaults in the RunWeild install
 
 Project-local resources override home resources, which override bundled resources.
 
@@ -24,17 +24,17 @@ Project-local resources override home resources, which override bundled resource
 
 Settings live at:
 
-- global: `~/.hns/settings.json`
-- project: `.hns/settings.json`
+- global: `~/.wld/settings.json`
+- project: `.wld/settings.json`
 
 Project settings override global settings. See [Settings Reference](settings.md).
 
 ## Agents
 
-Agent definitions are Markdown files. Harns looks for them in:
+Agent definitions are Markdown files. RunWeild looks for them in:
 
-1. `.hns/agents/`
-2. `~/.hns/agents/`
+1. `.wld/agents/`
+2. `~/.wld/agents/`
 3. bundled `src/agent-definitions/`
 
 Use agent overrides when you want to change prompts, role behavior, or tool access for a project or user.
@@ -43,20 +43,20 @@ Use agent overrides when you want to change prompts, role behavior, or tool acce
 
 Prompt templates can become slash commands when they do not collide with built-in commands.
 
-Harns loads prompts from:
+RunWeild loads prompts from:
 
-1. `.hns/prompts/`
-2. `~/.hns/prompts/`
+1. `.wld/prompts/`
+2. `~/.wld/prompts/`
 3. bundled `src/prompt-templates/`
 
 Run `/reload` after editing prompts in an active session.
 
 ## Skills
 
-Harns loads skills from:
+RunWeild loads skills from:
 
-1. project skills: `.hns/skills/`
-2. home skills: `~/.hns/skills/`
+1. project skills: `.wld/skills/`
+2. home skills: `~/.wld/skills/`
 3. bundled skills: `src/skills/`
 4. external ecosystem skills: `~/.agents/skills/`
 
@@ -71,15 +71,15 @@ documentation.
 
 ## Themes
 
-Harns includes an embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
+RunWeild includes an embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
 
 ```bash
-hns theme --list
-hns theme <name>
-hns install npm:<package-spec>
-hns install git:<repo-url>
-hns install local:<path>
-hns remove <source>
+wld theme --list
+wld theme <name>
+wld install npm:<package-spec>
+wld install git:<repo-url>
+wld install local:<path>
+wld remove <source>
 ```
 
 See [Themes](themes.md).

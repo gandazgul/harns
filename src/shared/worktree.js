@@ -4,7 +4,7 @@
  */
 
 import { basename, join } from "@std/path";
-import { HARNS_DIR_NAME, HOME_DIR, WORKTREE_BRANCH_PREFIX, WORKTREE_PATH_PREFIX } from "../constants.js";
+import { HOME_DIR, RUNWEILD_DIR_NAME, WORKTREE_BRANCH_PREFIX, WORKTREE_PATH_PREFIX } from "../constants.js";
 import { encodeCwdForSessionDir } from "./session/root-session.js";
 import { getWorkflowDiff } from "./workflow/git-snapshot.js";
 import { addEntry, listEntries, pruneStaleEntries, removeEntry } from "./worktree-registry.js";
@@ -127,8 +127,8 @@ async function commitDirtyWorktreeState(worktreePath, branch) {
  */
 export function resolveWorktreeParent(projectRoot, worktreeRoot) {
     if (worktreeRoot) return worktreeRoot;
-    if (HOME_DIR) return join(HOME_DIR, HARNS_DIR_NAME, "worktrees", encodeCwdForSessionDir(projectRoot));
-    return join(projectRoot, HARNS_DIR_NAME, "worktrees");
+    if (HOME_DIR) return join(HOME_DIR, RUNWEILD_DIR_NAME, "worktrees", encodeCwdForSessionDir(projectRoot));
+    return join(projectRoot, RUNWEILD_DIR_NAME, "worktrees");
 }
 
 /**

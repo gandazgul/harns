@@ -6,13 +6,13 @@
 
 ## 1. Objective
 
-Enable Harns users to share plans with their team (technical and non-technical), collect structured feedback in a shared
-space, and iteratively refine plans through revision cycles — all with end-to-end encryption so the server (including
-any self-hosted instance) never sees plaintext plan content.
+Enable RunWeild users to share plans with their team (technical and non-technical), collect structured feedback in a
+shared space, and iteratively refine plans through revision cycles — all with end-to-end encryption so the server
+(including any self-hosted instance) never sees plaintext plan content.
 
 ## 2. Problem Statement
 
-Harns is currently a single-user planning tool. Users generate plans locally but have no mechanism to:
+RunWeild is currently a single-user planning tool. Users generate plans locally but have no mechanism to:
 
 - Share a plan with non-technical stakeholders (PMs, designers, clients) in a readable format.
 - Collect and organize feedback tied to specific parts of the plan.
@@ -28,14 +28,14 @@ with revision tracking solves both problems.
 | Decision                                    | Rationale                                                                                                                                                                                                    |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Shared space, not immutable snapshots**   | Single link for the team; comments stay in one place per revision. Reduces friction for non-technical users.                                                                                                 |
-| **Dual deployment: hosted + self-hostable** | Hosted (`plans.hns.dev`) for convenience; Docker container for teams with data residency requirements. Client is backend-agnostic (configurable base URL).                                                   |
+| **Dual deployment: hosted + self-hostable** | Hosted (`plans.wld.dev`) for convenience; Docker container for teams with data residency requirements. Client is backend-agnostic (configurable base URL).                                                   |
 | **Backend: Cloudflare D1 + SQLite**         | D1 provides ACID transactions and SQL for the hosted path; SQLite is the self-hosted equivalent. Identical schema across both.                                                                               |
 | **Encryption: client-side only**            | Plans and comments are encrypted in the browser before upload. The server stores only ciphertext. Encryption key lives in the URL fragment (`#key=...`), never sent to the server.                           |
 | **Auth: free-form display name**            | No accounts, no passwords on the backend. Reviewers type a name when submitting a comment. Trust model: "people who have the link are the right people." Optional HTTP Basic Auth for self-hosted instances. |
 | **Revisions: comments don't carry over**    | Each revision (`rev_1`, `rev_2`, …) is a frozen snapshot with its own comment thread. Devs can view previous revisions and their comments from the web UI.                                                   |
-| **LLM incorporation on sync**               | `hns plan sync <ID>` presents the planner/architect agent with revision + comments and offers to generate a new revision. Privacy implications are deferred to a separate discussion.                        |
+| **LLM incorporation on sync**               | `wld plan sync <ID>` presents the planner/architect agent with revision + comments and offers to generate a new revision. Privacy implications are deferred to a separate discussion.                        |
 | **No automated notifications v1**           | Dev shares updated URLs manually. Future: gotify or similar push notification integration.                                                                                                                   |
-| **Plans become read-only on close**         | Dev runs `hns plan close`. Backend sets `status = closed`. No further comments accepted. Read-only view remains available at the same URL.                                                                   |
+| **Plans become read-only on close**         | Dev runs `wld plan close`. Backend sets `status = closed`. No further comments accepted. Read-only view remains available at the same URL.                                                                   |
 
 ## 4. Technical Approach
 
@@ -43,8 +43,8 @@ with revision tracking solves both problems.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  Client (hns CLI)                               │
-│  hns plan share │ hns plan sync │ hns plan push │
+│  Client (wld CLI)                               │
+│  wld plan share │ wld plan sync │ wld plan push │
 │  ┌─────────────┐  ┌────────────┐  ┌───────────┐ │
 │  │ encrypt plan │  │ decrypt +  │  │ encrypt + │ │
 │  │ POST → API   │  │ display +  │  │ POST rev  │ │
@@ -242,7 +242,7 @@ CREATE INDEX idx_revisions_plan ON revisions(plan_id);
 ### 4.4 Web Viewer
 
 - **Static SPA** served from a CDN (no server-side rendering needed — all data fetching is client-side via the API).
-- The URL is `plans.hns.dev/p/<plan_id>#key=<encryption_key>`.
+- The URL is `plans.wld.dev/p/<plan_id>#key=<encryption_key>`.
 - On load: fetch the plan blob + all comments for the latest revision, decrypt client-side, render.
 - **UI components:**
   - Markdown viewer (rendered plan)
@@ -256,15 +256,15 @@ CREATE INDEX idx_revisions_plan ON revisions(plan_id);
 
 | Command                    | Description                                                                                       |
 | -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `hns plan share`           | Encrypt `plan.md`, POST to backend, print shareable URL                                           |
-| `hns plan sync <plan_id>`  | Fetch latest revision + comments, decrypt locally, present to planner/architect for incorporation |
-| `hns plan push <plan_id>`  | Encrypt updated plan, POST as new revision                                                        |
-| `hns plan close <plan_id>` | Set plan status to `closed`                                                                       |
-| `hns plan list`            | List plans the user has shared (by fetching plans they created — needs TODO: author tracking)     |
+| `wld plan share`           | Encrypt `plan.md`, POST to backend, print shareable URL                                           |
+| `wld plan sync <plan_id>`  | Fetch latest revision + comments, decrypt locally, present to planner/architect for incorporation |
+| `wld plan push <plan_id>`  | Encrypt updated plan, POST as new revision                                                        |
+| `wld plan close <plan_id>` | Set plan status to `closed`                                                                       |
+| `wld plan list`            | List plans the user has shared (by fetching plans they created — needs TODO: author tracking)     |
 
 ### 4.6 Deployment Model
 
-**Hosted (`plans.hns.dev`):**
+**Hosted (`plans.wld.dev`):**
 
 - A single Cloudflare Worker backed by D1.
 - No auth at the instance level (the encryption key in the URL IS the auth).
@@ -298,11 +298,11 @@ CREATE INDEX idx_revisions_plan ON revisions(plan_id);
 - [ ] **Web UI spec** — Design the viewer, revision switcher, and comment sidebar in detail; hand off to a frontend
       contributor.
 - [ ] **Notification system** — Evaluate gotify or similar for push notifications when a new revision is pushed.
-- [ ] **LLM incorporation pipeline** — Define how `hns plan sync` sends comments + plan to an LLM and what guardrails
+- [ ] **LLM incorporation pipeline** — Define how `wld plan sync` sends comments + plan to an LLM and what guardrails
       exist (privacy, cost, token limits).
 - [ ] **`original_text` encryption decision** — Determine whether comment anchor text should be encrypted client-side or
       sent in plaintext for server-side context.
-- [ ] **Author tracking** — Currently `hns plan list` has no way to filter "my plans." Add an `author_id` or similar
+- [ ] **Author tracking** — Currently `wld plan list` has no way to filter "my plans." Add an `author_id` or similar
       field if needed.
 - [ ] **Diff viewer** — Show a visual diff between revisions in the web UI.
 - [ ] **Smoothen "closed plan" DX** — Add a summary view, export to PDF, etc.
@@ -323,7 +323,7 @@ CREATE INDEX idx_revisions_plan ON revisions(plan_id);
 ## 8. References
 
 - Plannotator codebase: `@/../plannotator/` — sharing pipeline, encryption utilities, `SharePayload` type
-- Harns project memory: `[139] Agent tool policy`, `[104] Agent definitions`, `[103] Monorepo structure`
+- RunWeild project memory: `[139] Agent tool policy`, `[104] Agent definitions`, `[103] Monorepo structure`
 - Plannotator D1 + SQLite precedent: `@/../chores-app/` uses Deno + SQLite in production
-- Relevant Harns files: `packages/ui/utils/sharing.ts`, `packages/ui/utils/planDiffEngine.ts`,
+- Relevant RunWeild files: `packages/ui/utils/sharing.ts`, `packages/ui/utils/planDiffEngine.ts`,
   `packages/shared/crypto.ts`

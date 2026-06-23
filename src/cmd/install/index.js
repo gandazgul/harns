@@ -1,6 +1,6 @@
 /**
  * @module cmd/install
- * Harns install command wrapping Pi's PackageManager.
+ * RunWeild install command wrapping Pi's PackageManager.
  */
 
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
@@ -27,7 +27,7 @@ export async function runInstallCommand(argv, _options = {}) {
     const exit = deps.exit || Deno.exit;
 
     if (argv.length === 0) {
-        error("Usage: hns install <source>");
+        error("Usage: wld install <source>");
         error("Sources: npm:<spec>, git:<url>, local:<path>");
         exit(1);
         return;
@@ -60,7 +60,7 @@ export async function runInstallCommand(argv, _options = {}) {
         log(`Installed ${source}`);
         log(`  Themes registered: ${themeCount}`);
         if (ignoredCount > 0) {
-            log(`  Non-theme resources ignored: ${ignoredCount} (Harns only loads themes)`);
+            log(`  Non-theme resources ignored: ${ignoredCount} (RunWeild only loads themes)`);
         }
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

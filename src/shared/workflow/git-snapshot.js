@@ -89,7 +89,7 @@ async function listTreePaths(cwd, tree) {
  * @returns {Promise<string>}
  */
 export async function captureWorktreeTree(cwd) {
-    const tempDir = await Deno.makeTempDir({ prefix: "harns-git-index-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runweild-git-index-" });
     const indexPath = join(tempDir, "index");
     const env = { GIT_INDEX_FILE: indexPath };
 

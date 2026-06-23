@@ -26,11 +26,11 @@ scope `none` unless it edits tests, and description names it as the Integration 
 run the project's validation command and report failures. This is an intra-DAG check before Workflow Validation, not the
 independent acceptance gate that marks a Plan verified.
 
-The Write Scope column controls Harns' shared-worktree scheduler:
+The Write Scope column controls RunWeild' shared-worktree scheduler:
 
 - Use the narrowest honest repo-relative file or directory paths, comma-separated.
 - Use `none` for read-only validation or Integration Point tasks.
-- Use `unknown` only when the task cannot be scoped; Harns treats it as broad and will not run it concurrently with
+- Use `unknown` only when the task cannot be scoped; RunWeild treats it as broad and will not run it concurrently with
   other writer tasks.
 - Dependencies still describe semantic ordering. Write Scope only describes whether dependency-ready tasks can safely
   launch at the same time.

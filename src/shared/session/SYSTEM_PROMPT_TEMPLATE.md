@@ -24,7 +24,7 @@ the image.
 
 The following skills provide specialized instructions for specific tasks. Use the read tool to load a skill's file when
 the task matches its description. Use the exact `(read: ...)` path shown for the selected skill; do not infer or try
-alternate skill locations. Bundled Harns skills are extracted to `~/.hns/bundled-skills` at runtime so external read
+alternate skill locations. Bundled RunWeild skills are extracted to `~/.wld/bundled-skills` at runtime so external read
 tools can access them. When a skill file references a relative path, resolve it against the skill directory (parent of
 SKILL.md / dirname of the path) and use that absolute path in tool commands. Before going deep on a task, scan the skill
 list and load any skill whose description matches the work.

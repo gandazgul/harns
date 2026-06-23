@@ -43,7 +43,7 @@ const compile = await runCmd("deno", [
     "src/shared/ui/catppuccin-mocha.json",
 
     "--output",
-    "./bin/hns",
+    "./bin/wld",
     "src/cli.js",
 ]);
 

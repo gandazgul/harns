@@ -8,7 +8,7 @@ const MODEL_CONFIG_FILES = ["models.json", "auth.json"];
 /**
  * @returns {string}
  */
-export function getHarnsModelConfigDir() {
+export function getRunWeildModelConfigDir() {
     return getSettingsDir("global");
 }
 
@@ -72,7 +72,7 @@ function readOpenAiModelIds(payload) {
  *
  * This is intentionally targeted: settings may name a model that is valid for
  * a provider whose `models.json` entry has only `baseUrl`/`apiKey`. In that
- * case the upstream registry has no concrete model object yet, so Harns asks
+ * case the upstream registry has no concrete model object yet, so RunWeild asks
  * the provider before treating the settings model as unknown.
  *
  * The `/models` endpoint does not report per-model input modalities, so
@@ -87,7 +87,7 @@ function readOpenAiModelIds(payload) {
  * @param {string} provider
  * @param {string} modelId
  * @param {{
- *   harnsDir?: string,
+ *   runweildDir?: string,
  *   fetchFn?: typeof fetch,
  *   input?: ("text" | "image")[],
  * }} [options]
@@ -97,8 +97,8 @@ export async function discoverProviderModel(modelRegistry, provider, modelId, op
     const existing = modelRegistry.find(provider, modelId);
     if (existing) return existing;
 
-    const harnsDir = options.harnsDir ?? getHarnsModelConfigDir();
-    const modelsConfig = readJsoncObject(join(harnsDir, "models.json"));
+    const runweildDir = options.runweildDir ?? getRunWeildModelConfigDir();
+    const modelsConfig = readJsoncObject(join(runweildDir, "models.json"));
     const providerConfig = /** @type {Record<string, any> | undefined} */ (
         modelsConfig?.providers?.[provider]
     );
@@ -173,15 +173,14 @@ function getPiConfigMigrationCandidates(fileName, homeDir) {
 }
 
 /**
- * One-time import of Pi-owned model/auth files into Harns-owned config.
- * Existing Harns files always win; Pi is never used as a runtime fallback.
+ * One-time import of model/auth files into RunWeild-owned config.
+ * Existing RunWeild files always win; source files are never used as a runtime fallback.
  *
- * @param {{ homeDir?: string, harnsDir?: string }} [options]
+ * @param {{ targetDir: string, sourceCandidatesByFile: (fileName: string) => string[] }} options
  * @returns {{ copied: string[], skipped: string[], failed: Array<{ file: string, error: string }> }}
  */
-export function migratePiModelConfigOnce(options = {}) {
-    const homeDir = options.homeDir ?? Deno.env.get("HOME") ?? "";
-    const harnsDir = options.harnsDir ?? getHarnsModelConfigDir();
+function migrateModelConfigFilesOnce(options) {
+    const targetDir = options.targetDir;
     /** @type {string[]} */
     const copied = [];
     /** @type {string[]} */
@@ -190,20 +189,20 @@ export function migratePiModelConfigOnce(options = {}) {
     const failed = [];
 
     for (const fileName of MODEL_CONFIG_FILES) {
-        const targetPath = join(harnsDir, fileName);
+        const targetPath = join(targetDir, fileName);
         if (fileExists(targetPath)) {
             skipped.push(fileName);
             continue;
         }
 
-        const sourcePath = getPiConfigMigrationCandidates(fileName, homeDir).find(fileExists);
+        const sourcePath = options.sourceCandidatesByFile(fileName).find(fileExists);
         if (!sourcePath) {
             skipped.push(fileName);
             continue;
         }
 
         try {
-            Deno.mkdirSync(harnsDir, { recursive: true });
+            Deno.mkdirSync(targetDir, { recursive: true });
             Deno.copyFileSync(sourcePath, targetPath);
             copied.push(fileName);
         } catch (error) {
@@ -215,14 +214,30 @@ export function migratePiModelConfigOnce(options = {}) {
 }
 
 /**
+ * One-time import of Pi-owned model/auth files into RunWeild-owned config.
+ * Existing RunWeild files always win; Pi is never used as a runtime fallback.
+ *
+ * @param {{ homeDir?: string, runweildDir?: string }} [options]
+ * @returns {{ copied: string[], skipped: string[], failed: Array<{ file: string, error: string }> }}
+ */
+export function migratePiModelConfigOnce(options = {}) {
+    const homeDir = options.homeDir ?? Deno.env.get("HOME") ?? "";
+    const runweildDir = options.runweildDir ?? getRunWeildModelConfigDir();
+    return migrateModelConfigFilesOnce({
+        targetDir: runweildDir,
+        sourceCandidatesByFile: (fileName) => getPiConfigMigrationCandidates(fileName, homeDir),
+    });
+}
+
+/**
  * Get a configured ModelRegistry instance.
  * @returns {ModelRegistry}
  */
 export function getModelRegistry() {
-    const agentDir = getHarnsModelConfigDir();
-    const migration = migratePiModelConfigOnce({ harnsDir: agentDir });
-    for (const failure of migration.failed) {
-        console.warn(`Failed to migrate Pi ${failure.file} to Harns config: ${failure.error}`);
+    const agentDir = getRunWeildModelConfigDir();
+    const piMigration = migratePiModelConfigOnce({ runweildDir: agentDir });
+    for (const failure of piMigration.failed) {
+        console.warn(`Failed to migrate Pi ${failure.file} to RunWeild config: ${failure.error}`);
     }
 
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));

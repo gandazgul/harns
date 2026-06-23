@@ -21,7 +21,7 @@ function entry(overrides = {}) {
         baseBranch: "main",
         baseRef: "HEAD",
         baseCommit: "abc123",
-        branch: "harns/worktree/demo-plan-wt-1",
+        branch: "runweild/worktree/demo-plan-wt-1",
         path: "/tmp/demo-plan-wt-1",
         status: "active",
         createdAt: "2026-01-01T00:00:00.000Z",
@@ -36,7 +36,7 @@ Deno.test("worktree registry supports add/update/find/list/remove", async () => 
         await addEntry(projectRoot, entry());
         assertEquals((await listEntries(projectRoot)).length, 1);
         assertEquals((await findByPlanName(projectRoot, "demo-plan"))?.id, "wt-1");
-        assertEquals((await findById(projectRoot, "wt-1"))?.branch, "harns/worktree/demo-plan-wt-1");
+        assertEquals((await findById(projectRoot, "wt-1"))?.branch, "runweild/worktree/demo-plan-wt-1");
 
         const updated = await updateEntry(projectRoot, "wt-1", { status: "completed" });
         assertEquals(updated?.status, "completed");

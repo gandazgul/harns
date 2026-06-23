@@ -107,7 +107,7 @@ Deno.test("setActiveModel reports setModel rejection instead of leaving an unhan
 
     try {
         Deno.env.set("OPENAI_API_KEY", "test-key");
-        await withTempHome("harns-set-active-model-", async () => {
+        await withTempHome("runweild-set-active-model-", async () => {
             setActiveUiAPI(
                 /** @type {any} */ ({
                     appendSystemMessage: (/** @type {string} */ message) => messages.push(message),
@@ -345,14 +345,14 @@ Deno.test("trackPendingSteeringMessage only consumes queue updates from the sess
 Deno.test("setActiveModel rebuilds root session tool set when switching between vision and text-only models", async () => {
     const originalOpenAiKey = Deno.env.get("OPENAI_API_KEY");
     const originalCwd = Deno.cwd();
-    const tempProject = await Deno.makeTempDir({ prefix: "harns-model-switch-project-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runweild-model-switch-project-" });
     try {
-        await withTempHome("harns-model-switch-home-", async (tempHome) => {
+        await withTempHome("runweild-model-switch-home-", async (tempHome) => {
             Deno.chdir(tempProject);
             Deno.env.set("OPENAI_API_KEY", "test-key");
-            await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
+            await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });
             await Deno.writeTextFile(
-                join(tempHome, ".hns", "models.json"),
+                join(tempHome, ".wld", "models.json"),
                 JSON.stringify({
                     providers: {
                         test: {
@@ -368,7 +368,7 @@ Deno.test("setActiveModel rebuilds root session tool set when switching between 
                 }),
             );
             await Deno.writeTextFile(
-                join(tempHome, ".hns", "settings.json"),
+                join(tempHome, ".wld", "settings.json"),
                 JSON.stringify({
                     visionFallback: { model: "test/vision" },
                 }),
