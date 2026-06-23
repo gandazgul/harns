@@ -41,7 +41,6 @@
         "dim": "overlay0",
         "text": "",
         "thinkingText": "overlay1",
-
         "selectedBg": "surface0",
         "userMessageBg": "surface0",
         "userMessageText": "",
@@ -53,22 +52,19 @@
         "toolErrorBg": "#4c3a4c",
         "toolTitle": "",
         "toolOutput": "subtext0",
-
         "mdHeading": "peach",
         "mdLink": "blue",
         "mdLinkUrl": "overlay0",
-        "mdCode": "teal",
+        "mdCode": "#85cbbf",
         "mdCodeBlock": "green",
         "mdCodeBlockBorder": "overlay1",
         "mdQuote": "subtext0",
         "mdQuoteBorder": "overlay1",
         "mdHr": "overlay1",
         "mdListBullet": "mauve",
-
         "toolDiffAdded": "green",
         "toolDiffRemoved": "red",
         "toolDiffContext": "overlay1",
-
         "syntaxComment": "overlay0",
         "syntaxKeyword": "mauve",
         "syntaxFunction": "blue",
@@ -78,14 +74,12 @@
         "syntaxType": "yellow",
         "syntaxOperator": "sky",
         "syntaxPunctuation": "overlay2",
-
         "thinkingOff": "surface0",
         "thinkingMinimal": "overlay0",
         "thinkingLow": "blue",
         "thinkingMedium": "sapphire",
         "thinkingHigh": "mauve",
         "thinkingXhigh": "pink",
-
         "bashMode": "green"
     },
     "export": {
