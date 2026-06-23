@@ -60,6 +60,47 @@ Deno.test("listPromptTemplates gives local templates precedence and parses metad
     }
 });
 
+Deno.test("listPromptTemplates includes installed package prompts after RunWeild prompts", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runweild-package-prompts-" });
+    const promptPath = join(tempDir, "explain.md");
+    try {
+        await Deno.writeTextFile(
+            promptPath,
+            [
+                "---",
+                'description: "Explain from package"',
+                'argument-hint: "<topic>"',
+                'model: "test/package-model"',
+                "---",
+                "Explain package prompt body.",
+            ].join("\n"),
+        );
+
+        const templates = await listPromptTemplates({
+            packagePromptResources: [{
+                path: promptPath,
+                enabled: true,
+                metadata: {
+                    source: "npm:@example/prompts",
+                    scope: "user",
+                    origin: "package",
+                    baseDir: tempDir,
+                },
+            }],
+        });
+        const template = templates.find((item) => item.name === "explain");
+
+        assertEquals(template?.source, "package");
+        assertEquals(template?.description, "Explain from package");
+        assertEquals(template?.argumentHint, "<topic>");
+        assertEquals(template?.model, "test/package-model");
+        assertEquals(template?.packageSource, "npm:@example/prompts");
+        assertEquals(template?.packageBaseDir, tempDir);
+    } finally {
+        await Deno.remove(tempDir, { recursive: true }).catch(() => {});
+    }
+});
+
 Deno.test("expandPromptTemplate strips front matter and appends user instructions", async () => {
     const path = await Deno.makeTempFile({ prefix: "runweild-template-", suffix: ".md" });
     try {

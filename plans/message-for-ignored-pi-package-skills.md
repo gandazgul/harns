@@ -8,7 +8,7 @@ affectedPaths:
     - "src/cmd/registry.js"
     - "docs/settings.md"
 createdAt: "2026-06-16T17:00:46-04:00"
-status: "draft"
+status: "verified"
 ---
 
 # Message For Ignored Pi Package Skills
@@ -70,13 +70,13 @@ Keep the output informational and non-blocking.
 
 ## Implementation Steps
 
-- [ ] Split install reporting into explicit counts for themes, compatible extensions, prompts if that plan has landed,
+- [x] Split install reporting into explicit counts for themes, compatible extensions, prompts if that plan has landed,
       ignored executable extensions, ignored skills, and any remaining ignored resources.
-- [ ] When `skillCount > 0`, print a concise guidance line using the exact source the user installed:
+- [x] When `skillCount > 0`, print a concise guidance line using the exact source the user installed:
       `npx skills add <source>`.
-- [ ] Optionally mention `-a/--agent` for users who want to target Codex, Claude Code, or another supported agent.
-- [ ] Update install tests so skill resources no longer disappear inside a generic "Non-theme resources ignored" count.
-- [ ] Update CLI help and settings docs with the same external-install guidance.
+- [x] Optionally mention `-a/--agent` for users who want to target Codex, Claude Code, or another supported agent.
+- [x] Update install tests so skill resources no longer disappear inside a generic "Non-theme resources ignored" count.
+- [x] Update CLI help and settings docs with the same external-install guidance.
 
 ## Verification Plan
 

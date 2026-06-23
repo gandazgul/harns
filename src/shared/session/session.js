@@ -74,6 +74,8 @@ import {
 import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsManager } from "../settings.js";
 import { modelSupportsImageInput, prepareImagesForModel, resolveVisionFallbackModel } from "./image-attachments.js";
 import { recordActiveAgent } from "./active-agent-session.js";
+import { getPackagePromptTemplatePaths, resolveInstalledPackagePromptResources } from "../package-resources.js";
+import { getWldExtensionPaths, resolveInstalledWldExtensionResources } from "../extensions/wld-extension-manifest.js";
 
 const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".wld", "prompts") : null;
 const LOCAL_PROMPTS_DIR = join(CWD, ".wld", "prompts");
@@ -156,7 +158,7 @@ export function resolveEffectiveSessionToolNames(agentTools, toolNames, customTo
         : dedupedTools.filter((toolName) => toolName !== "return_to_router");
 }
 
-/** @typedef {"local" | "home" | "bundled"} PromptTemplateSource */
+/** @typedef {"local" | "home" | "bundled" | "package"} PromptTemplateSource */
 
 /** @type {Map<string, string | undefined>} */
 const promptTemplateModelByName = new Map();
@@ -169,6 +171,8 @@ const promptTemplateModelByName = new Map();
  * @property {string | undefined} model
  * @property {string} path
  * @property {PromptTemplateSource} source
+ * @property {string | undefined} [packageSource]
+ * @property {string | undefined} [packageBaseDir]
  */
 
 /**
@@ -223,9 +227,10 @@ async function parsePromptTemplateMeta(filePath) {
  * List all known prompt templates across bundled + home + local layers.
  * First name wins, based on priority local > home > bundled.
  *
+ * @param {{ packagePromptResources?: import("../package-resources.js").ResolvedResource[] }} [options]
  * @returns {Promise<PromptTemplateMeta[]>}
  */
-export async function listPromptTemplates() {
+export async function listPromptTemplates(options = {}) {
     /** @type {PromptTemplateMeta[]} */
     const templates = [];
     promptTemplateModelByName.clear();
@@ -262,6 +267,32 @@ export async function listPromptTemplates() {
             } catch {
                 // Ignore unreadable prompt templates.
             }
+        }
+    }
+
+    const packagePromptResources = Array.isArray(options.packagePromptResources)
+        ? options.packagePromptResources
+        : await resolveInstalledPackagePromptResources().catch(() => []);
+
+    for (const resource of packagePromptResources || []) {
+        const name = resource.path.split(/[\\/]/).pop()?.replace(/\.md$/, "") || "";
+        if (!name || seen.has(name)) continue;
+        try {
+            const meta = await parsePromptTemplateMeta(resource.path);
+            templates.push({
+                name,
+                description: meta.description,
+                argumentHint: meta.argumentHint,
+                model: meta.model,
+                path: resource.path,
+                source: "package",
+                packageSource: resource.metadata?.source,
+                packageBaseDir: resource.metadata?.baseDir,
+            });
+            promptTemplateModelByName.set(name, meta.model);
+            seen.add(name);
+        } catch {
+            // Ignore unreadable package prompt templates.
         }
     }
 
@@ -1210,6 +1241,8 @@ export async function buildAgentSession({
     // Resolve system prompt placeholders
     const finalSystemPrompt = await assembleFinalSystemPrompt(agentDef, tools, finalCustomTools, sessionCwd);
     const promptState = { text: finalSystemPrompt };
+    const packagePromptResources = await resolveInstalledPackagePromptResources({ cwd: sessionCwd }).catch(() => []);
+    const packageExtensionResources = await resolveInstalledWldExtensionResources({ cwd: sessionCwd }).catch(() => []);
     const extensionFactories = [mnemosyneExtension, cymbalExtension];
     if (await hasSnipBinary()) {
         extensionFactories.push((pi) => snipExtension(pi));
@@ -1220,7 +1253,12 @@ export async function buildAgentSession({
         agentDir: getSettingsDir("global"),
         systemPromptOverride: () => promptState.text,
         extensionFactories,
-        additionalPromptTemplatePaths: getPromptTemplatePaths(),
+        additionalExtensionPaths: getWldExtensionPaths(packageExtensionResources),
+        additionalPromptTemplatePaths: [
+            ...getPromptTemplatePaths(),
+            ...getPackagePromptTemplatePaths(packagePromptResources),
+        ],
+        noExtensions: true,
         noContextFiles: true,
         noPromptTemplates: true,
     });
