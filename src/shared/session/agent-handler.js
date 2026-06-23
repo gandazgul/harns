@@ -38,7 +38,7 @@ import { CWD } from "../../constants.js";
  *
  * After the Agent finishes, the handler checks the message stream for workflow
  * Custom Tool outcomes. The tool outcome, not the Agent name, decides whether
- * Harns starts Triage dispatch, Plan execution, or Workflow Validation.
+ * RunWeild starts Triage dispatch, Plan execution, or Workflow Validation.
  *
  * @param {string} agentName - Agent definition name (filename without .md)
  * @param {{

@@ -121,6 +121,6 @@ Deno.test("runRemoveCommand reports not-installed, usage, and failures", async (
     );
 
     assertEquals(logs, ['Package "npm:missing" is not currently installed — nothing to remove.']);
-    assertEquals(errors, ["Usage: hns remove <source>", "Removal failed: bad remove"]);
+    assertEquals(errors, ["Usage: wld remove <source>", "Removal failed: bad remove"]);
     assertEquals(exits, [1, 1]);
 });

@@ -155,10 +155,10 @@ async function runPipedCommand(ctx, command, userRequest, persistToSession) {
 
         if (wasCanceled) {
             if (toolBlock) {
-                toolBlock.appendOutput("\n[Harns] Command canceled by user.");
+                toolBlock.appendOutput("\n[RunWeild] Command canceled by user.");
                 toolBlock.endExecution(true, Date.now() - startTime);
             }
-            uiAPI.appendSystemMessage("Bash command canceled.", false, "Harns");
+            uiAPI.appendSystemMessage("Bash command canceled.", false, "RunWeild");
         } else if (genIsCurrent()) {
             const durationMs = Date.now() - startTime;
             toolBlock?.endExecution(code !== 0, durationMs);

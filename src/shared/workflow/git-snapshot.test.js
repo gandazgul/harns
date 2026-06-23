@@ -29,7 +29,7 @@ async function git(cwd, args) {
 }
 
 Deno.test("getWorkflowDiff excludes dirty worktree changes that existed before the baseline", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "harns-snapshot-test-" });
+    const dir = await Deno.makeTempDir({ prefix: "runweild-snapshot-test-" });
     try {
         await git(dir, ["init"]);
         await Deno.writeTextFile(`${dir}/preexisting.js`, "before baseline\n");
@@ -50,7 +50,7 @@ Deno.test("getWorkflowDiff excludes dirty worktree changes that existed before t
 });
 
 Deno.test("listCommitsTouchingPathsSince returns commits scoped to affected paths", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "harns-snapshot-test-" });
+    const dir = await Deno.makeTempDir({ prefix: "runweild-snapshot-test-" });
     try {
         await git(dir, ["init"]);
         await git(dir, ["config", "user.email", "test@example.com"]);
@@ -78,7 +78,7 @@ Deno.test("listCommitsTouchingPathsSince returns commits scoped to affected path
 });
 
 Deno.test("workflow snapshots include later tracked edits and preserve the real index", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "harns-snapshot-test-" });
+    const dir = await Deno.makeTempDir({ prefix: "runweild-snapshot-test-" });
     try {
         await git(dir, ["init"]);
         await Deno.writeTextFile(`${dir}/tracked.js`, "baseline\n");
@@ -101,7 +101,7 @@ Deno.test("workflow snapshots include later tracked edits and preserve the real 
 });
 
 Deno.test("restoreWorktreeTree restores baseline content and removes later files", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "harns-snapshot-test-" });
+    const dir = await Deno.makeTempDir({ prefix: "runweild-snapshot-test-" });
     try {
         await git(dir, ["init"]);
         await Deno.writeTextFile(`${dir}/kept.js`, "baseline\n");

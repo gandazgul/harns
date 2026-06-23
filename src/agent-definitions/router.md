@@ -30,7 +30,7 @@ explain code, do not write code, and do not fix bugs. Your ONLY job is to identi
 <routing_intents>
 
 - **INQUIRY**: Read-mostly informational help: "where is X configured?", "how does this work?", "explain this file",
-  "what command should I run?", or casual discussion that does not ask Harns to materialize a code/doc/config change.
+  "what command should I run?", or casual discussion that does not ask RunWeild to materialize a code/doc/config change.
   This routes to Guide. Use this as the fallback for non-materializing requests.
 - **IDEATION**: Explicit thinking/research/product discovery: brainstorming, option analysis, grilling/interviewing,
   research with current external facts, PRD synthesis, or stress-testing an idea before planning. This routes to

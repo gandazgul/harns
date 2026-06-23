@@ -1,8 +1,8 @@
-# Product Requirements Document (PRD): Project "Harns"
+# Product Requirements Document (PRD): Project "RunWeild"
 
 ## 1. Vision & Strategy
 
-**Harns** is an opinionated, developer-first coding harness designed for deep architectural alignment and token
+**RunWeild** is an opinionated, developer-first coding harness designed for deep architectural alignment and token
 efficiency. It moves beyond "chat-and-hope" AI by enforcing a "Plan-by-Default" philosophy, utilizing persistent project
 memory, and treating the SDLC as a series of intentional gates.
 
@@ -20,9 +20,9 @@ memory, and treating the SDLC as a series of intentional gates.
 
 ### 3.1 The TUI Shell & Agent Workflows
 
-The primary interface for Harns is the TUI Shell. It acts as a universal host for interacting with different agents. By
-default, when the TUI opens, the user talks to the **Router** agent. The Router is not a special system wrapper; it is a
-peer agent (like the Architect, Planner, or Coder) that simply acts as the default triage point.
+The primary interface for RunWeild is the TUI Shell. It acts as a universal host for interacting with different agents.
+By default, when the TUI opens, the user talks to the **Router** agent. The Router is not a special system wrapper; it
+is a peer agent (like the Architect, Planner, or Coder) that simply acts as the default triage point.
 
 **The Router (Adaptive Path Engine):** When active, the Router automatically triages incoming requests into one of three
 paths:
@@ -37,14 +37,14 @@ paths:
 **Dynamic Agent Switching:** Users can switch the active agent they are conversing with using slash commands (e.g.
 `/resume <plan>`). When `/resume` is invoked, the TUI drops the Router and connects the user directly to the Planner or
 Architect agent managing that specific plan. This works seamlessly whether the TUI was already running or if it was
-started via `hns resume <plan>`.
+started via `wld resume <plan>`.
 
 #### Routing & Lifecycle Tools
 
 Routing and the planning lifecycle are driven by a small set of **declaration tools** plus a session-level orchestrator.
 Factory tools are auto-wired by the session runner and capture TUI/session context (`uiAPI`, `sessionManager`,
 `triageMeta`) at session-start time, so the same tool name is implemented by a different concrete instance per session.
-The agent declares intent by calling the tool; Harns orchestration code decides what happens next.
+The agent declares intent by calling the tool; RunWeild orchestration code decides what happens next.
 
 **`triage_report` (router-only)**
 
@@ -182,8 +182,8 @@ System prompt goes here. You can use the tools defined above to perform actions.
 
 **Layered override precedence (highest wins):**
 
-1. **Local overrides:** `./.hns/agents/<agent>.md`
-2. **Home overrides:** `~/.hns/agents/<agent>.md`
+1. **Local overrides:** `./.wld/agents/<agent>.md`
+2. **Home overrides:** `~/.wld/agents/<agent>.md`
 3. **Bundled defaults:** `src/agent-definitions/<agent>.md`
 
 Each layer that defines a `tools` list replaces the lower layer's tool set entirely. Prompt bodies append by default

@@ -101,11 +101,11 @@ export async function writeVersionFile(filePath = FILE_PATH, version = resolveBu
  * this file with the current build version before \`deno compile\`.
  */
 
-export const HNS_VERSION = ${JSON.stringify(version)};
+export const VERSION = ${JSON.stringify(version)};
 `;
 
     await Deno.writeTextFile(filePath, content);
-    console.log(`[hns] wrote ${filePath} with version ${version}`);
+    console.log(`[wld] wrote ${filePath} with version ${version}`);
 }
 
 if (import.meta.main) {

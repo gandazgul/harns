@@ -9,8 +9,8 @@ import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR } from "../../constants.js";
 import { directoryExists, fileExists } from "../helpers.js";
 import { PROTECTED_TOOL_NAMES } from "../../tools/registry.js";
 
-const HOME_AGENT_DEFS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "agents") : null;
-const LOCAL_AGENT_DEFS_DIR = join(CWD, ".hns", "agents");
+const HOME_AGENT_DEFS_DIR = HOME_DIR ? join(HOME_DIR, ".wld", "agents") : null;
+const LOCAL_AGENT_DEFS_DIR = join(CWD, ".wld", "agents");
 
 export const __dirname = dirname(fromFileUrl(import.meta.url));
 
@@ -53,7 +53,7 @@ function getAgentDefDirsByPriority() {
 
 /**
  * Resolve an existing agent definitions directory for pi-coding-agent resource loading.
- * Priority: local (`.hns/agents`) > home (`~/.hns/agents`) > bundled defaults.
+ * Priority: local (`.wld/agents`) > home (`~/.wld/agents`) > bundled defaults.
  *
  * @returns {Promise<string>}
  */
@@ -242,7 +242,7 @@ export async function listAvailableAgents() {
         } catch (err) {
             // Surface malformed agent definitions instead of silently dropping them.
             console.error(
-                `[Harns] Skipping agent "${name}": ${err instanceof Error ? err.message : String(err)}`,
+                `[RunWeild] Skipping agent "${name}": ${err instanceof Error ? err.message : String(err)}`,
             );
         }
     }
@@ -352,8 +352,8 @@ async function loadAgentDefFromPaths(agentName, filePaths) {
 /**
  * Load and merge an agent definition by name from layered files:
  * 1) bundled: `src/agent-definitions/<name>.md`
- * 2) home override: `~/.hns/agents/<name>.md`
- * 3) local override: `<cwd>/.hns/agents/<name>.md`
+ * 2) home override: `~/.wld/agents/<name>.md`
+ * 3) local override: `<cwd>/.wld/agents/<name>.md`
  *
  * @param {string} agentName
  * @returns {Promise<import('./types.js').AgentDefinition>}

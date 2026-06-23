@@ -1,6 +1,6 @@
 /**
  * @module shared/session/root-session
- * Root interactive session lifecycle helpers (persisted in ~/.hns/sessions).
+ * Root interactive session lifecycle helpers (persisted in ~/.wld/sessions).
  */
 
 import { dirname, join, resolve } from "@std/path";
@@ -16,23 +16,23 @@ export function encodeCwdForSessionDir(cwd) {
 }
 
 /**
- * Resolve the root Harns sessions base directory.
+ * Resolve the root RunWeild sessions base directory.
  *
  * @returns {string}
  */
-export function getHarnsSessionsBaseDir() {
+export function getRunWeildSessionsBaseDir() {
     const home = Deno.env.get("HOME") || "~";
-    return join(home, ".hns", "sessions");
+    return join(home, ".wld", "sessions");
 }
 
 /**
- * Resolve Harns root session directory for a cwd.
+ * Resolve RunWeild root session directory for a cwd.
  *
  * @param {string} cwd
  * @returns {string}
  */
-export function getHarnsSessionDir(cwd) {
-    return join(getHarnsSessionsBaseDir(), encodeCwdForSessionDir(cwd));
+export function getRunWeildSessionDir(cwd) {
+    return join(getRunWeildSessionsBaseDir(), encodeCwdForSessionDir(cwd));
 }
 
 /**
@@ -42,8 +42,8 @@ export function getHarnsSessionDir(cwd) {
  * @param {string} sessionId
  * @returns {string}
  */
-export function getHarnsSessionImageDir(cwd, sessionId) {
-    return join(getHarnsSessionDir(cwd), `${sessionId}_images`);
+export function getRunWeildSessionImageDir(cwd, sessionId) {
+    return join(getRunWeildSessionDir(cwd), `${sessionId}_images`);
 }
 
 /**
@@ -68,7 +68,7 @@ function ensureDir(dir) {
  */
 export async function createRootSessionManager(mode, cwd) {
     const { SessionManager } = await import("@earendil-works/pi-coding-agent");
-    const sessionDir = getHarnsSessionDir(cwd);
+    const sessionDir = getRunWeildSessionDir(cwd);
     ensureDir(sessionDir);
 
     if (mode === "continue") {
@@ -213,7 +213,7 @@ export async function exportRootSessionToHtml(sessionManager, outputPath) {
         }</header><pre>${escapeHtml(JSON.stringify(entry, null, 2))}</pre></section>`;
     }).join("\n");
 
-    const title = `Harns Session Export — ${sessionManager.getSessionId()}`;
+    const title = `RunWeild Session Export — ${sessionManager.getSessionId()}`;
     const html = [
         "<!doctype html>",
         "<html lang='en'>",

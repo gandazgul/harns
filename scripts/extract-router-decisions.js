@@ -1,7 +1,7 @@
 /**
  * @module scripts/extract-router-decisions
  *
- * Extract Router triage decisions from persisted Harns session JSONL files.
+ * Extract Router triage decisions from persisted RunWeild session JSONL files.
  */
 
 import { basename, join } from "@std/path";
@@ -147,7 +147,7 @@ export function extractRouterDecisionsFromEntries(entries, options = {}) {
 
         if (
             (type === "custom" || type === "custom_message") &&
-            entry.customType === "harns.active_agent" &&
+            entry.customType === "runweild.active_agent" &&
             entry.data && typeof entry.data === "object"
         ) {
             const agentName = /** @type {{ agentName?: unknown }} */ (entry.data).agentName;
@@ -332,7 +332,7 @@ export async function main(argv) {
 
     const cwd = args.cwd || Deno.cwd();
     const home = Deno.env.get("HOME") || "";
-    const sessionsDir = args["sessions-dir"] || join(home, ".hns", "sessions", encodeCwdForSessionDir(cwd));
+    const sessionsDir = args["sessions-dir"] || join(home, ".wld", "sessions", encodeCwdForSessionDir(cwd));
     const rows = await extractRouterDecisions({
         sessionsDir,
         limit: args.limit ? parsePositiveInt(args.limit) : undefined,

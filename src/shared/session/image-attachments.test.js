@@ -24,8 +24,8 @@ Deno.test("modelSupportsImageInput checks image modality", () => {
 
 Deno.test("persistImageAttachment stores session-scoped file and resolves attachment ref", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-images-home-" });
-    const cwd = await Deno.makeTempDir({ prefix: "harns-images-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-images-home-" });
+    const cwd = await Deno.makeTempDir({ prefix: "runweild-images-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         const sessionManager = makeSessionManager("abc");
@@ -53,7 +53,7 @@ Deno.test("persistImageAttachment stores session-scoped file and resolves attach
 });
 
 Deno.test("resolveImageRef resolves safe project-relative paths and rejects escapes", async () => {
-    const cwd = await Deno.makeTempDir({ prefix: "harns-image-path-" });
+    const cwd = await Deno.makeTempDir({ prefix: "runweild-image-path-" });
     try {
         await Deno.writeFile(join(cwd, "screenshot.png"), new Uint8Array([1, 2, 3]));
         const local = await resolveImageRef("@screenshot.png", { cwd });
@@ -113,13 +113,13 @@ Deno.test("preflightImageAttachments blocks text-only model without fallback", (
 async function withVisionSettings(settings, fn) {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-vision-settings-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "harns-vision-settings-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-vision-settings-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runweild-vision-settings-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);
-        await Deno.mkdir(".hns", { recursive: true });
-        await Deno.writeTextFile(".hns/settings.json", JSON.stringify(settings));
+        await Deno.mkdir(".wld", { recursive: true });
+        await Deno.writeTextFile(".wld/settings.json", JSON.stringify(settings));
         __resetSettingsForTests();
         await fn(tempHome, tempProject);
     } finally {
@@ -162,9 +162,9 @@ Deno.test("resolveVisionFallbackModel reports unknown, unauthenticated, and non-
 
 Deno.test("resolveVisionFallbackModel discovers configured provider models", async () => {
     await withVisionSettings({ visionFallback: { model: "local/discovered" } }, async (tempHome, tempProject) => {
-        await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
+        await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });
         await Deno.writeTextFile(
-            join(tempHome, ".hns", "models.json"),
+            join(tempHome, ".wld", "models.json"),
             JSON.stringify({
                 providers: {
                     local: {

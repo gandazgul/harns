@@ -33,8 +33,9 @@ standalone FEATURE Plans, PROJECT Epics, child FEATURE Plans, and worktree-backe
 - The pre-resume safety gate is called a **Resume Check**.
 - Resume Check compares staleness against the Plan’s last substantive pre-hold baseline, not `heldAt`.
 - If Resume Check finds problems, the Plan remains `on_hold` until the user chooses recovery.
-- If recovery fails or the user chooses to restart, Harns can **Reset status to draft** while preserving the Plan body.
-- `hns plans` remains non-interactive.
+- If recovery fails or the user chooses to restart, RunWeild can **Reset status to draft** while preserving the Plan
+  body.
+- `wld plans` remains non-interactive.
 - `load-plan` should be consistently menu-first for every Plan status.
 
 ## Front Matter
@@ -158,9 +159,9 @@ Child hold confirmation should state:
 
 > Only this child FEATURE will be held. The parent Epic and sibling FEATURE Plans stay active.
 
-## `hns plans` UX
+## `wld plans` UX
 
-`hns plans` remains read-only.
+`wld plans` remains read-only.
 
 Listing behavior:
 
@@ -202,7 +203,7 @@ On Hold:
 
 ## Out of Scope
 
-- Making `hns plans` interactive.
+- Making `wld plans` interactive.
 - Archiving or deleting Plans as part of hold.
 - Holding `verified` Plans.
 - Mutating child FEATURE statuses when putting an Epic on hold or resuming it.

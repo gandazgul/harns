@@ -3,7 +3,7 @@ import { dirname, join } from "@std/path";
 import { parse as parseJsonc } from "@std/jsonc";
 import lockfile from "proper-lockfile";
 
-const HARNS_CUSTOM_SETTING_KEYS = [
+const RUNWEILD_CUSTOM_SETTING_KEYS = [
     "agents",
     "activeModelPreset",
     "modelPresets",
@@ -25,21 +25,21 @@ const HARNS_CUSTOM_SETTING_KEYS = [
 export function getSettingsDir(scope) {
     const homeDir = Deno.env.get("HOME") || "";
     if (scope === "global") {
-        return join(homeDir, ".hns");
+        return join(homeDir, ".wld");
     }
-    return join(Deno.cwd(), ".hns");
+    return join(Deno.cwd(), ".wld");
 }
 
 /**
- * Harns custom storage for SettingsManager.
+ * RunWeild custom storage for SettingsManager.
  *
  * Implementation Details:
  * - Global Scope:
- *     - Read: uses ~/.hns/settings.json only.
- *     - Migration: if ~/.hns/settings.json is missing, copies once from ~/.pi/agent/settings.json.
- *     - Write: always writes to ~/.hns/settings.json.
+ *     - Read: uses ~/.wld/settings.json only.
+ *     - Migration: if ~/.wld/settings.json is missing, copies once from ~/.pi/agent/settings.json.
+ *     - Write: always writes to ~/.wld/settings.json.
  * - Project Scope:
- *     - Read/Write: use <cwd>/.hns/settings.json.
+ *     - Read/Write: use <cwd>/.wld/settings.json.
  */
 /**
  * @param {string} path
@@ -54,38 +54,31 @@ function fileExists(path) {
 }
 
 /**
- * One-time import of legacy Pi settings into Harns-owned settings.
- * Existing Harns settings always win; Pi is never used as a runtime fallback.
+ * One-time import of legacy Pi settings into RunWeild-owned settings.
+ * Existing RunWeild settings always win; Pi is never used as a runtime fallback.
  *
- * @param {{ homeDir?: string, harnsPath?: string, piPath?: string }} [options]
+ * @param {{ homeDir?: string, runweildPath?: string, piPath?: string }} [options]
  * @returns {{ copied: boolean, skipped: boolean, error?: string }}
  */
 export function migratePiSettingsOnce(options = {}) {
     const homeDir = options.homeDir ?? Deno.env.get("HOME") ?? "";
-    const harnsPath = options.harnsPath ?? join(homeDir, ".hns", "settings.json");
+    const runweildPath = options.runweildPath ?? join(homeDir, ".wld", "settings.json");
     const piPath = options.piPath ?? join(homeDir, ".pi", "agent", "settings.json");
 
-    if (fileExists(harnsPath) || !fileExists(piPath)) {
+    if (fileExists(runweildPath) || !fileExists(piPath)) {
         return { copied: false, skipped: true };
     }
 
     try {
-        Deno.mkdirSync(dirname(harnsPath), { recursive: true });
-        Deno.copyFileSync(piPath, harnsPath);
+        Deno.mkdirSync(dirname(runweildPath), { recursive: true });
+        Deno.copyFileSync(piPath, runweildPath);
         return { copied: true, skipped: false };
     } catch (error) {
         return { copied: false, skipped: false, error: error instanceof Error ? error.message : String(error) };
     }
 }
 
-class HarnsSettingsStorage {
-    /** @type {string} */
-    #cwd;
-
-    constructor() {
-        this.#cwd = Deno.cwd();
-    }
-
+class RunWeildSettingsStorage {
     /**
      * Resolves the path for a given scope.
      * @param {"global" | "project"} scope
@@ -104,7 +97,7 @@ class HarnsSettingsStorage {
     #readSettings(scope) {
         const path = this.#resolvePath(scope);
         if (scope === "global") {
-            migratePiSettingsOnce({ harnsPath: path });
+            migratePiSettingsOnce({ runweildPath: path });
         }
         try {
             const raw = Deno.readTextFileSync(path);
@@ -171,7 +164,7 @@ class HarnsSettingsStorage {
         const content = this.#readSettings(scope);
         let newContent = callback(content);
         if (newContent !== undefined) {
-            newContent = preserveHarnsCustomSettingsForWrite(content, newContent);
+            newContent = preserveRunWeildCustomSettingsForWrite(content, newContent);
         }
         if (newContent !== undefined && newContent !== content) {
             // Ensure the file exists before locking; proper-lockfile requires the
@@ -196,7 +189,7 @@ class HarnsSettingsStorage {
     }
 }
 
-/** @type {HarnsSettingsStorage | null} */
+/** @type {RunWeildSettingsStorage | null} */
 let storageInstance = null;
 
 /** @type {SettingsManager | null} */
@@ -207,7 +200,7 @@ let settingsManager = null;
  */
 export function initSettings() {
     if (!settingsManager) {
-        storageInstance = new HarnsSettingsStorage();
+        storageInstance = new RunWeildSettingsStorage();
         settingsManager = SettingsManager.fromStorage(storageInstance);
     }
 }
@@ -251,15 +244,15 @@ function stripJsoncComments(raw) {
 }
 
 /**
- * Preserve Harns custom settings when Pi's SettingsManager writes its known
+ * Preserve RunWeild custom settings when Pi's SettingsManager writes its known
  * schema back to disk. Without this, operations like changing theme/model can
- * silently drop Harns-only keys such as `modelPresets`.
+ * silently drop RunWeild-only keys such as `modelPresets`.
  *
  * @param {string | undefined} previousContent
  * @param {string} nextContent
  * @returns {string}
  */
-export function preserveHarnsCustomSettingsForWrite(previousContent, nextContent) {
+export function preserveRunWeildCustomSettingsForWrite(previousContent, nextContent) {
     if (!previousContent) return nextContent;
 
     try {
@@ -273,7 +266,7 @@ export function preserveHarnsCustomSettingsForWrite(previousContent, nextContent
         }
 
         let changed = false;
-        for (const key of HARNS_CUSTOM_SETTING_KEYS) {
+        for (const key of RUNWEILD_CUSTOM_SETTING_KEYS) {
             if (
                 Object.prototype.hasOwnProperty.call(previous, key) && !Object.prototype.hasOwnProperty.call(next, key)
             ) {

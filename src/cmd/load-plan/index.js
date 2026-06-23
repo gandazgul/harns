@@ -308,7 +308,7 @@ async function confirmAffectedPathChangesBeforeExecution({
         uiAPI.appendSystemMessage(
             `Could not check affected path history before execution: ${message}`,
             true,
-            "Harns",
+            "RunWeild",
         );
         return true;
     }
@@ -327,7 +327,7 @@ async function confirmAffectedPathChangesBeforeExecution({
             ...formatCommitHeadsUp(commits),
         ].join("\n"),
         true,
-        "Harns",
+        "RunWeild",
     );
 
     const answer = await uiAPI.promptSelect(`Proceed with execution for "${planName}" anyway?`, [
@@ -335,7 +335,7 @@ async function confirmAffectedPathChangesBeforeExecution({
         { value: "cancel", label: "Cancel" },
     ]);
     if (answer === "proceed") return true;
-    uiAPI.appendSystemMessage("Execution canceled.", false, "Harns");
+    uiAPI.appendSystemMessage("Execution canceled.", false, "RunWeild");
     return false;
 }
 
@@ -514,7 +514,7 @@ async function prepareApprovedPlanForWork(plan, uiAPI, ensureSlicerTasks, record
         uiAPI.appendSystemMessage(
             `PROJECT Epic ready for decomposition or child plan selection: ${plan.planName}`,
             false,
-            "Harns",
+            "RunWeild",
         );
         return false;
     }
@@ -530,7 +530,7 @@ async function prepareApprovedPlanForWork(plan, uiAPI, ensureSlicerTasks, record
             uiAPI.appendSystemMessage(
                 `Readiness Gate failed before execution: ${sliceResult.error}`,
                 true,
-                "Harns",
+                "RunWeild",
             );
             return false;
         }
@@ -616,7 +616,7 @@ async function executeReadyPlanWithRepair({
             uiAPI.appendSystemMessage(
                 `Execution failed after ${MAX_REPAIR_ATTEMPTS} repair attempts. Aborting.`,
                 true,
-                "Harns",
+                "RunWeild",
             );
             break;
         }
@@ -626,7 +626,7 @@ async function executeReadyPlanWithRepair({
                 attempt + 1
             }/${MAX_REPAIR_ATTEMPTS})...`,
             false,
-            "Harns",
+            "RunWeild",
         );
         setActiveAgent(agentName, createAgentHandler(agentName), uiAPI);
         const repairOutcome = await runPlanningAgent({
@@ -656,7 +656,7 @@ async function executeReadyPlanWithRepair({
             uiAPI.appendSystemMessage(
                 "Repair did not produce an approved plan. Aborting.",
                 false,
-                "Harns",
+                "RunWeild",
             );
             break;
         }
@@ -873,7 +873,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
         uiAPI.appendSystemMessage(
             `Cannot continue recovery for "${planName}" because the recorded worktree is abandoned. Use Delete/recreate worktree and start over to recreate it explicitly.`,
             true,
-            "Harns",
+            "RunWeild",
         );
         return false;
     }
@@ -881,7 +881,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
         uiAPI.appendSystemMessage(
             `Cannot continue recovery for "${planName}" because no worktree path is recorded. Use Delete/recreate worktree and start over to recreate it explicitly.`,
             true,
-            "Harns",
+            "RunWeild",
         );
         return false;
     }
@@ -889,7 +889,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
         uiAPI.appendSystemMessage(
             `Cannot continue recovery for "${planName}" because the recorded worktree path is missing or stale: ${worktreeContext.path}. Use Delete/recreate worktree and start over to recreate it explicitly.`,
             true,
-            "Harns",
+            "RunWeild",
         );
         return false;
     }
@@ -904,7 +904,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
             uiAPI.appendSystemMessage(
                 `Cannot continue recovery for "${planName}" because the recorded worktree is missing or stale: ${worktreeContext.path}. Use Delete/recreate worktree and start over to recreate it explicitly.`,
                 true,
-                "Harns",
+                "RunWeild",
             );
             return false;
         }
@@ -912,7 +912,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
             uiAPI.appendSystemMessage(
                 `Cannot continue recovery for "${planName}" because the recorded worktree branch is stale: expected ${worktreeContext.branch}, found ${status.branch}. Use Delete/recreate worktree and start over to recreate it explicitly.`,
                 true,
-                "Harns",
+                "RunWeild",
             );
             return false;
         }
@@ -921,7 +921,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
         uiAPI.appendSystemMessage(
             `Cannot continue recovery for "${planName}" because the recorded worktree could not be inspected: ${reason}. Use Delete/recreate worktree and start over to recreate it explicitly.`,
             true,
-            "Harns",
+            "RunWeild",
         );
         return false;
     }
@@ -1080,7 +1080,7 @@ async function handlePlanRecovery({
                 uiAPI.appendSystemMessage(
                     "Cannot reset this plan because no execution baseline tree is recorded.",
                     true,
-                    "Harns",
+                    "RunWeild",
                 );
                 continue;
             }
@@ -1090,7 +1090,7 @@ async function handlePlanRecovery({
                     uiAPI.appendSystemMessage(
                         "Cannot recreate this worktree because no recorded base commit or base ref is available. Retry Workflow Validation or re-open the plan for review instead of recreating from the primary checkout.",
                         true,
-                        "Harns",
+                        "RunWeild",
                     );
                     continue;
                 }
@@ -1162,7 +1162,7 @@ async function handlePlanRecovery({
                 uiAPI.appendSystemMessage(
                     "Manual worktree merge is only available after Workflow Validation passed but merge-back failed. Retry Workflow Validation first.",
                     true,
-                    "Harns",
+                    "RunWeild",
                 );
                 continue;
             }
@@ -1170,7 +1170,7 @@ async function handlePlanRecovery({
                 continue;
             }
             if (!worktreeContext?.branch) {
-                uiAPI.appendSystemMessage("Cannot merge because no worktree branch is recorded.", true, "Harns");
+                uiAPI.appendSystemMessage("Cannot merge because no worktree branch is recorded.", true, "RunWeild");
                 continue;
             }
             try {
@@ -1182,9 +1182,9 @@ async function handlePlanRecovery({
                     worktreePath: worktreeContext.path,
                     allowedDirtyPaths: [
                         `plans/${plan.planName}.md`,
-                        ".hns/",
-                        ".hns/worktrees.json",
-                        ".hns/worktrees.lock",
+                        ".wld/",
+                        ".wld/worktrees.json",
+                        ".wld/worktrees.lock",
                     ],
                 });
                 if (worktreeContext.id) {
@@ -1208,7 +1208,7 @@ async function handlePlanRecovery({
                         uiAPI.appendSystemMessage(
                             `Worktree merged, but cleanup failed: ${cleanupReason}`,
                             true,
-                            "Harns",
+                            "RunWeild",
                         );
                     }
                 }
@@ -1219,10 +1219,10 @@ async function handlePlanRecovery({
                     currentStatus: "implemented",
                     details: { triageMeta: plan.attrs, worktreeStatus: "merged", cleanupMergedWorktrees },
                 });
-                uiAPI.appendSystemMessage("Worktree changes merged and plan marked verified.", false, "Harns");
+                uiAPI.appendSystemMessage("Worktree changes merged and plan marked verified.", false, "RunWeild");
             } catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
-                uiAPI.appendSystemMessage(`Worktree merge failed: ${reason}`, true, "Harns");
+                uiAPI.appendSystemMessage(`Worktree merge failed: ${reason}`, true, "RunWeild");
                 if (worktreeContext.id) {
                     try {
                         await updateWorktreeRegistryEntry(CWD, worktreeContext.id, { status: "merge_conflict" });
@@ -1233,7 +1233,7 @@ async function handlePlanRecovery({
                         uiAPI.appendSystemMessage(
                             `Could not update worktree registry while merge conflict is active: ${metadataReason}`,
                             true,
-                            "Harns",
+                            "RunWeild",
                         );
                     }
                 }
@@ -1252,7 +1252,7 @@ async function handlePlanRecovery({
                     uiAPI.appendSystemMessage(
                         `Could not update plan metadata while merge conflict is active: ${metadataReason}`,
                         true,
-                        "Harns",
+                        "RunWeild",
                     );
                 }
             }
@@ -1279,7 +1279,7 @@ async function handlePlanRecovery({
                 worktreeBranch: null,
             }, plan.attrs);
             worktreeContext = null;
-            uiAPI.appendSystemMessage("Worktree abandoned and removed.", false, "Harns");
+            uiAPI.appendSystemMessage("Worktree abandoned and removed.", false, "RunWeild");
             continue;
         }
 
@@ -1428,13 +1428,13 @@ async function confirmChildFeatureDependencies(plan, uiAPI, resolveSiblingChildP
     const unmetDependencies = dependencyStates.filter((dependency) => dependency.state !== "verified");
     if (unmetDependencies.length === 0) return true;
 
-    uiAPI.appendSystemMessage(formatDependencyWarning(unmetDependencies), true, "Harns");
+    uiAPI.appendSystemMessage(formatDependencyWarning(unmetDependencies), true, "RunWeild");
     const answer = await uiAPI.promptSelect(`Proceed with "${plan.planName}" anyway?`, [
         { value: "proceed", label: "Proceed anyway" },
         { value: "cancel", label: "Cancel" },
     ]);
     if (answer === "proceed") return true;
-    uiAPI.appendSystemMessage("Plan load canceled.", false, "Harns");
+    uiAPI.appendSystemMessage("Plan load canceled.", false, "RunWeild");
     return false;
 }
 
@@ -1467,14 +1467,14 @@ async function handleEpicPlan({
     const canPickChild = hasChildren && isDecomposedEpicStatus(plan.attrs);
 
     if (hasChildren) {
-        uiAPI.appendSystemMessage(formatEpicProgressSummary(children), false, "Harns");
+        uiAPI.appendSystemMessage(formatEpicProgressSummary(children), false, "RunWeild");
     }
     if (isDoneEnoughEpic(plan)) {
         const summary = plan.attrs.epicDoneEnoughSummary ? ` ${plan.attrs.epicDoneEnoughSummary}` : "";
         uiAPI.appendSystemMessage(
             `This Epic is marked done enough for now.${summary} Remaining child FEATURE plans stay visible and loadable.`,
             false,
-            "Harns",
+            "RunWeild",
         );
     }
 
@@ -1482,10 +1482,10 @@ async function handleEpicPlan({
         uiAPI.appendSystemMessage(
             "This PROJECT Epic is not executable. Resume Slicer decomposition to create child FEATURE plans.",
             false,
-            "Harns",
+            "RunWeild",
         );
     } else if (!hasChildren) {
-        uiAPI.appendSystemMessage("This PROJECT Epic has no child FEATURE plans yet.", false, "Harns");
+        uiAPI.appendSystemMessage("This PROJECT Epic has no child FEATURE plans yet.", false, "RunWeild");
     }
 
     while (true) {
@@ -1531,14 +1531,14 @@ async function handleEpicPlan({
                     "Unverified child FEATURE plans remain visible and loadable.",
                 ].join("\n"),
                 false,
-                "Harns",
+                "RunWeild",
             );
             const confirm = await uiAPI.promptSelect("Mark this Epic done enough for now?", [
                 { value: "confirm", label: "Yes, mark done enough for now" },
                 { value: "cancel", label: "Cancel" },
             ]);
             if (confirm !== "confirm") {
-                uiAPI.appendSystemMessage("Epic done-enough update canceled.", false, "Harns");
+                uiAPI.appendSystemMessage("Epic done-enough update canceled.", false, "RunWeild");
                 continue;
             }
             const updatedAttrs = await recordPlanEvent({
@@ -1555,7 +1555,7 @@ async function handleEpicPlan({
             uiAPI.appendSystemMessage(
                 `Epic marked done enough for now. ${plan.attrs.epicDoneEnoughSummary || summary}`,
                 false,
-                "Harns",
+                "RunWeild",
             );
             continue;
         }
@@ -1595,7 +1595,7 @@ async function handleEpicPlan({
                             uiAPI.appendSystemMessage(
                                 `Could not load FEATURE details for ${String(childPlanName)}: ${message}`,
                                 false,
-                                "Harns",
+                                "RunWeild",
                             );
                             break;
                         }
@@ -1754,14 +1754,14 @@ export async function runLoadPlanCommand(argv, options = {}) {
     let restoreAgentName = initialAgentName;
 
     try {
-        uiAPI.appendSystemMessage(`Loading plan: ${planArg}`, false, "Harns");
+        uiAPI.appendSystemMessage(`Loading plan: ${planArg}`, false, "RunWeild");
 
         const plan = await resolvePlan(CWD, planArg);
-        uiAPI.appendSystemMessage(`Plan loaded: ${plan.planName}`, false, "Harns");
+        uiAPI.appendSystemMessage(`Plan loaded: ${plan.planName}`, false, "RunWeild");
         uiAPI.appendSystemMessage(
             `Classification: ${plan.attrs.classification}, Status: ${plan.attrs.status}`,
             false,
-            "Harns",
+            "RunWeild",
         );
 
         const triageMeta = plan.attrs;
@@ -1834,7 +1834,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         if (!dependenciesConfirmed) return;
 
         if (plan.attrs.status === "verified") {
-            uiAPI.appendSystemMessage("This plan is already verified.", false, "Harns");
+            uiAPI.appendSystemMessage("This plan is already verified.", false, "RunWeild");
             while (true) {
                 const answer = await uiAPI.promptSelect("What would you like to do?", [
                     { value: "review", label: "Re-open for review (planner/architect)" },
@@ -1869,7 +1869,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     ? "This plan has been approved but is not ready for work yet."
                     : "This plan is ready for work.",
                 false,
-                "Harns",
+                "RunWeild",
             );
 
             while (true) {
@@ -1940,7 +1940,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                     });
 
                     if (reviewResult.canceled) {
-                        uiAPI.appendSystemMessage("Plan review canceled.", false, "Harns");
+                        uiAPI.appendSystemMessage("Plan review canceled.", false, "RunWeild");
                         skipRouterRestore = true;
                         return;
                     }
@@ -1985,7 +1985,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                             uiAPI.appendSystemMessage(
                                 `Plan saved. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
                                 false,
-                                "Harns",
+                                "RunWeild",
                             );
                             skipRouterRestore = true;
                         }

@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createEditWithFallbackToolDefinition } from "../../tools/edit-with-fallback.js";
-import { createHarnsGrepToolDefinition } from "../../tools/grep.js";
+import { createRunWeildGrepToolDefinition } from "../../tools/grep.js";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
 import { dirname, join } from "@std/path";
 import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
@@ -75,8 +75,8 @@ import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsMa
 import { modelSupportsImageInput, prepareImagesForModel, resolveVisionFallbackModel } from "./image-attachments.js";
 import { recordActiveAgent } from "./active-agent-session.js";
 
-const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "prompts") : null;
-const LOCAL_PROMPTS_DIR = join(CWD, ".hns", "prompts");
+const HOME_PROMPTS_DIR = HOME_DIR ? join(HOME_DIR, ".wld", "prompts") : null;
+const LOCAL_PROMPTS_DIR = join(CWD, ".wld", "prompts");
 
 /** Regex to detect an HTML body in an error message (e.g. from a 404 page). */
 const HTML_ERROR_RE = /^(.*?\b404\b.*?)(?:<!DOCTYPE|<html|<body)/i;
@@ -276,8 +276,8 @@ export async function listPromptTemplates() {
  * @property {"local" | "home" | "bundled" | "external"} source
  */
 
-const BUNDLED_SKILLS_CACHE_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "bundled-skills") : null;
-const BUNDLED_AGENT_DEFS_CACHE_DIR = HOME_DIR ? join(HOME_DIR, ".hns", "bundled-agent-definitions") : null;
+const BUNDLED_SKILLS_CACHE_DIR = HOME_DIR ? join(HOME_DIR, ".wld", "bundled-skills") : null;
+const BUNDLED_AGENT_DEFS_CACHE_DIR = HOME_DIR ? join(HOME_DIR, ".wld", "bundled-agent-definitions") : null;
 
 /** @type {Promise<string | null> | null} */
 let bundledSkillsExtractionPromise = null;
@@ -422,12 +422,12 @@ export async function listSkills() {
 
     const layers = [
         {
-            dir: join(CWD, ".hns", "skills"),
+            dir: join(CWD, ".wld", "skills"),
             source: /** @type {"local" | "home" | "bundled" | "external"} */ ("local"),
         },
         ...(HOME_DIR
             ? [{
-                dir: join(HOME_DIR, ".hns", "skills"),
+                dir: join(HOME_DIR, ".wld", "skills"),
                 source: /** @type {"local" | "home" | "bundled" | "external"} */ ("home"),
             }]
             : []),
@@ -492,8 +492,8 @@ export function getGlobalAgentMdPaths(homeDir, options = {}) {
     const includeExternal = options.includeExternal ??
         (getCustomSetting("enableExternalGlobalAgentsMd", "global") ?? true);
     return [
-        join(homeDir, ".hns", "HARNS.md"),
-        join(homeDir, ".hns", "AGENTS.md"),
+        join(homeDir, ".wld", "RUNWEILD.md"),
+        join(homeDir, ".wld", "AGENTS.md"),
         ...(includeExternal ? [join(homeDir, ".agents", "AGENTS.md")] : []),
     ];
 }
@@ -535,9 +535,11 @@ export async function listLoadedAgentMdFiles() {
         }
     }
 
-    const projectPath = join(CWD, "HARNS.md");
-    if (await fileExists(projectPath)) {
-        results.push({ path: projectPath, source: "local" });
+    for (const projectPath of [join(CWD, "RUNWEILD.md"), join(CWD, "AGENTS.md")]) {
+        if (await fileExists(projectPath)) {
+            results.push({ path: projectPath, source: "local" });
+            break;
+        }
     }
 
     return results;
@@ -1025,10 +1027,13 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
     finalSystemPrompt = finalSystemPrompt.replace("{{GLOBAL_AGENTSMD}}", globalAgentsMd);
 
     let projectAgentsMd = "";
-    try {
-        projectAgentsMd = await Deno.readTextFile(join(CWD, "HARNS.md"));
-    } catch {
-        projectAgentsMd = "";
+    for (const projectPath of [join(cwd, "RUNWEILD.md"), join(cwd, "AGENTS.md")]) {
+        try {
+            projectAgentsMd = await Deno.readTextFile(projectPath);
+            break;
+        } catch {
+            projectAgentsMd = "";
+        }
     }
     finalSystemPrompt = finalSystemPrompt.replace("{{PROJECT_AGENTSMD}}", projectAgentsMd);
 
@@ -1145,7 +1150,7 @@ export async function buildAgentSession({
 
     // Auto-wire internal custom tools if requested by name and not already provided.
     // This keeps agent frontmatter declarative: adding/removing tool names controls availability,
-    // while Harns runtime injects the concrete tool implementations.
+    // while RunWeild runtime injects the concrete tool implementations.
 
     if (tools.includes("return_to_router") && !finalCustomTools.find((t) => t.name === "return_to_router")) {
         finalCustomTools.push({
@@ -1185,7 +1190,7 @@ export async function buildAgentSession({
 
     // Override the built-in grep tool to accept shell-shaped multi-path input.
     if (!finalCustomTools.find((t) => t.name === "grep")) {
-        finalCustomTools.push(createHarnsGrepToolDefinition(sessionCwd));
+        finalCustomTools.push(createRunWeildGrepToolDefinition(sessionCwd));
     }
 
     if (tools.includes("multi_file_edit") && !finalCustomTools.find((t) => t.name === "multi_file_edit")) {
@@ -1223,7 +1228,7 @@ export async function buildAgentSession({
 
     if (!sessionManager && shouldWriteDebugLog(debugLogPath)) {
         const debugMsg =
-            `[Harns] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
+            `[RunWeild] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
         appendDebugLog(debugLogPath, debugMsg);
     }
 
@@ -1246,12 +1251,12 @@ export async function buildAgentSession({
 
     if (extensionsResult?.errors?.length) {
         for (const err of extensionsResult.errors) {
-            const msg = `[Harns] Extension warning (${err.path}): ${err.error}`;
+            const msg = `[RunWeild] Extension warning (${err.path}): ${err.error}`;
             if (uiAPI) uiAPI.appendSystemMessage(msg);
             else console.warn(msg);
             if (String(err.error).toLowerCase().includes("mnemosyne")) {
                 const msg2 =
-                    "[Harns] Memory extension issue detected. Install mnemosyne: https://github.com/gandazgul/mnemosyne#quick-start";
+                    "[RunWeild] Memory extension issue detected. Install mnemosyne: https://github.com/gandazgul/mnemosyne#quick-start";
                 if (uiAPI) uiAPI.appendSystemMessage(msg2);
                 else console.warn(msg2);
             }

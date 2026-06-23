@@ -1,14 +1,14 @@
-# Harns Context
+# RunWeild Context
 
-Harns is an opinionated, plan-by-default coding harness that routes development requests through triage, planning,
+RunWeild is an opinionated, plan-by-default coding harness that routes development requests through triage, planning,
 review, execution, and validation. This context defines the project language used by agents, docs, plans, and code.
 
 ## Language
 
 ### Harness
 
-**Harns**: The plan-by-default coding harness that routes user requests through triage and specialized agents. _Avoid_:
-Harness, tool, framework
+**RunWeild**: The plan-by-default coding harness that routes user requests through triage and specialized agents.
+_Avoid_: Harness, tool, framework
 
 **TUI**: The terminal-based interactive user interface that hosts agent conversations and renders workflow output.
 _Avoid_: Shell, console
@@ -125,7 +125,7 @@ notes
 **Resume**: Re-entering workflow for an existing Plan or session instead of starting from a fresh User Request. _Avoid_:
 Continue, reopen, pick up
 
-**Origin**: A Plan Front Matter value of `internal` for Harns-created plans or `external` for imported markdown.
+**Origin**: A Plan Front Matter value of `internal` for RunWeild-created plans or `external` for imported markdown.
 _Avoid_: Source, provenance
 
 ### Agents
@@ -212,12 +212,12 @@ continuing. _Avoid_: Surprise return, silent reroute
 Task and checks cross-slice integration before Workflow Validation. _Avoid_: Final verification task, cross-slice
 verification task, acceptance gate
 
-**Workflow Validation**: Harns' independent validation pass after a completed workflow loop. _Avoid_: Agent self-check,
-final summary
+**Workflow Validation**: RunWeild' independent validation pass after a completed workflow loop. _Avoid_: Agent
+self-check, final summary
 
 **Toolset**: A named bundle of tool names granted to an Agent Session. _Avoid_: Tool list, capabilities
 
-**Custom Tool**: A Harns-defined tool registered alongside built-in pi tools. _Avoid_: Internal tool, Harns tool
+**Custom Tool**: A RunWeild-defined tool registered alongside built-in pi tools. _Avoid_: Internal tool, RunWeild tool
 
 **Triage-Report Tool**: The `triage_report` Custom Tool that emits a Triage Report and ends the current Agent turn.
 _Avoid_: Classification tool, triage result tool
@@ -259,7 +259,7 @@ Collection, namespace
 **Cymbal**: The external code indexing and search system exposed to agents as codebase tools. _Avoid_: Search layer,
 indexer
 
-**Snip**: The external command-output compression proxy Harns uses as an optional, fail-open runtime optimization for
+**Snip**: The external command-output compression proxy RunWeild uses as an optional, fail-open runtime optimization for
 eligible agent shell commands. _Avoid_: Required tool, agent tool, search tool
 
 **Prompt Template**: A layered markdown template that defines a slash command available in the TUI. _Avoid_: Slash
@@ -287,9 +287,9 @@ command definition, prompt command
   **Epic** container.
 - A **Failed Plan** must have reached **Ready For Work** before work failed.
 - An **In-Progress Plan** requires recovery because execution may have partially changed the worktree.
-- **Plan Recovery** resolves whether Harns continues the current worktree state, reports on it, re-opens the Plan, or
+- **Plan Recovery** resolves whether RunWeild continues the current worktree state, reports on it, re-opens the Plan, or
   returns the worktree to a known pre-execution state.
-- A **Failed Plan** should include **Failure Detail** when Harns can identify the cause.
+- A **Failed Plan** should include **Failure Detail** when RunWeild can identify the cause.
 - An **Implemented Plan** still requires **Workflow Validation**.
 - An **Implemented Plan** may include **Failure Detail** when Workflow Validation fails.
 - A **Verified Plan** must have passed **Workflow Validation**.

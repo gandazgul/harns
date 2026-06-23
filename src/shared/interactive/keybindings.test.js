@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { __setClipboardDepsForTest } from "../clipboard.js";
-import { initHarnsTheme } from "../ui/theme.js";
+import { initRunWeildTheme } from "../ui/theme.js";
 import { installKeybindings } from "./keybindings.js";
 
 const RAW_KEY = {
@@ -229,7 +229,7 @@ Deno.test("installKeybindings checks editor emptiness through public getText", a
 });
 
 Deno.test("installKeybindings delegates pasted images through handleImagePaste", async () => {
-    initHarnsTheme();
+    initRunWeildTheme();
     const enc = new TextEncoder();
     const outputs = [
         { success: true, stdout: "image\n" },
@@ -249,7 +249,7 @@ Deno.test("installKeybindings delegates pasted images through handleImagePaste",
         /** @type {any} */ ({
             os: "darwin",
             Command: FakeCommand,
-            makeTempFile: () => Promise.resolve("/tmp/harns-clip.png"),
+            makeTempFile: () => Promise.resolve("/tmp/runweild-clip.png"),
             remove: () => Promise.resolve(),
         }),
     );
@@ -295,7 +295,7 @@ Deno.test("installKeybindings does not mutate previews when handleImagePaste blo
         /** @type {any} */ ({
             os: "darwin",
             Command: FakeCommand,
-            makeTempFile: () => Promise.resolve("/tmp/harns-clip.png"),
+            makeTempFile: () => Promise.resolve("/tmp/runweild-clip.png"),
             remove: () => Promise.resolve(),
         }),
     );

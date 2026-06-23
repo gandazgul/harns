@@ -1,17 +1,17 @@
 # Sessions
 
-Harns inherits Pi's session model and TUI behavior, but stores session data under Harns-owned paths and adds
-Harns-specific root-agent behavior.
+RunWeild inherits Pi's session model and TUI behavior, but stores session data under RunWeild-owned paths and adds
+RunWeild-specific root-agent behavior.
 
 For full session tree, fork, clone, export, and compaction details that match Pi, see
 [Pi Sessions](https://pi.dev/docs/latest/sessions) and [Pi Compaction](https://pi.dev/docs/latest/compaction).
 
 ## Storage
 
-Harns stores sessions under:
+RunWeild stores sessions under:
 
 ```text
-~/.hns/sessions/
+~/.wld/sessions/
 ```
 
 This is separate from Pi's `~/.pi/agent/sessions/` path.
@@ -21,7 +21,7 @@ This is separate from Pi's `~/.pi/agent/sessions/` path.
 Use:
 
 ```bash
-hns              # start an interactive session
+wld              # start an interactive session
 ```
 
 Inside the TUI:
@@ -49,5 +49,5 @@ outcomes such as `triage_report`, `plan_written`, and `task_completed`, not by s
 
 ## Resume compaction
 
-When resuming a large session, Harns can offer to compact the session first. The threshold is controlled by
+When resuming a large session, RunWeild can offer to compact the session first. The threshold is controlled by
 `compactOnResumeThresholdPercent` in settings. See [Settings Reference](settings.md).
