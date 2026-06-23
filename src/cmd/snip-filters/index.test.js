@@ -8,27 +8,27 @@ Deno.test("runSnipFiltersCommand installs, cleans up, and reports status", async
     const log = (message) => logs.push(message);
     await runSnipFiltersCommand(["install"], {
         __testDeps: {
-            installHarnsSnipFiltersForUser: () =>
+            installRunWeildSnipFiltersForUser: () =>
                 Promise.resolve({
                     filtersDir: "/home/me/.config/snip/filters",
                     installed: ["/home/me/.config/snip/filters/deno-test.yaml"],
                     skipped: [{
                         path: "/home/me/.config/snip/filters/deno-lint.yaml",
-                        reason: "existing non-Harns filter",
+                        reason: "existing non-RunWeild filter",
                     }],
                 }),
             log,
         },
     });
 
-    assertStringIncludes(logs.join("\n"), "Installed Harns Snip filters");
+    assertStringIncludes(logs.join("\n"), "Installed RunWeild Snip filters");
     assertStringIncludes(logs.join("\n"), "deno-test.yaml");
-    assertStringIncludes(logs.join("\n"), "existing non-Harns filter");
+    assertStringIncludes(logs.join("\n"), "existing non-RunWeild filter");
 
     logs.length = 0;
     await runSnipFiltersCommand(["cleanup"], {
         __testDeps: {
-            cleanupHarnsSnipFiltersForUser: () =>
+            cleanupRunWeildSnipFiltersForUser: () =>
                 Promise.resolve({
                     filtersDir: "/home/me/.config/snip/filters",
                     removed: ["/home/me/.config/snip/filters/deno-test.yaml"],
@@ -37,13 +37,13 @@ Deno.test("runSnipFiltersCommand installs, cleans up, and reports status", async
             log,
         },
     });
-    assertStringIncludes(logs.join("\n"), "Cleaned up Harns Snip filters");
+    assertStringIncludes(logs.join("\n"), "Cleaned up RunWeild Snip filters");
     assertStringIncludes(logs.join("\n"), "deno-test.yaml");
 
     logs.length = 0;
     await runSnipFiltersCommand(["status"], {
         __testDeps: {
-            getHarnsSnipFilterInstallStatus: () =>
+            getRunWeildSnipFilterInstallStatus: () =>
                 Promise.resolve({
                     filtersDir: "/home/me/.config/snip/filters",
                     installed: [],
@@ -71,5 +71,5 @@ Deno.test("runSnipFiltersCommand rejects unknown action", async () => {
     });
 
     assertEquals(exitCode, 1);
-    assertEquals(errors, ["Usage: hns snip-filters [install|cleanup|status]"]);
+    assertEquals(errors, ["Usage: wld snip-filters [install|cleanup|status]"]);
 });

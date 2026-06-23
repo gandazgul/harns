@@ -37,13 +37,13 @@ Deno.test("buildPlanEventUpdates records worktree metadata when execution starts
     const updates = buildPlanEventUpdates("execution_started", "ready_for_work", {
         executionBaselineTree: "abc123",
         worktreeId: "wt-1",
-        worktreePath: "/tmp/repo-harns-plan-wt-1",
-        worktreeBranch: "harns/worktree/plan-wt-1",
+        worktreePath: "/tmp/repo-runweild-plan-wt-1",
+        worktreeBranch: "runweild/worktree/plan-wt-1",
     });
 
     assertEquals(updates.worktreeId, "wt-1");
-    assertEquals(updates.worktreePath, "/tmp/repo-harns-plan-wt-1");
-    assertEquals(updates.worktreeBranch, "harns/worktree/plan-wt-1");
+    assertEquals(updates.worktreePath, "/tmp/repo-runweild-plan-wt-1");
+    assertEquals(updates.worktreeBranch, "runweild/worktree/plan-wt-1");
     assertEquals(updates.worktreeStatus, "active");
 });
 

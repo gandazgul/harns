@@ -2,7 +2,7 @@
  * @module cmd/init/init-state
  * Global state module for tracking init status per project.
  *
- * State is stored in ~/.hns/init-state.json, keyed by SHA-256(CWD).
+ * State is stored in ~/.wld/init-state.json, keyed by SHA-256(CWD).
  * This allows the init command to warn on re-runs and the TUI to
  * conditionally hide `/init` from autocomplete once done.
  */
@@ -28,7 +28,7 @@ export function _setTestStatePath(path) {
  */
 function getStatePath() {
     if (STATE_PATH) return STATE_PATH;
-    STATE_PATH = join(HOME_DIR, ".hns", "init-state.json");
+    STATE_PATH = join(HOME_DIR, ".wld", "init-state.json");
     return STATE_PATH;
 }
 
@@ -199,7 +199,7 @@ export async function isInitOffered() {
 }
 
 /**
- * Check whether Harns should show the missing-Snip boot warning for this CWD.
+ * Check whether RunWeild should show the missing-Snip boot warning for this CWD.
  *
  * @param {number} [limit]
  * @returns {Promise<boolean>}
@@ -210,7 +210,7 @@ export async function shouldShowSnipMissingWarning(limit = 3) {
 }
 
 /**
- * Record that Harns showed the missing-Snip boot warning for this CWD.
+ * Record that RunWeild showed the missing-Snip boot warning for this CWD.
  *
  * @returns {Promise<void>}
  */

@@ -8,13 +8,13 @@ import {
     __resetSettingsForTests,
     getResolvedVisionFallbackModelSetting,
     migratePiSettingsOnce,
-    preserveHarnsCustomSettingsForWrite,
+    preserveRunWeildCustomSettingsForWrite,
     setCustomSetting,
     shouldCleanupMergedWorktrees,
 } from "./settings.js";
 
 // Use a temp dir for isolated file-based tests
-const TEMP_DIR = await Deno.makeTempDir({ prefix: "harns-settings-test-" });
+const TEMP_DIR = await Deno.makeTempDir({ prefix: "runweild-settings-test-" });
 const TEMP_GLOBAL_SETTINGS = join(TEMP_DIR, "global-settings.json");
 const TEMP_PROJECT_SETTINGS = join(TEMP_DIR, "project-settings.json");
 
@@ -74,10 +74,10 @@ Deno.test({
 
         // Override settings dirs to point to our temp dirs
         // Import after setting up dirs
-        const tempHnsDir = join(TEMP_DIR, ".hns");
-        await Deno.mkdirSync(tempHnsDir, { recursive: true });
+        const tempWldDir = join(TEMP_DIR, ".wld");
+        await Deno.mkdirSync(tempWldDir, { recursive: true });
         await Deno.writeTextFileSync(
-            join(tempHnsDir, "settings.json"),
+            join(tempWldDir, "settings.json"),
             JSON.stringify({
                 agents: {
                     router: { model: "global/router" },
@@ -86,10 +86,10 @@ Deno.test({
             }),
         );
 
-        const projectHnsDir = join(TEMP_DIR, "project-hns");
-        await Deno.mkdirSync(projectHnsDir, { recursive: true });
+        const projectWldDir = join(TEMP_DIR, "project-wld");
+        await Deno.mkdirSync(projectWldDir, { recursive: true });
         await Deno.writeTextFileSync(
-            join(projectHnsDir, "settings.json"),
+            join(projectWldDir, "settings.json"),
             JSON.stringify({
                 agents: {
                     router: { model: "project/router" },
@@ -129,7 +129,7 @@ Deno.test({
     },
 });
 
-Deno.test("preserveHarnsCustomSettingsForWrite keeps Harns custom keys across SettingsManager writes", () => {
+Deno.test("preserveRunWeildCustomSettingsForWrite keeps RunWeild custom keys across SettingsManager writes", () => {
     const previous = JSON.stringify({
         theme: "old-theme",
         agents: {},
@@ -146,7 +146,7 @@ Deno.test("preserveHarnsCustomSettingsForWrite keeps Harns custom keys across Se
         theme: "new-theme",
     });
 
-    const preserved = JSON.parse(preserveHarnsCustomSettingsForWrite(previous, next));
+    const preserved = JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next));
 
     assertEquals(preserved, {
         theme: "new-theme",
@@ -162,7 +162,7 @@ Deno.test("preserveHarnsCustomSettingsForWrite keeps Harns custom keys across Se
     });
 });
 
-Deno.test("preserveHarnsCustomSettingsForWrite lets explicit new custom values win", () => {
+Deno.test("preserveRunWeildCustomSettingsForWrite lets explicit new custom values win", () => {
     const previous = JSON.stringify({
         activeModelPreset: "codex",
     });
@@ -170,16 +170,16 @@ Deno.test("preserveHarnsCustomSettingsForWrite lets explicit new custom values w
         activeModelPreset: "crof.ai",
     });
 
-    assertEquals(JSON.parse(preserveHarnsCustomSettingsForWrite(previous, next)), {
+    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
         activeModelPreset: "crof.ai",
     });
 });
 
-Deno.test("preserveHarnsCustomSettingsForWrite keeps visionFallback", () => {
+Deno.test("preserveRunWeildCustomSettingsForWrite keeps visionFallback", () => {
     const previous = JSON.stringify({ visionFallback: { model: "lmstudio/gemma" } });
     const next = JSON.stringify({ theme: "new-theme" });
 
-    assertEquals(JSON.parse(preserveHarnsCustomSettingsForWrite(previous, next)), {
+    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
         theme: "new-theme",
         visionFallback: { model: "lmstudio/gemma" },
     });
@@ -188,14 +188,14 @@ Deno.test("preserveHarnsCustomSettingsForWrite keeps visionFallback", () => {
 Deno.test("getResolvedVisionFallbackModelSetting prefers active preset over top-level", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-vision-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "harns-vision-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-vision-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runweild-vision-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);
-        await Deno.mkdir(".hns", { recursive: true });
+        await Deno.mkdir(".wld", { recursive: true });
         await Deno.writeTextFile(
-            ".hns/settings.json",
+            ".wld/settings.json",
             JSON.stringify({
                 visionFallback: { model: "top/model" },
                 activeModelPreset: "local",
@@ -215,37 +215,37 @@ Deno.test("getResolvedVisionFallbackModelSetting prefers active preset over top-
     }
 });
 
-Deno.test("migratePiSettingsOnce copies legacy Pi settings when Harns settings are missing", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "harns-settings-migration-" });
+Deno.test("migratePiSettingsOnce copies legacy Pi settings when RunWeild settings are missing", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runweild-settings-migration-" });
     try {
         const piPath = join(tempDir, ".pi", "agent", "settings.json");
-        const harnsPath = join(tempDir, ".hns", "settings.json");
+        const runweildPath = join(tempDir, ".wld", "settings.json");
         await Deno.mkdir(join(tempDir, ".pi", "agent"), { recursive: true });
         await Deno.writeTextFile(piPath, '{"theme":"legacy-pi"}');
 
-        const result = migratePiSettingsOnce({ harnsPath, piPath });
+        const result = migratePiSettingsOnce({ runweildPath, piPath });
 
         assertEquals(result, { copied: true, skipped: false });
-        assertEquals(await Deno.readTextFile(harnsPath), '{"theme":"legacy-pi"}');
+        assertEquals(await Deno.readTextFile(runweildPath), '{"theme":"legacy-pi"}');
     } finally {
         await Deno.remove(tempDir, { recursive: true });
     }
 });
 
-Deno.test("migratePiSettingsOnce leaves existing Harns settings untouched", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "harns-settings-migration-" });
+Deno.test("migratePiSettingsOnce leaves existing RunWeild settings untouched", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runweild-settings-migration-" });
     try {
         const piPath = join(tempDir, ".pi", "agent", "settings.json");
-        const harnsPath = join(tempDir, ".hns", "settings.json");
+        const runweildPath = join(tempDir, ".wld", "settings.json");
         await Deno.mkdir(join(tempDir, ".pi", "agent"), { recursive: true });
-        await Deno.mkdir(join(tempDir, ".hns"), { recursive: true });
+        await Deno.mkdir(join(tempDir, ".wld"), { recursive: true });
         await Deno.writeTextFile(piPath, '{"theme":"legacy-pi"}');
-        await Deno.writeTextFile(harnsPath, '{"theme":"harns"}');
+        await Deno.writeTextFile(runweildPath, '{"theme":"runweild"}');
 
-        const result = migratePiSettingsOnce({ harnsPath, piPath });
+        const result = migratePiSettingsOnce({ runweildPath, piPath });
 
         assertEquals(result, { copied: false, skipped: true });
-        assertEquals(await Deno.readTextFile(harnsPath), '{"theme":"harns"}');
+        assertEquals(await Deno.readTextFile(runweildPath), '{"theme":"runweild"}');
     } finally {
         await Deno.remove(tempDir, { recursive: true });
     }
@@ -254,8 +254,8 @@ Deno.test("migratePiSettingsOnce leaves existing Harns settings untouched", asyn
 Deno.test("shouldCleanupMergedWorktrees defaults true and honors false setting", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-cleanup-setting-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "harns-cleanup-setting-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-cleanup-setting-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runweild-cleanup-setting-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);

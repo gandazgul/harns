@@ -60,7 +60,7 @@ Deno.test("runInstallCommand installs source and reports resource counts", async
     assertEquals(logs, [
         "Installed npm:theme",
         "  Themes registered: 1",
-        "  Non-theme resources ignored: 2 (Harns only loads themes)",
+        "  Non-theme resources ignored: 2 (RunWeild only loads themes)",
     ]);
 });
 
@@ -84,7 +84,7 @@ Deno.test("runInstallCommand reports usage and install failures through injected
     );
 
     assertEquals(errors, [
-        "Usage: hns install <source>",
+        "Usage: wld install <source>",
         "Sources: npm:<spec>, git:<url>, local:<path>",
     ]);
     assertEquals(exits, [1]);

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Harns is designed to be an opinionated, plan-by-default coding harness that operates directly in the developer's
+RunWeild is designed to be an opinionated, plan-by-default coding harness that operates directly in the developer's
 terminal. To ensure high maintainability, extreme execution speed, and an iteration cycle that feels instantaneous, the
 foundational technology stack must be chosen carefully.
 
@@ -15,7 +15,7 @@ maintaining strict type safety and leveraging modern, robust foundations for age
 
 ## Decision
 
-We have selected the following foundational stack for Harns:
+We have selected the following foundational stack for RunWeild:
 
 1. **Runtime: Deno**
    - **Why:** Deno provides a modern, secure-by-default JavaScript runtime with built-in utilities (formatter, linter,
@@ -25,14 +25,14 @@ We have selected the following foundational stack for Harns:
 2. **Language: Vanilla JavaScript with JSDoc**
    - **Why:** We will write pure ES Modules (`.js`) and use JSDoc comments for type-checking. This completely eliminates
      the TypeScript transpilation step (`tsc` or `esbuild`). The codebase remains type-safe via Deno's native LSP, but
-     execution is instantaneous. This is critical for dogfooding Harns: when the agent writes or modifies code, there is
-     no build step required before the next agent session can test the change.
+     execution is instantaneous. This is critical for dogfooding RunWeild: when the agent writes or modifies code, there
+     is no build step required before the next agent session can test the change.
 
 3. **Agent Foundation: `pi-mono` Ecosystem**
-   - **Why:** Instead of building an LLM orchestration layer from scratch, Harns will heavily leverage
+   - **Why:** Instead of building an LLM orchestration layer from scratch, RunWeild will heavily leverage
      `@mariozechner/pi-coding-agent`, `pi-tui`, and related packages from the `pi-mono` ecosystem. These packages
      provide the core state machines, tool-calling wrappers, and terminal UI components needed to build a sophisticated
-     agent workflow, allowing Harns to focus strictly on the opinionated DAG execution and architectural routing.
+     agent workflow, allowing RunWeild to focus strictly on the opinionated DAG execution and architectural routing.
 
 ## Consequences
 
@@ -41,7 +41,7 @@ We have selected the following foundational stack for Harns:
 - **Instant Execution:** No build steps mean the CLI boots and executes immediately.
 - **Simplified Tooling:** `deno test`, `deno lint`, and `deno fmt` replace an entire ecosystem of fragmented Node.js
   tooling (Jest, ESLint, Prettier).
-- **Agent Synergy:** Using `pi-mono` allows Harns to inherit battle-tested LLM abstractions and focus purely on the
+- **Agent Synergy:** Using `pi-mono` allows RunWeild to inherit battle-tested LLM abstractions and focus purely on the
   "Gatekeeper" and planning logic.
 - **Type Safety without Friction:** JSDoc provides the safety net of TypeScript without the runtime or compilation tax.
 

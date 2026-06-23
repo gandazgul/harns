@@ -133,7 +133,7 @@ export const commandRegistry = {
             "/login api-key openai",
         ],
         notes: [
-            "Credentials are stored in Harns config at ~/.hns/auth.json.",
+            "Credentials are stored in RunWeild config at ~/.wld/auth.json.",
             "Use /status to inspect configured providers.",
         ],
         execute: runLoginCommand,
@@ -163,7 +163,7 @@ export const commandRegistry = {
             "/status",
         ],
         notes: [
-            "This reports model/auth status for the current Harns configuration.",
+            "This reports model/auth status for the current RunWeild configuration.",
         ],
         execute: runStatusCommand,
         surfaces: ["slash"],
@@ -310,7 +310,7 @@ export const commandRegistry = {
         name: COMMAND_NAMES.VERSION,
         displayName: "Version",
         description: "Show version and architecture info",
-        summary: "Print harns version and platform architecture.",
+        summary: "Print runweild version and platform architecture.",
         usage: [
             `${bin("--version")}`,
             `${bin("version")}`,
@@ -343,8 +343,8 @@ export const commandRegistry = {
         name: COMMAND_NAMES.INIT,
         aliases: ["initialize"],
         displayName: "Init",
-        description: "Initialize Harns into the current project",
-        summary: "Initialize Harns into the current project (bootstraps context index and memory).",
+        description: "Initialize RunWeild into the current project",
+        summary: "Initialize RunWeild into the current project (bootstraps context index and memory).",
         usage: [
             `${bin("init")}`,
         ],
@@ -404,16 +404,16 @@ export const commandRegistry = {
         name: COMMAND_NAMES.SNIP_FILTERS,
         aliases: ["snip-filter"],
         displayName: "Snip Filters",
-        description: "Install or clean up Harns Deno Snip filters",
-        summary: "Install, clean up, or inspect Harns-managed Deno Snip filters in Snip's default filter directory.",
+        description: "Install or clean up RunWeild Deno Snip filters",
+        summary: "Install, clean up, or inspect RunWeild-managed Deno Snip filters in Snip's default filter directory.",
         usage: [
             `${bin("snip-filters status")}`,
             `${bin("snip-filters install")}`,
             `${bin("snip-filters cleanup")}`,
         ],
         notes: [
-            "Install copies Harns-managed Deno filters into ~/.config/snip/filters so plain Snip commands can find them.",
-            "Cleanup removes only files marked as Harns-managed.",
+            "Install copies RunWeild-managed Deno filters into ~/.config/snip/filters so plain Snip commands can find them.",
+            "Cleanup removes only files marked as RunWeild-managed.",
         ],
         execute: runSnipFiltersCommand,
         surfaces: ["cli"],
@@ -444,7 +444,7 @@ export const commandRegistry = {
         ],
         notes: [
             "Slash command only (interactive session).",
-            "Refreshes memories, HARNS.md, prompt templates, skills, model settings, and themes.",
+            "Refreshes memories, RUNWEILD.md, prompt templates, skills, model settings, and themes.",
         ],
         execute: runReloadCommand,
         surfaces: ["slash"],

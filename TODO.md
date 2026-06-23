@@ -27,23 +27,23 @@
 - [ ] Expose compaction settings and make the current compaction behavior easier to inspect:
       [docs/prd/compaction-PRD.md](docs/prd/compaction-PRD.md).
 - [x] Add `/reload` to refresh dynamic system-prompt content on the live root `AgentSession` after memory, skill, or
-      `HARNS.md` changes.
+      `RUNWEILD.md` changes.
 - [ ] Refactor before broad test expansion: `src/shared/interactive/chat-session.js` and
       `src/shared/session/root-session.js` are the main candidates.
 - [ ] Add more focused tests after the refactor boundaries are clearer.
 
 ### P2 - Extension and Package Ecosystem
 
-- [ ] Allow explicitly Harns-compatible Pi-shaped code extensions:
-      [plans/allow-harns-compatible-pi-extensions.md](plans/allow-harns-compatible-pi-extensions.md).
+- [ ] Allow explicitly RunWeild-compatible Pi-shaped code extensions:
+      [plans/allow-runweild-compatible-pi-extensions.md](plans/allow-runweild-compatible-pi-extensions.md).
 - [ ] Allow installed Pi packages to contribute passive slash prompt templates:
-      [plans/allow-harns-compatible-extension-prompts.md](plans/allow-harns-compatible-extension-prompts.md).
+      [plans/allow-runweild-compatible-extension-prompts.md](plans/allow-runweild-compatible-extension-prompts.md).
 - [ ] Improve install output for ignored package skills:
       [plans/message-for-ignored-pi-package-skills.md](plans/message-for-ignored-pi-package-skills.md).
 - [ ] Build the optional Colgrep semantic search extension:
       [plans/colgrep-semantic-search-extension.md](plans/colgrep-semantic-search-extension.md).
 - [ ] Continue to document that `~/.agents/skills` is the preferred skill-install path instead of implementing native
-      Harns skill installation.
+      RunWeild skill installation.
 
 ### P3 - Search, Memory, and Metrics
 

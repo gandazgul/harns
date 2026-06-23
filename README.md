@@ -1,8 +1,8 @@
 <p align="center"><img src="logo.svg" width="120" /></p>
 
-# Harns
+# RunWeild
 
-**Harns** is an opinionated, plan-by-default coding harness for developers who want agents to slow down at the right
+**RunWeild** is an opinionated, plan-by-default coding harness for developers who want agents to slow down at the right
 moments: classify the work, write a reviewable plan when the blast radius is real, execute through specialized roles,
 and then prove the result.
 
@@ -12,10 +12,10 @@ It is built on top of [Pi](https://pi.dev), with a Deno CLI, an interactive TUI,
 
 > For full documentation, see **[docs/index.md](docs/index.md)**.
 
-## Why Harns
+## Why RunWeild
 
-Most coding harnesses optimize for getting an agent typing quickly. Harns optimizes for getting the right kind of work
-done with the right amount of ceremony.
+Most coding harnesses optimize for getting an agent typing quickly. RunWeild optimizes for getting the right kind of
+work done with the right amount of ceremony.
 
 - **Triage is explicit.** Every routed request gets a routing intent: `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or
   `PROJECT`. Implementation work records complexity and affected paths before execution.
@@ -29,15 +29,15 @@ done with the right amount of ceremony.
 - **Epic work keeps a clear trail.** PROJECT Epics stay as containers, while child FEATURE plans carry their own review,
   execution, validation, and merge history.
 - **Completion has a handshake.** Execution agents are expected to call `task_completed`; for saved plan execution,
-  Harns treats that as the strong signal before running validation.
-- **Validation is built into plan workflows.** After completed executable plan work, Harns runs the configured local
+  RunWeild treats that as the strong signal before running validation.
+- **Validation is built into plan workflows.** After completed executable plan work, RunWeild runs the configured local
   validation command and then a semantic review loop against the original plan. PROJECT Epics validate through their
   child FEATURE plans.
-- **Context is durable.** Sessions live under `~/.hns/sessions/`, settings under `~/.hns/settings.json`, plans in the
+- **Context is durable.** Sessions live under `~/.wld/sessions/`, settings under `~/.wld/settings.json`, plans in the
   repo, and [Mnemosyne](https://github.com/gandazgul/mnemosyne) keeps recallable project and global memory.
 
-Use Harns when you want an agent workflow that leaves durable plans, review points, validation notes, and a clear record
-of why each change happened. Use a lighter harness when you only want a one-shot chat wrapper around edit tools.
+Use RunWeild when you want an agent workflow that leaves durable plans, review points, validation notes, and a clear
+record of why each change happened. Use a lighter harness when you only want a one-shot chat wrapper around edit tools.
 
 ## High-Level Flow
 
@@ -88,64 +88,64 @@ graph TD
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gandazgul/harns/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gandazgul/runweild/main/install.sh | bash
 ```
 
-The installer downloads the latest release binary for macOS or Linux, verifies checksums, and installs `hns`. By default
+The installer downloads the latest release binary for macOS or Linux, verifies checksums, and installs `wld`. By default
 it installs to `~/.local/bin` and does not require root. To choose another user-writable directory, set
-`HNS_INSTALL_DIR`.
+`WLD_INSTALL_DIR`.
 
 ### From Source
 
 ```bash
 deno run -A src/cli.js help
 deno task compile
-./bin/hns help
+./bin/wld help
 ```
 
 ## Runtime Requirements
 
-End users run the standalone `hns` binary. Contributors use Deno.
+End users run the standalone `wld` binary. Contributors use Deno.
 
 Interactive agent workflows require these binaries in `PATH`:
 
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for project/global memory
 - [`cymbal`](https://github.com/1broseidon/cymbal) for code search, symbol lookup, impact analysis, and tracing
 
-Harns also uses [`snip`](https://github.com/edouard-claude/snip) when `snip` is available in `PATH`. Snip proxies
+RunWeild also uses [`snip`](https://github.com/edouard-claude/snip) when `snip` is available in `PATH`. Snip proxies
 eligible agent-initiated shell commands so agents see compact command output. Snip is optional and fail-open: if it is
-missing, Harns skips the prefix hook and shows a short warning on the first few boots for each project. Manual `!` and
-`!!` shell commands are never rewritten. Harns ships Snip filters for `deno check`, `deno fmt`, `deno lint`, and
+missing, RunWeild skips the prefix hook and shows a short warning on the first few boots for each project. Manual `!`
+and `!!` shell commands are never rewritten. RunWeild ships Snip filters for `deno check`, `deno fmt`, `deno lint`, and
 `deno test`. The installer can opt-in install those filters into Snip's default user filter directory so plain
-`snip run -- deno ...` commands can use them; remove those user-level copies with `hns snip-filters cleanup`.
+`snip run -- deno ...` commands can use them; remove those user-level copies with `wld snip-filters cleanup`.
 
-Harns stores its own data under `~/.hns/`:
+RunWeild stores its own data under `~/.wld/`:
 
-- `~/.hns/sessions/` for session history
-- `~/.hns/settings.json` for global settings
-- `~/.hns/HARNS.md` or `~/.hns/AGENTS.md` for global Harns instructions
-- `~/.hns/agents/` for home-level agent overrides
-- `~/.hns/prompts/` for home-level prompt templates
+- `~/.wld/sessions/` for session history
+- `~/.wld/settings.json` for global settings
+- `~/.wld/RUNWEILD.md` or `~/.wld/AGENTS.md` for global RunWeild instructions
+- `~/.wld/agents/` for home-level agent overrides
+- `~/.wld/prompts/` for home-level prompt templates
 
-By default, Harns also reads shared multi-agent instructions from `~/.agents/AGENTS.md` when no Harns-owned global
+By default, RunWeild also reads shared multi-agent instructions from `~/.agents/AGENTS.md` when no RunWeild-owned global
 instruction file exists. Disable that shared fallback with `"enableExternalGlobalAgentsMd": false` in
-`~/.hns/settings.json`.
+`~/.wld/settings.json`.
 
 Project-level plans and optional overrides live in the current repository:
 
 - `plans/*.md`
-- `.hns/settings.json`
-- `.hns/agents/*.md`
-- `.hns/prompts/*.md`
+- `.wld/settings.json`
+- `.wld/agents/*.md`
+- `.wld/prompts/*.md`
 
 > For full documentation, see **[docs/index.md](docs/index.md)**.
 
 ## First Run
 
-Initialize Harns in a project when you want it to build durable context:
+Initialize RunWeild in a project when you want it to build durable context:
 
 ```bash
-hns init
+wld init
 ```
 
 The init agent explores the repository, writes `CONTEXT.md`, stores core memories, and records that init has run for
@@ -154,13 +154,13 @@ that project. You can also run `/init` inside an interactive session.
 Then start a request:
 
 ```bash
-hns "fix the failing parser test"
+wld "fix the failing parser test"
 ```
 
 The default command is `router`, so this is equivalent:
 
 ```bash
-hns router "fix the failing parser test"
+wld router "fix the failing parser test"
 ```
 
 Interactive sessions are optimized for one topic at a time. A new session starts with Router, but after Router hands off
@@ -172,32 +172,32 @@ workflow steps are triggered by tools like `triage_report`, `plan_written`, and 
 ## Common Commands
 
 ```bash
-hns "your request"                  # route through triage
-hns router "your request"           # explicit router form
-hns agent                           # list available agents
-hns agent engineer "implement X"    # start with Engineer instead of Router
-hns plans                           # list saved plans
-hns load-plan <name-or-path>        # review, execute, or continue a plan
-hns init                            # bootstrap project context
-hns snip-filters install            # optional: install Deno filters for plain snip commands
-hns snip-filters cleanup            # remove Harns-managed user Snip filters
-hns help
-hns help <command>
+wld "your request"                  # route through triage
+wld router "your request"           # explicit router form
+wld agent                           # list available agents
+wld agent engineer "implement X"    # start with Engineer instead of Router
+wld plans                           # list saved plans
+wld load-plan <name-or-path>        # review, execute, or continue a plan
+wld init                            # bootstrap project context
+wld snip-filters install            # optional: install Deno filters for plain snip commands
+wld snip-filters cleanup            # remove RunWeild-managed user Snip filters
+wld help
+wld help <command>
 ```
 
-`hns help` and `hns help <command>` are generated from the command registry. Inside the TUI, `/` autocomplete is built
+`wld help` and `wld help <command>` are generated from the command registry. Inside the TUI, `/` autocomplete is built
 from the same registry plus installed prompt templates and skills.
 
-Prompt templates from `src/prompt-templates/`, `~/.hns/prompts/`, and `.hns/prompts/` also become slash commands when
+Prompt templates from `src/prompt-templates/`, `~/.wld/prompts/`, and `.wld/prompts/` also become slash commands when
 they do not collide with built-ins. Bundled skills can be invoked as `/skill:<name>`.
 
 ## Skills
 
-Harns intentionally focuses on skill discovery and invocation rather than becoming another skill package manager. It
+RunWeild intentionally focuses on skill discovery and invocation rather than becoming another skill package manager. It
 loads skills from these locations, in priority order:
 
-1. Local project skills: `<repo>/.hns/skills`
-2. Home skills: `~/.hns/skills`
+1. Local project skills: `<repo>/.wld/skills`
+2. Home skills: `~/.wld/skills`
 3. Bundled skills: `src/skills`
 4. External ecosystem skills: `~/.agents/skills`
 
@@ -205,12 +205,12 @@ Each skill lives in a directory with a `SKILL.md` file. Skills are advertised to
 full instructions are injected only when a user invokes the skill with `/skill:<name>` or an agent loads a matching
 skill. The bundled `documentation` skill guides Markdown docs work that used to require a dedicated docs role.
 
-External tools can own skill installation and updates. Harns should interoperate with that ecosystem by reading
+External tools can own skill installation and updates. RunWeild should interoperate with that ecosystem by reading
 `~/.agents/skills`, making loaded skills visible, and providing clear invocation behavior.
 
 ## Plans
 
-Plans are markdown files with YAML front matter in `plans/`. Harns records:
+Plans are markdown files with YAML front matter in `plans/`. RunWeild records:
 
 - routing intent: `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT` for routed requests
 - plan classification: `FEATURE` or `PROJECT` for saved implementation plans
@@ -227,10 +227,10 @@ implementation unit. The interactive Slicer helps choose vertical child FEATURE 
 `plans/<epic-name>/`, and finalizes the Epic only after explicit confirmation. Each child FEATURE then follows the
 normal FEATURE lifecycle with its own review, execution, validation, and merge history.
 
-Use `hns plans` to list saved plans. Epic children are grouped under their parent, and orphaned child plans are shown
+Use `wld plans` to list saved plans. Epic children are grouped under their parent, and orphaned child plans are shown
 separately.
 
-Use `hns load-plan <name-or-path>` to:
+Use `wld load-plan <name-or-path>` to:
 
 - execute a ready standalone FEATURE or child FEATURE plan
 - open or resume Slicer decomposition for a PROJECT Epic
@@ -239,7 +239,7 @@ Use `hns load-plan <name-or-path>` to:
 - re-open an approved, implemented, or verified plan for review
 - view plan or Epic details
 - continue a draft or feedback plan
-- load an external markdown plan and let Harns add front matter
+- load an external markdown plan and let RunWeild add front matter
 
 `/resume` is different: it resumes a recent interactive chat session, not a plan file.
 
@@ -265,28 +265,28 @@ matter for name, model, description, and tools.
 
 Agent definitions are layered in this order, highest precedence first:
 
-1. Local: `<repo>/.hns/agents`
-2. Home: `~/.hns/agents`
+1. Local: `<repo>/.wld/agents`
+2. Home: `~/.wld/agents`
 3. Bundled: `src/agent-definitions`
 
 Scalar front matter fields override lower layers. Prompt bodies append by default. A layer can set
-`promptOverride: true` to replace lower-layer prompt content. Tool lists replace lower layers, but Harns re-adds
+`promptOverride: true` to replace lower-layer prompt content. Tool lists replace lower layers, but RunWeild re-adds
 protected tools required for its workflow.
 
 ## Themes
 
-Harns includes the embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
+RunWeild includes the embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
 
 ```bash
-hns install npm:<package-spec>
-hns install git:<url>
-hns install local:<path>
-hns remove <source>
+wld install npm:<package-spec>
+wld install git:<url>
+wld install local:<path>
+wld remove <source>
 ```
 
 Only JSON theme files are registered. Logic extensions, JavaScript, prompts, and skills inside packages are ignored.
-Install skills with whichever external skill tooling you prefer; Harns reads compatible skills from `~/.agents/skills`
-and its local/home/bundled skill directories.
+Install skills with whichever external skill tooling you prefer; RunWeild reads compatible skills from
+`~/.agents/skills` and its local/home/bundled skill directories.
 
 Switch themes inside the TUI with `/theme`; the picker previews themes live and persists the selected theme.
 
@@ -321,7 +321,7 @@ src/
     ui/                TUI components and theme glue
     workflow/          triage dispatch, plan execution, validation
   skills/              bundled skill definitions
-  tools/               Harns-specific agent tools
+  tools/               RunWeild-specific agent tools
 plans/                 persisted plans
 docs/                  ADRs, PRDs, and feature docs
 ```
@@ -344,15 +344,15 @@ Confirm the compiled Plannotator package can resolve:
 
 ### A Saved Plan Is Not Loading
 
-- Use `hns plans` to list plan names.
-- Use `hns load-plan <name>` for a plan in `plans/`.
-- Use `hns load-plan plans/<name>.md` for a direct path.
+- Use `wld plans` to list plan names.
+- Use `wld load-plan <name>` for a plan in `plans/`.
+- Use `wld load-plan plans/<name>.md` for a direct path.
 - Use `/resume` only for chat sessions.
 
 ### Agent Behavior Looks Off
 
-- Check local overrides in `<repo>/.hns/agents/`.
-- Check home overrides in `~/.hns/agents/`.
+- Check local overrides in `<repo>/.wld/agents/`.
+- Check home overrides in `~/.wld/agents/`.
 - Run `/reload` in the TUI after changing memories, settings, prompt templates, skills, models, or themes.
 
 ## Contributing
@@ -365,15 +365,15 @@ Confirm the compiled Plannotator package can resolve:
 
 ## License
 
-Harns is source-available and free to use, but it is not open source yet.
+RunWeild is source-available and free to use, but it is not open source yet.
 
-You may install, run, inspect, and use Harns for personal, internal, or commercial work. You may also submit issues and
-pull requests.
+You may install, run, inspect, and use RunWeild for personal, internal, or commercial work. You may also submit issues
+and pull requests.
 
-You may not distribute modified versions, publish derivative works, rebrand Harns, or offer it as a competing product or
-service without prior written permission.
+You may not distribute modified versions, publish derivative works, rebrand RunWeild, or offer it as a competing product
+or service without prior written permission.
 
-Harns also includes third-party dependencies, including Pi and Plannotator-related packages, which remain under their
+RunWeild also includes third-party dependencies, including Pi and Plannotator-related packages, which remain under their
 own license terms.
 
 See [LICENSE](LICENSE).

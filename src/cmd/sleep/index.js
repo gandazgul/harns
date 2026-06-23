@@ -60,7 +60,7 @@ export async function runSleepCommand(argv, options = {}) {
         console.log(message);
     };
 
-    notify("[Harns] Running sleep mode (memory optimization)...");
+    notify("[RunWeild] Running sleep mode (memory optimization)...");
 
     // Route through the /sleep prompt template using the operator agent
     await runAgentSession({
@@ -68,5 +68,5 @@ export async function runSleepCommand(argv, options = {}) {
         userRequest: "/sleep",
     });
 
-    notify("[Harns] ✅ Sleep complete.");
+    notify("[RunWeild] ✅ Sleep complete.");
 }

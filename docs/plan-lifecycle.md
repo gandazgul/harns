@@ -40,8 +40,8 @@ Epic "done enough for now"; remaining child FEATURE Plans stay visible and loada
 
 ## Worktree Statuses
 
-Worktree status is stored separately from Plan Status so Harns can describe recoverable execution state without changing
-the Plan state machine.
+Worktree status is stored separately from Plan Status so RunWeild can describe recoverable execution state without
+changing the Plan state machine.
 
 | Worktree status     | Meaning                                                                                       |
 | ------------------- | --------------------------------------------------------------------------------------------- |
@@ -92,13 +92,13 @@ PROJECT behavior.
 
 ## Execution Worktrees
 
-Before executable implementation starts, Harns creates or reuses a git worktree for the plan and records its metadata in
-the primary plan file and `.hns/worktrees.json`. Agent sessions, built-in file tools, custom edit tools, local CI,
-workflow diffs, reviewer sessions, and repair sessions receive the execution worktree as their cwd. Harns does not use
-`Deno.chdir()` for this because concurrent execution may still exist in future task-based workflows.
+Before executable implementation starts, RunWeild creates or reuses a git worktree for the plan and records its metadata
+in the primary plan file and `.wld/worktrees.json`. Agent sessions, built-in file tools, custom edit tools, local CI,
+workflow diffs, reviewer sessions, and repair sessions receive the execution worktree as their cwd. RunWeild does not
+use `Deno.chdir()` for this because concurrent execution may still exist in future task-based workflows.
 
-The primary checkout remains the metadata root for saved plans, settings, `.hns/worktrees.json`, and
-`.hns/worktrees.lock`. This means `hns plans` and `hns load-plan` can see current lifecycle state while implementation
+The primary checkout remains the metadata root for saved plans, settings, `.wld/worktrees.json`, and
+`.wld/worktrees.lock`. This means `wld plans` and `wld load-plan` can see current lifecycle state while implementation
 files are isolated in a linked worktree. The worktree registry and lock files are local runtime state and are ignored by
 Git so execution branches cannot merge stale registry snapshots back into the primary checkout.
 
@@ -114,14 +114,14 @@ For worktree-backed plans:
    the primary checkout.
 3. Workflow Validation runs local CI, computes the workflow diff, starts reviewer sessions, and starts repair sessions
    in the execution worktree.
-4. If validation fails, Harns keeps Plan Status `implemented`, records `worktreeStatus: "validation_failed"`, and leaves
-   the worktree for recovery.
-5. If validation passes, Harns attempts to merge the execution branch into the primary checkout.
-6. Only after that merge succeeds does Harns record `validation_passed` and set Plan Status `verified`. By default,
-   Harns removes the execution checkout, deletes its `.hns/worktrees.json` entry, and clears `executionBaselineTree`,
+4. If validation fails, RunWeild keeps Plan Status `implemented`, records `worktreeStatus: "validation_failed"`, and
+   leaves the worktree for recovery.
+5. If validation passes, RunWeild attempts to merge the execution branch into the primary checkout.
+6. Only after that merge succeeds does RunWeild record `validation_passed` and set Plan Status `verified`. By default,
+   RunWeild removes the execution checkout, deletes its `.wld/worktrees.json` entry, and clears `executionBaselineTree`,
    `worktreeId`, `worktreePath`, `worktreeBranch`, and `worktreeStatus` from the plan file. If `cleanupMergedWorktrees`
-   is `false`, Harns keeps the merged checkout, registry entry, and plan pointers for inspection.
-7. If merge-back fails or is refused because the primary checkout has blocking uncommitted changes, Harns records
+   is `false`, RunWeild keeps the merged checkout, registry entry, and plan pointers for inspection.
+7. If merge-back fails or is refused because the primary checkout has blocking uncommitted changes, RunWeild records
    `worktree_merge_failed`, keeps Plan Status `implemented`, sets `worktreeStatus: "merge_conflict"`, and leaves the
    worktree intact.
 
@@ -160,18 +160,18 @@ enough for now.
 
 `executionBaselineTree`: Git tree captured in the execution worktree at `execution_started`.
 
-`worktreeId`: Durable id of the matching `.hns/worktrees.json` registry entry.
+`worktreeId`: Durable id of the matching `.wld/worktrees.json` registry entry.
 
 `worktreePath`: Filesystem path to the linked execution worktree.
 
-`worktreeBranch`: Git branch checked out in the execution worktree, usually under `harns/worktree/`.
+`worktreeBranch`: Git branch checked out in the execution worktree, usually under `runweild/worktree/`.
 
 `worktreeStatus`: Worktree lifecycle state. See [Worktree Statuses](#worktree-statuses).
 
 ## Recovery
 
 Loading an `in_progress`, `failed`, or `implemented` executable Plan starts Plan Recovery. For worktree-backed plans,
-Harns resolves worktree context from the plan front matter first and the registry second. Inspect/report shows plan
+RunWeild resolves worktree context from the plan front matter first and the registry second. Inspect/report shows plan
 status, worktree status, path, branch, base commit/ref when available, git status, and changes since the execution
 baseline.
 
@@ -196,14 +196,14 @@ unrelated changes made after that snapshot will be lost.
 
 ## Plan List Visibility
 
-`hns plans` shows Epic hierarchy when PROJECT Plans use `type: epic`. Child FEATURE Plans are grouped under their parent
+`wld plans` shows Epic hierarchy when PROJECT Plans use `type: epic`. Child FEATURE Plans are grouped under their parent
 Epic using `parentPlan`, and Epics show verified/active/remaining/failed progress. Child FEATURE Plans whose
 `parentPlan` does not match an existing Epic are shown as orphaned child plans.
 
-`hns plans` also shows concise worktree state for plans with worktree metadata:
+`wld plans` also shows concise worktree state for plans with worktree metadata:
 
 ```text
-Worktree: validation_failed (harns/worktree/example-plan-1234abcd)
+Worktree: validation_failed (runweild/worktree/example-plan-1234abcd)
 ```
 
 The parenthesized value is the recorded worktree branch when available, otherwise the path.

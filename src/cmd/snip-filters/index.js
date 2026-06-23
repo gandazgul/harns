@@ -1,12 +1,12 @@
 /**
  * @module cmd/snip-filters
- * Install or clean up Harns-managed Snip filters.
+ * Install or clean up RunWeild-managed Snip filters.
  */
 
 import {
-    cleanupHarnsSnipFiltersForUser,
-    getHarnsSnipFilterInstallStatus,
-    installHarnsSnipFiltersForUser,
+    cleanupRunWeildSnipFiltersForUser,
+    getRunWeildSnipFilterInstallStatus,
+    installRunWeildSnipFiltersForUser,
 } from "../../shared/snip-filters.js";
 
 /**
@@ -31,9 +31,9 @@ function formatSkipped(skipped) {
  */
 export async function runSnipFiltersCommand(argv, _options = {}) {
     const deps = /** @type {{
-        installHarnsSnipFiltersForUser?: typeof installHarnsSnipFiltersForUser,
-        cleanupHarnsSnipFiltersForUser?: typeof cleanupHarnsSnipFiltersForUser,
-        getHarnsSnipFilterInstallStatus?: typeof getHarnsSnipFilterInstallStatus,
+        installRunWeildSnipFiltersForUser?: typeof installRunWeildSnipFiltersForUser,
+        cleanupRunWeildSnipFiltersForUser?: typeof cleanupRunWeildSnipFiltersForUser,
+        getRunWeildSnipFilterInstallStatus?: typeof getRunWeildSnipFilterInstallStatus,
         log?: typeof console.log,
         error?: typeof console.error,
         exit?: typeof Deno.exit,
@@ -46,8 +46,8 @@ export async function runSnipFiltersCommand(argv, _options = {}) {
 
     try {
         if (action === "install") {
-            const result = await (deps.installHarnsSnipFiltersForUser || installHarnsSnipFiltersForUser)();
-            log(`Installed Harns Snip filters into ${result.filtersDir}`);
+            const result = await (deps.installRunWeildSnipFiltersForUser || installRunWeildSnipFiltersForUser)();
+            log(`Installed RunWeild Snip filters into ${result.filtersDir}`);
             log(`Updated:\n${formatPathList(result.installed)}`);
             if (result.skipped.length > 0) {
                 log(`Skipped:\n${formatSkipped(result.skipped)}`);
@@ -56,8 +56,8 @@ export async function runSnipFiltersCommand(argv, _options = {}) {
         }
 
         if (action === "cleanup" || action === "remove" || action === "uninstall") {
-            const result = await (deps.cleanupHarnsSnipFiltersForUser || cleanupHarnsSnipFiltersForUser)();
-            log(`Cleaned up Harns Snip filters from ${result.filtersDir}`);
+            const result = await (deps.cleanupRunWeildSnipFiltersForUser || cleanupRunWeildSnipFiltersForUser)();
+            log(`Cleaned up RunWeild Snip filters from ${result.filtersDir}`);
             log(`Removed:\n${formatPathList(result.removed)}`);
             if (result.skipped.length > 0) {
                 log(`Skipped:\n${formatSkipped(result.skipped)}`);
@@ -66,8 +66,8 @@ export async function runSnipFiltersCommand(argv, _options = {}) {
         }
 
         if (action === "status") {
-            const result = await (deps.getHarnsSnipFilterInstallStatus || getHarnsSnipFilterInstallStatus)();
-            log(`Harns Snip filter status in ${result.filtersDir}`);
+            const result = await (deps.getRunWeildSnipFilterInstallStatus || getRunWeildSnipFilterInstallStatus)();
+            log(`RunWeild Snip filter status in ${result.filtersDir}`);
             log(`Installed:\n${formatPathList(result.installed)}`);
             log(`Missing:\n${formatPathList(result.missing)}`);
             if (result.conflicts.length > 0) {
@@ -76,7 +76,7 @@ export async function runSnipFiltersCommand(argv, _options = {}) {
             return;
         }
 
-        error("Usage: hns snip-filters [install|cleanup|status]");
+        error("Usage: wld snip-filters [install|cleanup|status]");
         exit(1);
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

@@ -2,9 +2,9 @@ import { assertEquals } from "@std/assert";
 import { Spacer } from "@earendil-works/pi-tui";
 import { createFooterOnlyUiApi, createSilentUiApi, createUiApi } from "./api.js";
 import { SpinnerBlock } from "./blocks.js";
-import { initHarnsTheme } from "./theme.js";
+import { initRunWeildTheme } from "./theme.js";
 
-initHarnsTheme();
+initRunWeildTheme();
 
 /**
  * @returns {{ tui: any, messageList: any, renders: () => number, focus: () => any }}

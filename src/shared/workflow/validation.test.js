@@ -121,7 +121,7 @@ Deno.test("runValidationLoop marks validation progress and success messages with
             .filter((/** @type {{ message: string }} */ call) =>
                 call.message.includes("Running CI Validation") || call.message === "Build and tests passed."
             )
-            .every((/** @type {{ header: string }} */ call) => call.header === "Harns"),
+            .every((/** @type {{ header: string }} */ call) => call.header === "RunWeild"),
         true,
     );
     assertEquals(
@@ -394,7 +394,7 @@ Deno.test("runValidationLoop runs validation and reviewer in active execution cw
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({
@@ -451,7 +451,7 @@ Deno.test("runValidationLoop records validation_passed only after worktree merge
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({
@@ -500,9 +500,9 @@ Deno.test("runValidationLoop records validation_passed only after worktree merge
     });
 
     assertEquals(actions, [
-        "merge:/primary:harns/worktree/p-wt1",
+        "merge:/primary:runweild/worktree/p-wt1",
         "registry:merged",
-        "remove:/primary:/worktree:harns/worktree/p-wt1",
+        "remove:/primary:/worktree:runweild/worktree/p-wt1",
         "registry-remove:/primary:wt1",
         "event:validation_passed:merged",
     ]);
@@ -520,7 +520,7 @@ Deno.test("runValidationLoop keeps merged worktree when cleanup setting is disab
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({
@@ -579,7 +579,7 @@ Deno.test("runValidationLoop records worktree_merge_failed when merge-back fails
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({
@@ -641,7 +641,7 @@ Deno.test("runValidationLoop still prompts when merge-conflict metadata updates 
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({
@@ -706,7 +706,7 @@ Deno.test("runValidationLoop retries worktree merge after user fixes primary che
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({
@@ -777,7 +777,7 @@ Deno.test("runValidationLoop marks active worktree validation_failed when valida
         projectRoot: "/primary",
         executionCwd: "/worktree",
         worktreeId: "wt1",
-        worktreeBranch: "harns/worktree/p-wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
     });
 
     await runValidationLoop({

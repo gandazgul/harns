@@ -1,9 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { runSessionCommand } from "./index.js";
 import { setRootSessionManager } from "../../shared/session/session-state.js";
-import { initHarnsTheme } from "../../shared/ui/theme.js";
+import { initRunWeildTheme } from "../../shared/ui/theme.js";
 
-initHarnsTheme();
+initRunWeildTheme();
 
 /**
  * @returns {{ uiAPI: any, messages: string[] }}

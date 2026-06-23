@@ -61,7 +61,7 @@ export async function ensureMnemosyneBinary() {
 
     throw new Error(
         [
-            "[Harns] Mnemosyne binary not found in PATH.",
+            "[RunWeild] Mnemosyne binary not found in PATH.",
             `Install it: ${MNEMOSYNE_INSTALL_URL}`,
         ].join("\n"),
     );
@@ -89,7 +89,7 @@ export async function ensureCymbalBinary() {
 
     throw new Error(
         [
-            "[Harns] Cymbal binary not found in PATH.",
+            "[RunWeild] Cymbal binary not found in PATH.",
             `Install it: ${CYMBAL_INSTALL_URL}`,
         ].join("\n"),
     );
@@ -98,7 +98,7 @@ export async function ensureCymbalBinary() {
 /**
  * Check whether Snip is available in PATH.
  *
- * Snip is optional: Harns registers its command-prefix extension only when
+ * Snip is optional: RunWeild registers its command-prefix extension only when
  * this returns true.
  *
  * @returns {Promise<boolean>}
