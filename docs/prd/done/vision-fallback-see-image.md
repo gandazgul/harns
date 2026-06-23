@@ -8,17 +8,17 @@ createdAt: "2026-06-19T00:00:00.000Z"
 
 ## Objective
 
-Add a native Harns image fallback for text-only models: when the active Agent model cannot receive images directly,
-Harns can route image inspection through a configured vision-capable model and return a textual description to the
+Add a native RunWeild image fallback for text-only models: when the active Agent model cannot receive images directly,
+RunWeild can route image inspection through a configured vision-capable model and return a textual description to the
 primary Agent.
 
-This is inspired by `opencode-see-image`, but should be implemented using Harns' existing model/provider/session
+This is inspired by `opencode-see-image`, but should be implemented using RunWeild' existing model/provider/session
 infrastructure rather than OpenCode plugin mechanics.
 
 ## Problem Statement
 
-Harns already supports image attachments in the TUI and can pass them to model providers. This works for vision-capable
-models, but text-only models cannot reason about screenshots or images directly.
+RunWeild already supports image attachments in the TUI and can pass them to model providers. This works for
+vision-capable models, but text-only models cannot reason about screenshots or images directly.
 
 Users need a safe, predictable fallback path:
 
@@ -30,10 +30,11 @@ Users need a safe, predictable fallback path:
 
 - `opencode-see-image` registers a `see_image` tool that sends an image to a vision-capable model and returns text to
   the primary model.
-- Harns already has image attachments in interactive sessions and passes them to `AgentSession.prompt()` when present.
-- Pi/Harns model metadata includes input modality information, including whether a model supports `image` input.
-- Harns already injects Custom Tools at Agent Session build time, so a native `see_image` Custom Tool fits the existing
-  architecture.
+- RunWeild already has image attachments in interactive sessions and passes them to `AgentSession.prompt()` when
+  present.
+- Pi/RunWeild model metadata includes input modality information, including whether a model supports `image` input.
+- RunWeild already injects Custom Tools at Agent Session build time, so a native `see_image` Custom Tool fits the
+  existing architecture.
 - Google/Hugging Face documentation for `google/gemma-4-12B-it` describes it as multimodal with image input and strong
   image understanding capabilities.
 - Google Gemma docs show Gemma 3+ image-understanding workflows; Gemma 4 docs/model cards describe multimodal image
@@ -44,21 +45,21 @@ Users need a safe, predictable fallback path:
 - This feature applies only when the active Agent model is text-only.
 - Vision-capable active models keep direct image behavior.
 - Fallback vision configuration is global/preset-level, not per-agent.
-- `visionFallback.model` uses the existing Harns single string model format: `provider/model`.
+- `visionFallback.model` uses the existing RunWeild single string model format: `provider/model`.
 - Resolution order:
   1. Active preset `modelPresets.<activeModelPreset>.visionFallback.model`
   2. Top-level `visionFallback.model`
   3. Disabled if unset
-- `see_image` must call the fallback model through Harns/pi provider/model APIs and configured auth. No direct
+- `see_image` must call the fallback model through RunWeild/pi provider/model APIs and configured auth. No direct
   provider-specific HTTP calls.
-- Pasted images should be saved as session-scoped artifacts with Harns-generated references.
+- Pasted images should be saved as session-scoped artifacts with RunWeild-generated references.
 - Local image files should be addressable by safe project-relative path.
 - No automatic image cleanup is required in v1, but future session expiration/deletion must remove associated session
   image artifacts.
 
 ## Settings UX
 
-Add a Harns custom setting:
+Add a RunWeild custom setting:
 
 ```jsonc
 {
@@ -99,7 +100,7 @@ image-description fallback when available.
 
 ## Attachment Gating UX
 
-Harns should check image compatibility twice:
+RunWeild should check image compatibility twice:
 
 1. Paste/attach time
 2. Submit time
@@ -145,7 +146,7 @@ image files.
 
 Supported v1 references:
 
-- `attachment:<uuid>` — pasted/session image saved by Harns.
+- `attachment:<uuid>` — pasted/session image saved by RunWeild.
 - `relative/path.png` — local/project image file, resolved with normal safe read-path rules.
 
 Bare filename search is out of scope for v1.
@@ -164,7 +165,7 @@ Pasted images should be persisted as session-scoped artifacts so resumed session
 Proposed storage shape:
 
 ```text
-~/.hns/sessions/<encoded-cwd>/<sessionId>_images/<uuid>.<ext>
+~/.wld/sessions/<encoded-cwd>/<sessionId>_images/<uuid>.<ext>
 ```
 
 Rules:
@@ -177,7 +178,7 @@ Rules:
 
 ## `see_image` Tool
 
-Register a Harns Custom Tool named `see_image` when all are true:
+Register a RunWeild Custom Tool named `see_image` when all are true:
 
 - Active Agent model is text-only.
 - A `visionFallback.model` is configured and resolved.
@@ -208,7 +209,7 @@ The tool returns plain text to the primary Agent.
 
 ## Fallback Model Invocation
 
-`see_image` must use Harns/pi's existing model registry/provider/auth path.
+`see_image` must use RunWeild/pi's existing model registry/provider/auth path.
 
 Requirements:
 

@@ -1,9 +1,9 @@
-# Using Harns
+# Using RunWeild
 
-This page covers daily Harns usage and the places where Harns differs from Pi.
+This page covers daily RunWeild usage and the places where RunWeild differs from Pi.
 
 For editor features, terminal shortcuts, image paste, file references, shell commands, and message queue behavior that
-Harns inherits from Pi, see [Pi Usage](https://pi.dev/docs/latest/usage) and
+RunWeild inherits from Pi, see [Pi Usage](https://pi.dev/docs/latest/usage) and
 [Pi Keybindings](https://pi.dev/docs/latest/keybindings).
 
 ## Default workflow: Router first
@@ -11,8 +11,8 @@ Harns inherits from Pi, see [Pi Usage](https://pi.dev/docs/latest/usage) and
 The default CLI command is `router`:
 
 ```bash
-hns "fix the bug in the parser"
-hns router "fix the bug in the parser"
+wld "fix the bug in the parser"
+wld router "fix the bug in the parser"
 ```
 
 Router is the default Agent for fresh triage. It calls `triage_report`, and that tool outcome starts the workflow:
@@ -22,7 +22,7 @@ Router is the default Agent for fresh triage. It calls `triage_report`, and that
 | `INQUIRY`      | The user needs an answer, explanation, or guidance. | Guide answers directly and can return to Router if the request becomes executable work.                               |
 | `IDEATION`     | The user wants to explore or sharpen an idea.       | Ideator interviews, researches, and produces a PRD or synthesis before routing implementation back through Router.    |
 | `QUICK_FIX`    | Small, low-risk executable work.                    | Operator executes directly and self-verifies.                                                                         |
-| `FEATURE`      | Non-trivial implementation needs a reviewable plan. | Planner writes a plan, user approves it, Engineer executes it, Harns validates it.                                    |
+| `FEATURE`      | Non-trivial implementation needs a reviewable plan. | Planner writes a plan, user approves it, Engineer executes it, RunWeild validates it.                                 |
 | `PROJECT`      | Large work needs architecture and slicing.          | Architect designs the Epic, interactive Slicer creates child FEATURE plans, execution proceeds one feature at a time. |
 
 ## Interactive sessions
@@ -30,7 +30,7 @@ Router is the default Agent for fresh triage. It calls `triage_report`, and that
 Start an interactive session with:
 
 ```bash
-hns
+wld
 ```
 
 A new interactive session starts with Router. After `triage_report` dispatches to Guide, Ideator, Operator, Planner,
@@ -46,8 +46,8 @@ Use:
 
 ### Image attachments with text-only models
 
-If the active model supports image input, Harns sends pasted images directly to it. If the active model is text-only,
-configure [`visionFallback.model`](settings.md#visionfallback) to let Harns save pasted images as session attachments
+If the active model supports image input, RunWeild sends pasted images directly to it. If the active model is text-only,
+configure [`visionFallback.model`](settings.md#visionfallback) to let RunWeild save pasted images as session attachments
 and expose the `see_image` tool to the active agent. Without a configured fallback, image paste/submission is blocked
 with a link back to the `visionFallback` settings section.
 
@@ -56,13 +56,13 @@ with a link back to the `visionFallback` settings section.
 List agents:
 
 ```bash
-hns agent
+wld agent
 ```
 
 Talk directly to one agent:
 
 ```bash
-hns agent engineer "implement the approved plan"
+wld agent engineer "implement the approved plan"
 ```
 
 Inside the TUI:
@@ -82,20 +82,20 @@ in normal `/agent` listings. See [Customization](customization.md).
 List saved plans:
 
 ```bash
-hns plans
+wld plans
 ```
 
 Load a plan by name or path:
 
 ```bash
-hns load-plan my-feature
-hns load-plan plans/my-feature.md
+wld load-plan my-feature
+wld load-plan plans/my-feature.md
 ```
 
 Loading a plan lets you inspect it, continue work, recover failed work, or re-open review depending on the plan status.
 
-Plans live under `plans/` and use Markdown plus YAML front matter. Harns treats the plan file as durable workflow state,
-not just a generated note.
+Plans live under `plans/` and use Markdown plus YAML front matter. RunWeild treats the plan file as durable workflow
+state, not just a generated note.
 
 PROJECT plans are Epic containers by default. Loading an approved or decomposing Epic opens the interactive Slicer so
 you can discuss child FEATURE boundaries and materialize drafts under `plans/<epic-name>/`. Once decomposition is
@@ -133,25 +133,25 @@ Prompt templates and skills can also appear as slash commands. See [Customizatio
 ## CLI commands
 
 ```bash
-hns help                         # global help
-hns help <command>               # command help
-hns version                      # version and platform architecture
-hns router "request"             # explicit routing
-hns agent [name] [request]       # list or use agents
-hns model <provider>/<model_id>  # switch model
-hns plans                        # list plans
-hns load-plan <name-or-path>     # continue a plan
-hns init                         # initialize project context
-hns sleep                        # memory/context cleanup prompt
-hns theme <name>                 # set theme
-hns theme --list                 # list themes
-hns install <source>             # install a theme package
-hns remove <source>              # remove a theme package
+wld help                         # global help
+wld help <command>               # command help
+wld version                      # version and platform architecture
+wld router "request"             # explicit routing
+wld agent [name] [request]       # list or use agents
+wld model <provider>/<model_id>  # switch model
+wld plans                        # list plans
+wld load-plan <name-or-path>     # continue a plan
+wld init                         # initialize project context
+wld sleep                        # memory/context cleanup prompt
+wld theme <name>                 # set theme
+wld theme --list                 # list themes
+wld install <source>             # install a theme package
+wld remove <source>              # remove a theme package
 ```
 
 ## File references and shell commands
 
-Harns inherits Pi's TUI behavior:
+RunWeild inherits Pi's TUI behavior:
 
 - Type `@` to fuzzy-search project files.
 - Use `!command` to run a shell command and send output to the model.
@@ -162,20 +162,20 @@ Full details: [Pi Usage](https://pi.dev/docs/latest/usage).
 
 ## Project data locations
 
-Harns uses Harns-owned paths instead of Pi-owned paths:
+RunWeild uses RunWeild-owned paths instead of Pi-owned paths:
 
-| Data                      | Location                                |
-| ------------------------- | --------------------------------------- |
-| Global settings           | `~/.hns/settings.json`                  |
-| Credentials               | `~/.hns/auth.json`                      |
-| Custom models             | `~/.hns/models.json`                    |
-| Sessions                  | `~/.hns/sessions/`                      |
-| Global Harns instructions | `~/.hns/HARNS.md` or `~/.hns/AGENTS.md` |
-| Home agents               | `~/.hns/agents/`                        |
-| Home prompts              | `~/.hns/prompts/`                       |
-| Project settings          | `.hns/settings.json`                    |
-| Project agents            | `.hns/agents/`                          |
-| Project prompts           | `.hns/prompts/`                         |
-| Project plans             | `plans/`                                |
+| Data                         | Location                                   |
+| ---------------------------- | ------------------------------------------ |
+| Global settings              | `~/.wld/settings.json`                     |
+| Credentials                  | `~/.wld/auth.json`                         |
+| Custom models                | `~/.wld/models.json`                       |
+| Sessions                     | `~/.wld/sessions/`                         |
+| Global RunWeild instructions | `~/.wld/RUNWEILD.md` or `~/.wld/AGENTS.md` |
+| Home agents                  | `~/.wld/agents/`                           |
+| Home prompts                 | `~/.wld/prompts/`                          |
+| Project settings             | `.wld/settings.json`                       |
+| Project agents               | `.wld/agents/`                             |
+| Project prompts              | `.wld/prompts/`                            |
+| Project plans                | `plans/`                                   |
 
-On first use, Harns imports some Pi config files into `~/.hns/` when the Harns copy does not exist.
+On first use, RunWeild imports some Pi config files into `~/.wld/` when the RunWeild copy does not exist.

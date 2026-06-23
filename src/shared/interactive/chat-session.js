@@ -14,8 +14,8 @@ import {
     visibleWidth,
 } from "@earendil-works/pi-tui";
 import { initTUI } from "../ui/tui.js";
-import { applyPersistedTheme, getEditorTheme, initHarnsTheme, onThemeChange, theme } from "../ui/theme.js";
-import { HNS_VERSION } from "../version.js";
+import { applyPersistedTheme, getEditorTheme, initRunWeildTheme, onThemeChange, theme } from "../ui/theme.js";
+import { VERSION } from "../version.js";
 import { endBlink, renderBootLogo } from "../ui/boot-logo.js";
 import { createUiApi } from "../ui/api.js";
 import { SpinnerBlock, SystemMessageBlock } from "../ui/blocks.js";
@@ -562,11 +562,11 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // no live session behind it.)
     await listAvailableAgents();
 
-    // Track which agent the initial root will be built for. Callers (e.g. `hns agent <name>`)
+    // Track which agent the initial root will be built for. Callers (e.g. `wld agent <name>`)
     // can override via options.initialAgentName.
     const initialAgentInternalName = options.initialAgentName || AGENTS.ROUTER;
     await ensureMnemosyneBinary();
-    initHarnsTheme();
+    initRunWeildTheme();
     await applyPersistedTheme();
     const tui = initTUI();
 
@@ -574,8 +574,8 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     const suppressStartupHeader = options.sessionStartMode === "continue";
 
     // Header
-    const titleLine = `${theme.fg("accent", theme.bold("Harns ─ Plan-by-Default Harness"))} ${
-        theme.fg("dim", `${HNS_VERSION}`)
+    const titleLine = `${theme.fg("accent", theme.bold("RunWeild ─ Plan-by-Default Harness"))} ${
+        theme.fg("dim", `${VERSION}`)
     }`;
 
     const compactHelp = theme.fg(
@@ -920,7 +920,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         const alreadyOffered = await isInitOfferedFn();
         if (!alreadyOffered) {
             const choice = await uiAPI.promptSelect(
-                "Would you like to run /init to bootstrap Harns?",
+                "Would you like to run /init to bootstrap RunWeild?",
                 [
                     { value: "yes", label: "Yes" },
                     { value: "no", label: "No" },
@@ -1280,7 +1280,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 uiAPI.appendSystemMessage(
                     "I'm not able to change the model right now wait until idle or cancel with Esc.",
                     false,
-                    "Harns",
+                    "RunWeild",
                 );
                 return;
             }

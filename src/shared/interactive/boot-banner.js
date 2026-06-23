@@ -19,8 +19,8 @@ import { listLoadedAgentMdFiles, listSkills } from "../session/session.js";
  * @param {PromptTemplate} template
  */
 function toUserFacingPromptPath(template) {
-    if (template.source === "local") return `./.hns/prompts/${template.name}.md`;
-    return `~/.hns/prompts/${template.name}.md`;
+    if (template.source === "local") return `./.wld/prompts/${template.name}.md`;
+    return `~/.wld/prompts/${template.name}.md`;
 }
 
 /**
@@ -108,7 +108,7 @@ export async function renderBootBanner({
         if (blocked.source !== "local" && blocked.source !== "home") continue;
         const userPath = toUserFacingPromptPath(blocked);
         uiAPI.appendSystemMessage(
-            `Warning: ${userPath} command can't be invoked because it would override Harns built-in commands. Please rename it.`,
+            `Warning: ${userPath} command can't be invoked because it would override RunWeild built-in commands. Please rename it.`,
             true,
         );
     }
@@ -116,7 +116,7 @@ export async function renderBootBanner({
     if (!snipAvailable && await shouldShowSnipMissingWarningImpl()) {
         uiAPI.appendSystemMessage(
             [
-                "[Harns] Snip is not installed. Harns will still work, but agent shell command output will be noisier.",
+                "[RunWeild] Snip is not installed. RunWeild will still work, but agent shell command output will be noisier.",
                 "Install Snip with `brew install edouard-claude/tap/snip` or see https://github.com/edouard-claude/snip#installation.",
             ].join("\n"),
             true,

@@ -3,7 +3,7 @@
  * Tests for the global init-state module.
  *
  * IMPORTANT: These tests override the state path to a temp directory
- * to avoid polluting the user's real ~/.hns/init-state.json.
+ * to avoid polluting the user's real ~/.wld/init-state.json.
  */
 
 import { assertEquals, assertExists, assertObjectMatch } from "@std/assert";
@@ -21,7 +21,7 @@ import {
 } from "./init-state.js";
 
 // Isolate all state operations to a temp directory so we never touch
-// the user's real ~/.hns/init-state.json.
+// the user's real ~/.wld/init-state.json.
 const testDir = Deno.makeTempDirSync();
 const testStatePath = join(testDir, "init-state.json");
 _setTestStatePath(testStatePath);

@@ -158,7 +158,7 @@ export async function askApprovalWithTasks(planName, uiAPI, structuredTasks) {
  */
 export async function askRetryFailedTasks(executionResult, uiAPI) {
     const { failedTasks } = executionResult;
-    const msg = `[Harns] ${failedTasks.length} task(s) failed. Would you like to retry the failed tasks?`;
+    const msg = `[RunWeild] ${failedTasks.length} task(s) failed. Would you like to retry the failed tasks?`;
     return await uiAPI.promptSelect(msg, [
         { value: "yes", label: "Yes, retry failed tasks" },
         { value: "no", label: "No, finalize execution" },
@@ -180,7 +180,7 @@ export function reportExecutionSummary(result, uiAPI) {
     });
 
     const summary = `Execution Summary: ${successCount} success, ${failedCount} failed, ${blockedCount} blocked.`;
-    uiAPI.appendSystemMessage(summary, false, "Harns");
+    uiAPI.appendSystemMessage(summary, false, "RunWeild");
 }
 
 /**

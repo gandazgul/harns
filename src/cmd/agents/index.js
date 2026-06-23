@@ -55,7 +55,7 @@ async function runAgentsCommandCli(agentName, rest, deps = {}) {
         for (const agent of agents) {
             console.log(`  ${agent.name.padEnd(14)} ${agent.description}`);
         }
-        console.log(`\nUsage: hns agent <name> ["<prompt>"]\n`);
+        console.log(`\nUsage: wld agent <name> ["<prompt>"]\n`);
         return;
     }
 
@@ -146,9 +146,9 @@ async function runAgentsCommandTUI(agentName, _rest, options, deps = {}) {
 /**
  * Handle the agents command.
  *
- * - `hns agent` / `hns agents` → list available agents
- * - `hns agent <name>` → start TUI with that agent
- * - `hns agent <name> "<prompt>"` → start TUI with agent + initial prompt
+ * - `wld agent` / `wld agents` → list available agents
+ * - `wld agent <name>` → start TUI with that agent
+ * - `wld agent <name> "<prompt>"` → start TUI with agent + initial prompt
  *
  * Inside the TUI (`/agent`):
  * - `/agent router` → switch to the default triage Agent

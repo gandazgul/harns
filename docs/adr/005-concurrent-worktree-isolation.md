@@ -6,9 +6,9 @@ Accepted
 
 ## Context
 
-Harns previously executed plan work in the primary working tree (CWD = `Deno.cwd()`). This meant:
+RunWeild previously executed plan work in the primary working tree (CWD = `Deno.cwd()`). This meant:
 
-- Two Harns instances executing plans concurrently could step on each other's file changes.
+- Two RunWeild instances executing plans concurrently could step on each other's file changes.
 - Failed execution recovery could reset the primary checkout to a baseline snapshot and destroy unrelated user edits.
 - Plan recovery had no isolated place to inspect, merge, continue, or discard a partial execution.
 
@@ -16,8 +16,8 @@ ADR-003 introduced execution baseline trees (git tree objects captured before ex
 mechanism, but those trees operated on the same working tree. ADR-004 centralized the plan lifecycle, but did not change
 the single-worktree constraint.
 
-We need a mechanism that lets multiple Harns instances, or multiple sequential plan executions, operate independently on
-the same repository.
+We need a mechanism that lets multiple RunWeild instances, or multiple sequential plan executions, operate independently
+on the same repository.
 
 ## Decision
 
@@ -31,25 +31,25 @@ avoids per-task worktree complexity while allowing concurrent plan executions to
 
 ### Worktree Lifecycle
 
-1. **Creation** — Before `execution_started`, Harns creates or reuses a worktree branch with the prefix
-   `harns/worktree/` from the selected base ref. The worktree path is created adjacent to the primary repo and includes
-   a sanitized plan slug plus a short id, e.g. `../<repo>-harns-<plan-slug>-<id>`.
-2. **Execution** — Implementation runs in the worktree cwd. Harns records the execution baseline tree from that
-   worktree. Agent sessions and file-writing tools receive the worktree cwd explicitly; Harns does not mutate the
+1. **Creation** — Before `execution_started`, RunWeild creates or reuses a worktree branch with the prefix
+   `runweild/worktree/` from the selected base ref. The worktree path is created adjacent to the primary repo and
+   includes a sanitized plan slug plus a short id, e.g. `../<repo>-runweild-<plan-slug>-<id>`.
+2. **Execution** — Implementation runs in the worktree cwd. RunWeild records the execution baseline tree from that
+   worktree. Agent sessions and file-writing tools receive the worktree cwd explicitly; RunWeild does not mutate the
    process cwd with `Deno.chdir()`.
 3. **Implementation complete** — `implementation_finished` means implementation finished in the worktree. It sets Plan
    Status `implemented` and worktree status `completed`, but does **not** merge the branch into the primary checkout.
 4. **Validation** — Workflow Validation runs local CI, workflow diff computation, semantic review, and repair sessions
    in the execution worktree.
-5. **Merge-back** — Only after Workflow Validation passes does Harns merge the worktree branch into the primary
+5. **Merge-back** — Only after Workflow Validation passes does RunWeild merge the worktree branch into the primary
    checkout. `validation_passed` and Plan Status `verified` are recorded only after that merge succeeds.
 6. **Recovery/failure** — If execution, validation, or merge-back fails, the worktree is left in place. Recovery can
    inspect, continue, retry validation, merge, recreate, or abandon the isolated worktree depending on plan state.
 
 ### CWD Plumbing
 
-`CWD` remains the primary project root. It anchors saved plan files, Harns settings, `.hns/worktrees.json`, and
-`.hns/worktrees.lock`.
+`CWD` remains the primary project root. It anchors saved plan files, RunWeild settings, `.wld/worktrees.json`, and
+`.wld/worktrees.lock`.
 
 Execution code must pass an explicit execution cwd to every operation that reads or writes implementation files:
 
@@ -67,8 +67,8 @@ root unless a caller explicitly needs worktree-local files.
 
 ### Worktree Registry
 
-A persistent local JSON file at `<project>/.hns/worktrees.json` tracks active and historical execution worktrees. It is
-runtime state, not source state, and should stay ignored by Git alongside `.hns/worktrees.lock`:
+A persistent local JSON file at `<project>/.wld/worktrees.json` tracks active and historical execution worktrees. It is
+runtime state, not source state, and should stay ignored by Git alongside `.wld/worktrees.lock`:
 
 ```json
 {
@@ -80,8 +80,8 @@ runtime state, not source state, and should stay ignored by Git alongside `.hns/
             "baseBranch": "main",
             "baseRef": "HEAD",
             "baseCommit": "abc123def...",
-            "branch": "harns/worktree/add-dark-mode-toggle-5fe73e21",
-            "path": "/absolute/path/to/repo-harns-add-dark-mode-toggle-5fe73e21",
+            "branch": "runweild/worktree/add-dark-mode-toggle-5fe73e21",
+            "path": "/absolute/path/to/repo-runweild-add-dark-mode-toggle-5fe73e21",
             "status": "active",
             "createdAt": "2026-06-15T12:00:00.000Z",
             "updatedAt": "2026-06-15T12:00:00.000Z"
@@ -90,8 +90,8 @@ runtime state, not source state, and should stay ignored by Git alongside `.hns/
 }
 ```
 
-A best-effort advisory lockfile at `<project>/.hns/worktrees.lock` prevents concurrent Harns instances from racing while
-creating, updating, or deleting registry entries.
+A best-effort advisory lockfile at `<project>/.wld/worktrees.lock` prevents concurrent RunWeild instances from racing
+while creating, updating, or deleting registry entries.
 
 ### Front Matter Additions
 
@@ -106,10 +106,10 @@ The plan's `PlanFrontMatter` includes optional worktree fields:
 
 ### Merge Strategy
 
-Harns performs a branch merge from the primary checkout after validation passes. The merge helper refuses to proceed
-when the primary checkout has blocking uncommitted changes, while allowing Harns-owned metadata paths needed during the
-workflow. If merge fails or is refused, Harns records `worktree_merge_failed`, keeps Plan Status `implemented`, sets
-`worktreeStatus: "merge_conflict"`, and leaves the worktree branch/path intact for recovery.
+RunWeild performs a branch merge from the primary checkout after validation passes. The merge helper refuses to proceed
+when the primary checkout has blocking uncommitted changes, while allowing RunWeild-owned metadata paths needed during
+the workflow. If merge fails or is refused, RunWeild records `worktree_merge_failed`, keeps Plan Status `implemented`,
+sets `worktreeStatus: "merge_conflict"`, and leaves the worktree branch/path intact for recovery.
 
 Dirty primary checkout state is therefore a **merge-back risk**, not a worktree creation blocker. Worktree creation can
 start from `HEAD` even when the primary checkout has unrelated uncommitted edits; those edits are not copied into the
@@ -134,17 +134,17 @@ with a destructive warning.
 
 ### Plan List Visibility
 
-`hns plans` displays concise worktree state when a plan has worktree metadata, for example:
+`wld plans` displays concise worktree state when a plan has worktree metadata, for example:
 
 ```text
-Worktree: merge_conflict (harns/worktree/add-dark-mode-toggle-5fe73e21)
+Worktree: merge_conflict (runweild/worktree/add-dark-mode-toggle-5fe73e21)
 ```
 
 ## Consequences
 
 ### Positive
 
-- Multiple Harns instances can execute plans concurrently without implementation-file conflicts.
+- Multiple RunWeild instances can execute plans concurrently without implementation-file conflicts.
 - The primary working tree is not touched during implementation or validation repair.
 - Workflow Validation checks the isolated execution result before anything is merged back.
 - Plan recovery can inspect, continue, retry validation, merge, recreate, or abandon an isolated checkout.
@@ -154,8 +154,8 @@ Worktree: merge_conflict (harns/worktree/add-dark-mode-toggle-5fe73e21)
 
 - Worktree creation and deletion add latency to execution start/recovery.
 - Disk usage increases while worktrees remain active.
-- Branch namespace `harns/worktree/*` needs periodic cleanup when worktrees are abandoned.
-- The `.hns/worktrees.json` registry and lockfile must be kept consistent after crashes or interrupted sessions.
+- Branch namespace `runweild/worktree/*` needs periodic cleanup when worktrees are abandoned.
+- The `.wld/worktrees.json` registry and lockfile must be kept consistent after crashes or interrupted sessions.
 - Merge-back can be blocked by dirty primary-checkout files or conflicts even after validation passes in the worktree.
 
 ### Mitigations

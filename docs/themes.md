@@ -1,14 +1,14 @@
 # Theme Customization
 
-Harns allows you to customize the visual appearance of the TUI using themes.
+RunWeild allows you to customize the visual appearance of the TUI using themes.
 
 ## Themes
 
-A theme is a JSON file that defines the colors and variables used by the Harns interface.
+A theme is a JSON file that defines the colors and variables used by the RunWeild interface.
 
 ### Built-in Theme
 
-Harns comes with an embedded `catppuccin-mocha` theme. This theme serves as the default and acts as a fallback; any
+RunWeild comes with an embedded `catppuccin-mocha` theme. This theme serves as the default and acts as a fallback; any
 external theme missing specific color tokens will inherit them from the built-in default. In the event of a name
 collision, the embedded theme always takes precedence.
 
@@ -28,47 +28,47 @@ Inside an interactive session, you can open the theme picker using the slash com
 
 You can also manage themes directly from the shell:
 
-- `hns theme <name>`: Switch the active theme and persist the choice.
-- `hns theme --list`: List all currently discoverable themes.
-- `hns install <source>`: Install a theme package.
-- `hns remove <source>`: Remove a theme package.
+- `wld theme <name>`: Switch the active theme and persist the choice.
+- `wld theme --list`: List all currently discoverable themes.
+- `wld install <source>`: Install a theme package.
+- `wld remove <source>`: Remove a theme package.
 
 ## Installing Themes
 
-Harns supports installing theme packages from several sources using the `hns install` command.
+RunWeild supports installing theme packages from several sources using the `wld install` command.
 
 ### Usage
 
 ```bash
-hns install <source>
+wld install <source>
 ```
 
 #### Supported Source Forms:
 
-- **npm**: `hns install npm:<package-spec>` (e.g., `hns install npm:my-cool-themes`)
-- **git**: `hns install git:<url>` (e.g., `hns install git:https://github.com/user/themes.git`)
-- **local**: `hns install local:<path>` (e.g., `hns install local:./themes/my-theme-pack`)
+- **npm**: `wld install npm:<package-spec>` (e.g., `wld install npm:my-cool-themes`)
+- **git**: `wld install git:<url>` (e.g., `wld install git:https://github.com/user/themes.git`)
+- **local**: `wld install local:<path>` (e.g., `wld install local:./themes/my-theme-pack`)
 
 > [!IMPORTANT]
-> **Theme-only constraints**: Harns only registers `.json` theme files found within these packages. Any other resources
-> (logic extensions, skills, prompts) are ignored; `hns install` reports the count so you know what was skipped. Skills
-> are intentionally handled by the wider skill ecosystem instead: Harns discovers compatible skills from
-> `~/.agents/skills`, `~/.hns/skills`, local `.hns/skills`, and bundled `src/skills`.
+> **Theme-only constraints**: RunWeild only registers `.json` theme files found within these packages. Any other
+> resources (logic extensions, skills, prompts) are ignored; `wld install` reports the count so you know what was
+> skipped. Skills are intentionally handled by the wider skill ecosystem instead: RunWeild discovers compatible skills
+> from `~/.agents/skills`, `~/.wld/skills`, local `.wld/skills`, and bundled `src/skills`.
 
 ### Removing Themes
 
 To uninstall a theme package, use the `remove` command:
 
 ```bash
-hns remove <source>
+wld remove <source>
 ```
 
-If the removed package contained the currently active theme, Harns will automatically reset the active theme to
+If the removed package contained the currently active theme, RunWeild will automatically reset the active theme to
 `catppuccin-mocha`.
 
 ## Settings
 
-Themes and their source packages are persisted in your global settings file (`~/.hns/settings.json`).
+Themes and their source packages are persisted in your global settings file (`~/.wld/settings.json`).
 
 ### Key: `theme`
 

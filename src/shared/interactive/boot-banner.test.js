@@ -33,7 +33,7 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
                     source: /** @type {"bundled"} */ ("bundled"),
                 }]),
             listLoadedAgentMdFiles: () =>
-                Promise.resolve([{ path: "/repo/HARNS.md", source: /** @type {"local"} */ ("local") }]),
+                Promise.resolve([{ path: "/repo/RUNWEILD.md", source: /** @type {"local"} */ ("local") }]),
             getSettingsManager: () => ({ getTheme: () => "catppuccin-mocha" }),
             hasSnipBinary: () => Promise.resolve(true),
         },
@@ -50,7 +50,7 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
     );
     assertEquals(
         messages.some((message) =>
-            message.isError && message.text.includes("./.hns/prompts/help.md command can't be invoked")
+            message.isError && message.text.includes("./.wld/prompts/help.md command can't be invoked")
         ),
         true,
     );

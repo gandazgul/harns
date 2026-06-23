@@ -1,6 +1,6 @@
 ---
 name: Initializing...
-description: "Initialize hns into a new project. Gather project context and architecture to seed the index and mnemosyne effectively."
+description: "Initialize wld into a new project. Gather project context and architecture to seed the index and mnemosyne effectively."
 tools:
     - read
     - write
@@ -23,7 +23,7 @@ tools:
     - code_importers
 ---
 
-We are initializing Harns into this project. We need to gather the project context and architecture to seed the index
+We are initializing RunWeild into this project. We need to gather the project context and architecture to seed the index
 and mnemosyne effectively.
 
 1. **Project architecture** — main directories, entry points, module boundaries
@@ -64,5 +64,5 @@ and mnemosyne effectively.
 - Do NOT modify any project files other than `CONTEXT.md`.
 - Use project-scoped `memory_store` only. Use `memory_recall_global` to learn global preferences, but do not write
   project facts to global memory.
-- Be thorough — the user and the future sessions of Harns will rely on the CONTEXT.md you create to understand the
+- Be thorough — the user and the future sessions of RunWeild will rely on the CONTEXT.md you create to understand the
   codebase.

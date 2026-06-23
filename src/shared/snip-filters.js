@@ -1,6 +1,6 @@
 /**
  * @module shared/snip-filters
- * Installs Harns-bundled Snip filters into Snip's user filter directory.
+ * Installs RunWeild-bundled Snip filters into Snip's user filter directory.
  */
 
 import { dirname, fromFileUrl, join } from "@std/path";
@@ -9,7 +9,7 @@ import { HOME_DIR } from "../constants.js";
 const __dirname = dirname(fromFileUrl(import.meta.url));
 const BUNDLED_SNIP_FILTERS_DIR = join(__dirname, "..", "snip-filters");
 const FILTER_FILE_NAMES = ["deno-check.yaml", "deno-fmt.yaml", "deno-lint.yaml", "deno-test.yaml"];
-const HARNS_MANAGED_SNIP_FILTER_MARKER = "# Managed by Harns. Remove with: hns snip-filters cleanup";
+const RUNWEILD_MANAGED_SNIP_FILTER_MARKER = "# Managed by RunWeild. Remove with: wld snip-filters cleanup";
 
 /**
  * @param {string} path
@@ -31,16 +31,16 @@ async function writeIfChanged(path, content) {
  * @returns {string}
  */
 function withManagedMarker(content) {
-    return content.startsWith(`${HARNS_MANAGED_SNIP_FILTER_MARKER}\n`)
+    return content.startsWith(`${RUNWEILD_MANAGED_SNIP_FILTER_MARKER}\n`)
         ? content
-        : `${HARNS_MANAGED_SNIP_FILTER_MARKER}\n${content}`;
+        : `${RUNWEILD_MANAGED_SNIP_FILTER_MARKER}\n${content}`;
 }
 
 /**
  * @param {{ homeDir?: string, bundledDir?: string }} [options]
  * @returns {{ userFiltersDir: string }}
  */
-export function getHarnsSnipPaths(options = {}) {
+export function getRunWeildSnipPaths(options = {}) {
     const homeDir = options.homeDir || HOME_DIR || Deno.env.get("HOME") || Deno.cwd();
     return {
         userFiltersDir: join(homeDir, ".config", "snip", "filters"),
@@ -48,15 +48,15 @@ export function getHarnsSnipPaths(options = {}) {
 }
 
 /**
- * Install Harns' Deno Snip filters into Snip's default user filter directory so
+ * Install RunWeild' Deno Snip filters into Snip's default user filter directory so
  * plain `snip run -- deno ...` can find them.
  *
  * @param {{ homeDir?: string, bundledDir?: string }} [options]
  * @returns {Promise<{ filtersDir: string, installed: string[], skipped: Array<{ path: string, reason: string }> }>}
  */
-export async function installHarnsSnipFiltersForUser(options = {}) {
+export async function installRunWeildSnipFiltersForUser(options = {}) {
     const bundledDir = options.bundledDir || BUNDLED_SNIP_FILTERS_DIR;
-    const paths = getHarnsSnipPaths(options);
+    const paths = getRunWeildSnipPaths(options);
     const installed = [];
     const skipped = [];
 
@@ -68,8 +68,8 @@ export async function installHarnsSnipFiltersForUser(options = {}) {
         const content = withManagedMarker(await Deno.readTextFile(sourcePath));
         try {
             const existing = await Deno.readTextFile(targetPath);
-            if (!existing.startsWith(HARNS_MANAGED_SNIP_FILTER_MARKER)) {
-                skipped.push({ path: targetPath, reason: "existing non-Harns filter" });
+            if (!existing.startsWith(RUNWEILD_MANAGED_SNIP_FILTER_MARKER)) {
+                skipped.push({ path: targetPath, reason: "existing non-RunWeild filter" });
                 continue;
             }
         } catch (error) {
@@ -83,14 +83,14 @@ export async function installHarnsSnipFiltersForUser(options = {}) {
 }
 
 /**
- * Remove Harns-managed Snip filters from Snip's default user filter directory.
- * Non-Harns files with the same names are left untouched.
+ * Remove RunWeild-managed Snip filters from Snip's default user filter directory.
+ * Non-RunWeild files with the same names are left untouched.
  *
  * @param {{ homeDir?: string }} [options]
  * @returns {Promise<{ filtersDir: string, removed: string[], skipped: Array<{ path: string, reason: string }> }>}
  */
-export async function cleanupHarnsSnipFiltersForUser(options = {}) {
-    const paths = getHarnsSnipPaths(options);
+export async function cleanupRunWeildSnipFiltersForUser(options = {}) {
+    const paths = getRunWeildSnipPaths(options);
     const removed = [];
     const skipped = [];
 
@@ -98,8 +98,8 @@ export async function cleanupHarnsSnipFiltersForUser(options = {}) {
         const targetPath = join(paths.userFiltersDir, fileName);
         try {
             const existing = await Deno.readTextFile(targetPath);
-            if (!existing.startsWith(HARNS_MANAGED_SNIP_FILTER_MARKER)) {
-                skipped.push({ path: targetPath, reason: "existing non-Harns filter" });
+            if (!existing.startsWith(RUNWEILD_MANAGED_SNIP_FILTER_MARKER)) {
+                skipped.push({ path: targetPath, reason: "existing non-RunWeild filter" });
                 continue;
             }
             await Deno.remove(targetPath);
@@ -117,8 +117,8 @@ export async function cleanupHarnsSnipFiltersForUser(options = {}) {
  * @param {{ homeDir?: string }} [options]
  * @returns {Promise<{ filtersDir: string, installed: string[], conflicts: string[], missing: string[] }>}
  */
-export async function getHarnsSnipFilterInstallStatus(options = {}) {
-    const paths = getHarnsSnipPaths(options);
+export async function getRunWeildSnipFilterInstallStatus(options = {}) {
+    const paths = getRunWeildSnipPaths(options);
     const installed = [];
     const conflicts = [];
     const missing = [];
@@ -127,7 +127,7 @@ export async function getHarnsSnipFilterInstallStatus(options = {}) {
         const targetPath = join(paths.userFiltersDir, fileName);
         try {
             const existing = await Deno.readTextFile(targetPath);
-            if (existing.startsWith(HARNS_MANAGED_SNIP_FILTER_MARKER)) installed.push(targetPath);
+            if (existing.startsWith(RUNWEILD_MANAGED_SNIP_FILTER_MARKER)) installed.push(targetPath);
             else conflicts.push(targetPath);
         } catch (error) {
             if (error instanceof Deno.errors.NotFound) {

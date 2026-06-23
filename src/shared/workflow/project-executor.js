@@ -66,7 +66,7 @@ function getTaskDebugLogPath(root, task, agentName) {
 function resolveTaskDebugRoot(options) {
     if (options.executionCwd) return options.executionCwd;
     if (options.debugRoot) return options.debugRoot;
-    if (Deno.env.get("DEBUG") === "1") return join(Deno.cwd(), ".hns", "debug");
+    if (Deno.env.get("DEBUG") === "1") return join(Deno.cwd(), ".wld", "debug");
     return undefined;
 }
 
@@ -161,7 +161,7 @@ export async function executeProjectTasks(
             const taskDebugLogPath = debugRoot ? getTaskDebugLogPath(debugRoot, task, agentName) : undefined;
 
             const taskHeader = `--- Task ${task.task}: ${task.description} (→ ${getAgentDisplayName(agentName)}) ---`;
-            uiAPI.appendSystemMessage(taskHeader, false, "Harns");
+            uiAPI.appendSystemMessage(taskHeader, false, "RunWeild");
 
             try {
                 if (taskDebugLogPath) {
@@ -245,7 +245,7 @@ export async function executeProjectTasks(
                     uiAPI.appendSystemMessage(
                         `Task ${task.task} incomplete (${getAgentDisplayName(agentName)}): ${error}`,
                         false,
-                        "Harns",
+                        "RunWeild",
                     );
                     results.set(task.task, { status: "failed", error, messages: sessionMessages });
 
@@ -296,7 +296,7 @@ export async function executeProjectTasks(
                 uiAPI.appendSystemMessage(
                     `❌ Task ${task.task} failed (${getAgentDisplayName(agentName)}): ${error.message}`,
                     false,
-                    "Harns",
+                    "RunWeild",
                 );
                 results.set(task.task, { status: "failed", error: error.message });
 

@@ -67,7 +67,7 @@ export function createFooterOnlyUiApi(parentUiAPI) {
 }
 
 /**
- * Creates a UiAPI object for Harns TUI.
+ * Creates a UiAPI object for RunWeild TUI.
  *
  * @param {import('@earendil-works/pi-tui').TUI} tui
  * @param {import('@earendil-works/pi-tui').Container} messageList
