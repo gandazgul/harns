@@ -1,6 +1,6 @@
 /**
  * @module submit-plan
- * Harns function that submits a plan to the Plannotator review UI.
+ * RunWeild function that submits a plan to the Plannotator review UI.
  *
  * Now uses the compiled @gandazgul/plannotator-pi-extension-compiled package
  * to call the server in-process, eliminating the need for the plannotator CLI.
@@ -138,26 +138,26 @@ export async function submitPlanForReview({
     // 3. Use HTML embedded in package exports (compile-safe; no runtime fs lookup).
     const htmlContent = __deps?.htmlContent || plannotatorHtml;
 
-    uiAPI.appendSystemMessage(`[Harns] Opening plan review UI for: ${planName}`);
-    uiAPI.appendSystemMessage(`[Harns] Plan file: ${planPath}`);
+    uiAPI.appendSystemMessage(`[RunWeild] Opening plan review UI for: ${planName}`);
+    uiAPI.appendSystemMessage(`[RunWeild] Plan file: ${planPath}`);
 
     // 4. Start review server IN-PROCESS
     const server = await startPlanReviewServerImpl({
         plan: planWithFm,
         htmlContent,
-        origin: "harns",
+        origin: "runweild",
     });
 
-    uiAPI.appendSystemMessage(`[Harns] Review UI available at: ${server.url}`);
+    uiAPI.appendSystemMessage(`[RunWeild] Review UI available at: ${server.url}`);
 
     const opened = await openInDefaultBrowserImpl(server.url);
     if (opened) {
-        uiAPI.appendSystemMessage(`[Harns] Opened review UI in your default browser.`);
+        uiAPI.appendSystemMessage(`[RunWeild] Opened review UI in your default browser.`);
     } else {
-        uiAPI.appendSystemMessage(`[Harns] Could not auto-open browser. Open manually: ${server.url}`);
+        uiAPI.appendSystemMessage(`[RunWeild] Could not auto-open browser. Open manually: ${server.url}`);
     }
 
-    uiAPI.appendSystemMessage(`[Harns] Waiting for user decision...`);
+    uiAPI.appendSystemMessage(`[RunWeild] Waiting for user decision...`);
 
     /** @type {(() => void) | null} */
     let localCancel = null;
@@ -178,7 +178,7 @@ export async function submitPlanForReview({
 
         // Handle cancellation triggered from the TUI
         if (decision && typeof decision === "object" && "_cancelled" in decision) {
-            uiAPI.appendSystemMessage(`[Harns] ⏸️ Plan review wait cancelled: ${planName}`);
+            uiAPI.appendSystemMessage(`[RunWeild] ⏸️ Plan review wait cancelled: ${planName}`);
             return {
                 approved: false,
                 canceled: true,
@@ -219,7 +219,7 @@ export async function submitPlanForReview({
                 currentStatus: postReopenStatus,
                 details: { triageMeta },
             });
-            uiAPI.appendSystemMessage(`[Harns] ✅ Plan approved: ${planName}`);
+            uiAPI.appendSystemMessage(`[RunWeild] ✅ Plan approved: ${planName}`);
         } else {
             await recordPlanEventImpl({
                 cwd,
@@ -228,7 +228,7 @@ export async function submitPlanForReview({
                 currentStatus: postReopenStatus,
                 details: { triageMeta, failureReason: decision.feedback },
             });
-            uiAPI.appendSystemMessage(`[Harns] Plan returned with feedback: ${planName}`);
+            uiAPI.appendSystemMessage(`[RunWeild] Plan returned with feedback: ${planName}`);
         }
 
         return {

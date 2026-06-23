@@ -1,6 +1,6 @@
 /**
  * @module shared/workflow/validation
- * Mechanical and semantic validation for completed Harns execution workflows.
+ * Mechanical and semantic validation for completed RunWeild execution workflows.
  */
 
 import { extractYaml } from "@std/front-matter";
@@ -31,7 +31,7 @@ const SUCCESS_MESSAGE_STYLE = { bodyColor: "success" };
 
 /**
  * Load reviewer as a bare workflow prompt instead of a normal agent definition.
- * Normal agent definitions are wrapped with Harns' shared system prompt, which
+ * Normal agent definitions are wrapped with RunWeild' shared system prompt, which
  * advertises skills, memory, and exploration tools. Semantic review is a
  * mechanical plan-vs-diff check, so it intentionally receives none of that.
  *
@@ -102,7 +102,7 @@ export async function runLocalCI(uiAPI, cwd = CWD) {
         return {
             exitCode: 1,
             output:
-                "Harns could not auto-detect a build or test command for this repository. Please explore the project and manually run the appropriate compilation or linting commands to validate your changes.",
+                "RunWeild could not auto-detect a build or test command for this repository. Please explore the project and manually run the appropriate compilation or linting commands to validate your changes.",
         };
     }
 
@@ -205,8 +205,8 @@ async function promptForMergeFailureAction(uiAPI, reason) {
  * @param {boolean} [isError]
  * @param {{ headingColor?: string, bodyColor?: string }} [style]
  */
-function appendHarnsSystemMessage(uiAPI, text, isError = false, style = {}) {
-    uiAPI?.appendSystemMessage?.(text, isError, "Harns", style);
+function appendRunWeildSystemMessage(uiAPI, text, isError = false, style = {}) {
+    uiAPI?.appendSystemMessage?.(text, isError, "RunWeild", style);
 }
 
 /**
@@ -340,14 +340,14 @@ export async function runValidationLoop({
 
     while (!executionComplete && validationCycles < MAX_VALIDATION_CYCLES) {
         validationCycles++;
-        appendHarnsSystemMessage(uiAPI, `Starting Validation Cycle ${validationCycles}/${MAX_VALIDATION_CYCLES}`);
+        appendRunWeildSystemMessage(uiAPI, `Starting Validation Cycle ${validationCycles}/${MAX_VALIDATION_CYCLES}`);
 
         let buildPasses = false;
         let mechanicalAttempts = 0;
 
         while (!buildPasses && mechanicalAttempts < 3) {
             mechanicalAttempts++;
-            appendHarnsSystemMessage(uiAPI, `Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
+            appendRunWeildSystemMessage(uiAPI, `Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
             uiAPI?.setBusy?.(true);
             let ciResult;
             try {
@@ -358,9 +358,9 @@ export async function runValidationLoop({
 
             if (ciResult.exitCode === 0) {
                 buildPasses = true;
-                appendHarnsSystemMessage(uiAPI, "Build and tests passed.", false, SUCCESS_MESSAGE_STYLE);
+                appendRunWeildSystemMessage(uiAPI, "Build and tests passed.", false, SUCCESS_MESSAGE_STYLE);
             } else {
-                appendHarnsSystemMessage(
+                appendRunWeildSystemMessage(
                     uiAPI,
                     `Build failed. Dispatching ${getAgentDisplayName(AGENTS.OPERATOR)} to fix syntax/types...`,
                     true,
@@ -388,7 +388,7 @@ export async function runValidationLoop({
             break;
         }
 
-        appendHarnsSystemMessage(uiAPI, "Running Semantic Code Review...");
+        appendRunWeildSystemMessage(uiAPI, "Running Semantic Code Review...");
         uiAPI?.setBusy?.(true);
         let diffText = "";
         let reviewResponse = "";
@@ -429,7 +429,7 @@ export async function runValidationLoop({
         }
 
         if (!diffText.trim()) {
-            appendHarnsSystemMessage(
+            appendRunWeildSystemMessage(
                 uiAPI,
                 "No changes detected in diff. Assuming approved.",
                 false,
@@ -440,10 +440,10 @@ export async function runValidationLoop({
         }
 
         if (isApprovedReviewResponse(reviewResponse)) {
-            appendHarnsSystemMessage(uiAPI, "Semantic Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
+            appendRunWeildSystemMessage(uiAPI, "Semantic Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
             executionComplete = true;
         } else {
-            appendHarnsSystemMessage(
+            appendRunWeildSystemMessage(
                 uiAPI,
                 `Review failed. Sending feedback back to ${getAgentDisplayName(AGENTS.ENGINEER)}...\n\n` +
                     `Reviewer Feedback:\n${reviewResponse || "(no reviewer output captured)"}`,
@@ -480,7 +480,7 @@ export async function runValidationLoop({
             while (executionComplete) {
                 try {
                     cleanupMergedWorktrees = shouldCleanupMergedWorktreesImpl();
-                    appendHarnsSystemMessage(
+                    appendRunWeildSystemMessage(
                         uiAPI,
                         `Merging validated worktree branch ${worktreeBranch} into primary checkout.`,
                     );
@@ -490,9 +490,9 @@ export async function runValidationLoop({
                         worktreePath: executionCwd,
                         allowedDirtyPaths: [
                             `plans/${planName}.md`,
-                            ".hns/",
-                            ".hns/worktrees.json",
-                            ".hns/worktrees.lock",
+                            ".wld/",
+                            ".wld/worktrees.json",
+                            ".wld/worktrees.lock",
                         ],
                     });
                     if (worktreeId) {
@@ -513,7 +513,7 @@ export async function runValidationLoop({
                             const cleanupReason = cleanupError instanceof Error
                                 ? cleanupError.message
                                 : String(cleanupError);
-                            appendHarnsSystemMessage(
+                            appendRunWeildSystemMessage(
                                 uiAPI,
                                 `Worktree merged, but cleanup failed: ${cleanupReason}`,
                                 true,
@@ -523,7 +523,7 @@ export async function runValidationLoop({
                     break;
                 } catch (/** @type {any} */ error) {
                     const reason = error instanceof Error ? error.message : String(error);
-                    appendHarnsSystemMessage(uiAPI, `Worktree merge failed: ${reason}`, true);
+                    appendRunWeildSystemMessage(uiAPI, `Worktree merge failed: ${reason}`, true);
                     if (worktreeId) {
                         try {
                             await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, {
@@ -533,7 +533,7 @@ export async function runValidationLoop({
                             const metadataReason = metadataError instanceof Error
                                 ? metadataError.message
                                 : String(metadataError);
-                            appendHarnsSystemMessage(
+                            appendRunWeildSystemMessage(
                                 uiAPI,
                                 `Could not update worktree registry while merge conflict is active: ${metadataReason}`,
                                 true,
@@ -553,7 +553,7 @@ export async function runValidationLoop({
                             const metadataReason = metadataError instanceof Error
                                 ? metadataError.message
                                 : String(metadataError);
-                            appendHarnsSystemMessage(
+                            appendRunWeildSystemMessage(
                                 uiAPI,
                                 `Could not update plan metadata while merge conflict is active: ${metadataReason}`,
                                 true,
@@ -565,14 +565,14 @@ export async function runValidationLoop({
                     if (action === "retry") {
                         continue;
                     }
-                    appendHarnsSystemMessage(uiAPI, `Workflow halted: Worktree merge failed: ${reason}`, true);
+                    appendRunWeildSystemMessage(uiAPI, `Workflow halted: Worktree merge failed: ${reason}`, true);
                     executionComplete = false;
                 }
             }
         }
 
         if (executionComplete) {
-            appendHarnsSystemMessage(
+            appendRunWeildSystemMessage(
                 uiAPI,
                 `${triageClassificationDisplay} execution and validation complete.`,
                 false,
@@ -594,7 +594,7 @@ export async function runValidationLoop({
         }
     } else {
         const reason = haltReason || "Validation stopped before completion.";
-        appendHarnsSystemMessage(uiAPI, `Workflow halted: ${reason}`, true);
+        appendRunWeildSystemMessage(uiAPI, `Workflow halted: ${reason}`, true);
         if (worktreeId) {
             await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "validation_failed" });
         }

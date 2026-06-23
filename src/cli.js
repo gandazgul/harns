@@ -1,14 +1,14 @@
 /**
  * @module cli
- * Harns — Plan-by-Default Coding Harness
+ * RunWeild — Plan-by-Default Coding Harness
  *
  * Usage:
- *   hns "<user request>"
- *   hns router "<user request>"
- *   hns load-plan <plan-name-or-path>
- *   hns plans
- *   hns sleep
- *   hns help
+ *   wld "<user request>"
+ *   wld router "<user request>"
+ *   wld load-plan <plan-name-or-path>
+ *   wld plans
+ *   wld sleep
+ *   wld help
  *
  * Source-run fallback for contributors:
  *   deno run -A src/cli.js "<user request>"
@@ -64,11 +64,11 @@ function isGlobalFlag(arg) {
 
 /**
  * Resolve all supported help spellings:
- * - hns help
- * - hns --help
- * - hns help <command>
- * - hns --help <command>
- * - hns <command> --help
+ * - wld help
+ * - wld --help
+ * - wld help <command>
+ * - wld --help <command>
+ * - wld <command> --help
  *
  * @param {string[]} argv
  * @returns {{ requested: false } | { requested: true, commandName?: string }}
@@ -113,7 +113,7 @@ async function main() {
             return;
         }
         if (!printCommandHelp(helpRequest.commandName)) {
-            console.error(`[Harns] Unknown command for help: ${helpRequest.commandName}`);
+            console.error(`[RunWeild] Unknown command for help: ${helpRequest.commandName}`);
             console.log();
             Deno.exit(1);
         }
@@ -125,7 +125,7 @@ async function main() {
     if (positionalCommand) {
         if (!hasCommandSurface(positionalCommand, "cli")) {
             console.error(
-                `[Harns] Command '${firstPositional}' is only available inside interactive chat as /${firstPositional}.`,
+                `[RunWeild] Command '${firstPositional}' is only available inside interactive chat as /${firstPositional}.`,
             );
             Deno.exit(1);
         }
@@ -141,8 +141,8 @@ async function main() {
     }
 
     if (normalizedArgs[0]?.startsWith("-")) {
-        console.error(`[Harns] Unknown option: ${normalizedArgs[0]}`);
-        console.error("Use positional commands, for example: hns <command> [args]");
+        console.error(`[RunWeild] Unknown option: ${normalizedArgs[0]}`);
+        console.error("Use positional commands, for example: wld <command> [args]");
         Deno.exit(1);
     }
 
@@ -159,7 +159,7 @@ main().catch((err) => {
     if (err instanceof Error && err.message.includes("Mnemosyne binary not found")) {
         console.error(err.message);
     } else {
-        console.error("[Harns] Fatal error:", err);
+        console.error("[RunWeild] Fatal error:", err);
     }
     Deno.exit(1);
 });

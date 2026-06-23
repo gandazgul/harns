@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
-import { __test, createHarnsGrepToolDefinition } from "../grep.js";
+import { __test, createRunWeildGrepToolDefinition } from "../grep.js";
 
 /**
  * @param {import('@earendil-works/pi-coding-agent').ToolDefinition<any, any>} tool
@@ -15,7 +15,7 @@ async function executeGrep(tool, params) {
 }
 
 Deno.test("grep wrapper exposes expected metadata and prepares paths alias", () => {
-    const tool = createHarnsGrepToolDefinition("/tmp");
+    const tool = createRunWeildGrepToolDefinition("/tmp");
 
     assertEquals(tool.name, "grep");
     assertEquals(tool.label, "grep");
@@ -47,7 +47,7 @@ Deno.test("grep wrapper searches multiple paths passed as one string", async () 
             "const current = 'setActiveAgent';\n",
         );
 
-        const tool = createHarnsGrepToolDefinition(dir);
+        const tool = createRunWeildGrepToolDefinition(dir);
         const result = await executeGrep(tool, {
             pattern: "setActiveAgent",
             path: "src/shared/session src/cmd",
@@ -70,7 +70,7 @@ Deno.test("grep wrapper searches a path glob mixed with a normal path", async ()
         await Deno.writeTextFile(join(dir, "plans", "project.md"), "finalize the project\n");
         await Deno.writeTextFile(join(dir, "src", "workflow.js"), "const step = 'finalize';\n");
 
-        const tool = createHarnsGrepToolDefinition(dir);
+        const tool = createRunWeildGrepToolDefinition(dir);
         const result = await executeGrep(tool, {
             pattern: "finaliz",
             path: "plans/feature*.md src",
@@ -91,7 +91,7 @@ Deno.test("grep wrapper preserves path prefix for a single path glob", async () 
         await Deno.mkdir(join(dir, "plans"), { recursive: true });
         await Deno.writeTextFile(join(dir, "plans", "feature-two.md"), "finalize this slice\n");
 
-        const tool = createHarnsGrepToolDefinition(dir);
+        const tool = createRunWeildGrepToolDefinition(dir);
         const result = await executeGrep(tool, {
             pattern: "finaliz",
             path: "plans/feature*.md",

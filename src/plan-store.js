@@ -83,7 +83,7 @@ function getStoredPlanLocation(cwd, planName) {
  * @property {string} createdAt - ISO timestamp
  * @property {string} [updatedAt] - ISO timestamp (set on revision)
  * @property {"draft"|"feedback"|"approved"|"ready_for_decomposition"|"ready_for_work"|"in_progress"|"failed"|"implemented"|"verified"} status
- * @property {"internal"|"external"} [origin] - "internal" = created by a Harns agent; "external" = a pre-existing markdown file loaded from an arbitrary path and resumed with Harns
+ * @property {"internal"|"external"} [origin] - "internal" = created by a RunWeild agent; "external" = a pre-existing markdown file loaded from an arbitrary path and resumed with RunWeild
  * @property {string} [type] - Optional plan subtype, e.g. "epic" for PROJECT Epic containers
  * @property {string} [parentPlan] - Canonical parent plan name for child FEATURE plans
  * @property {string[]} [dependencies] - Sibling FEATURE plan identifiers that should be completed first
@@ -618,7 +618,7 @@ export async function loadPlan(cwd, planName) {
 }
 
 /**
- * Load an external plan (a pre-existing markdown file not created by Harns)
+ * Load an external plan (a pre-existing markdown file not created by RunWeild)
  * from any path. Applies defaults if front matter is missing.
  *
  * @param {string} absolutePath - Absolute path to the plan file

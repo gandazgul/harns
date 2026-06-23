@@ -155,13 +155,13 @@ export async function runPlansCommand(argv, options = {}) {
 
     const plans = await listPlans(CWD);
     if (plans.length === 0) {
-        console.log("[Harns] No saved plans found.");
+        console.log("[RunWeild] No saved plans found.");
         return;
     }
 
     const { epics, childrenByParent, standalone, orphanChildren } = groupPlans(plans);
 
-    console.log("\n[Harns] Saved plans:\n");
+    console.log("\n[RunWeild] Saved plans:\n");
 
     if (epics.length > 0) {
         console.log("Epics:");

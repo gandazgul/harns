@@ -1,37 +1,38 @@
-# PRD: Theme Extension Support for Harns
+# PRD: Theme Extension Support for RunWeild
 
 ## Objective
 
-Enable Harns to discover, install, list, and switch themes from external packages (ending in `.json`), while restricting
-the installation and loading of logic-based extensions. The system will transition from a hardcoded theme to a dynamic
-one, leveraging the `@earendil-works/pi-coding-agent` theme infrastructure.
+Enable RunWeild to discover, install, list, and switch themes from external packages (ending in `.json`), while
+restricting the installation and loading of logic-based extensions. The system will transition from a hardcoded theme to
+a dynamic one, leveraging the `@earendil-works/pi-coding-agent` theme infrastructure.
 
 ## Problem Statement
 
-Harns currently inlines a single "catppuccin-mocha" theme, making it impossible to change the UI color scheme at
+RunWeild currently inlines a single "catppuccin-mocha" theme, making it impossible to change the UI color scheme at
 runtime. While the upstream `pi-coding-agent` has a robust theme system (discovery, real-time previews, and
-registration), Harns does not currently utilize these features.
+registration), RunWeild does not currently utilize these features.
 
 ## Resolved Assumptions
 
 1. **Permissive for Themes, Restrictive for Logic:** Packages containing at least one valid theme `.json` will be
    installed. However, any accompanying logic extensions (`.ts`/`.js` files) will be ignored—they will not be registered
-   or loaded into the Harns runtime.
-2. **Pi Infrastructure Integration:** Harns will delegate theme loading and management to
+   or loaded into the RunWeild runtime.
+2. **Pi Infrastructure Integration:** RunWeild will delegate theme loading and management to
    `@earendil-works/pi-coding-agent` (`loadThemeFromPath`, `setRegisteredThemes`, `getAvailableThemes`, etc.).
-3. **Built-in Reliability:** The default "catppuccin-mocha" theme will be embedded within the Harns binary. It serves as
-   the primary fallback and is discoverable alongside external themes, but it cannot be edited or deleted by the user.
+3. **Built-in Reliability:** The default "catppuccin-mocha" theme will be embedded within the RunWeild binary. It serves
+   as the primary fallback and is discoverable alongside external themes, but it cannot be edited or deleted by the
+   user.
 4. **TUI Experience:** The theme selector must support **real-time re-skinning**. As the user navigates the list, the
    TUI will immediately render with the previewed theme.
-5. **Settings Compatibility:** Persistence will be handled via `~/.hns/settings.json`. The `packages` array will
+5. **Settings Compatibility:** Persistence will be handled via `~/.wld/settings.json`. The `packages` array will
    precisely match Pi's schema to ensure future compatibility when non-theme extensions are eventually supported.
 
 ## Technical Approach
 
 ### 1. Theme Lifecycle & Discovery
 
-- **Boot:** On startup, Harns reads the active theme from settings. If missing or invalid, it falls back to the embedded
-  `catppuccin-mocha.json`.
+- **Boot:** On startup, RunWeild reads the active theme from settings. If missing or invalid, it falls back to the
+  embedded `catppuccin-mocha.json`.
 - **Discovery:** Theme discovery is deferred until the `/theme` command is invoked to optimize startup time.
 - **Loading:** `src/shared/ui/theme.js` will be refactored into a thin proxy that delegates to Pi's `initTheme` and
   `setTheme` functions.
@@ -39,12 +40,12 @@ registration), Harns does not currently utilize these features.
 ### 2. The `/theme` Slash Command
 
 - **Interactive Selector:** A slash command that opens a `SelectList` of all available themes (builtin + custom).
-- **Live Preview:** Using the `onSelectionChange` event, Harns will call `setTheme(name)` to update the global theme
+- **Live Preview:** Using the `onSelectionChange` event, RunWeild will call `setTheme(name)` to update the global theme
   singleton and trigger a TUI re-render.
 - **Persistence:** Only when the user presses "Enter" (confirm selection) will the choice be persisted to
-  `~/.hns/settings.json`.
+  `~/.wld/settings.json`.
 
-### 3. Package Management (`hns install`/`remove`)
+### 3. Package Management (`wld install`/`remove`)
 
 - **Source Support:** Support for `npm:`, `git:`, and `local:` sources.
 - **Filtered Installation:** Use Pi's `PackageManager` logic to fetch packages, but explicitly filter the resource

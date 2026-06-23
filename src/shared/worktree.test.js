@@ -26,8 +26,8 @@ async function git(cwd, args) {
 async function makeRepo() {
     const cwd = await Deno.makeTempDir();
     await git(cwd, ["init"]);
-    await git(cwd, ["config", "user.email", "harns@example.com"]);
-    await git(cwd, ["config", "user.name", "Harns Test"]);
+    await git(cwd, ["config", "user.email", "runweild@example.com"]);
+    await git(cwd, ["config", "user.name", "RunWeild Test"]);
     await Deno.writeTextFile(`${cwd}/README.md`, "base\n");
     await git(cwd, ["add", "."]);
     await git(cwd, ["commit", "-m", "base"]);
@@ -35,15 +35,15 @@ async function makeRepo() {
 }
 
 Deno.test("resolveWorktreeParent uses session-style full cwd encoding by default", () => {
-    const projectRoot = "/Users/alice/Documents/web/harns";
+    const projectRoot = "/Users/alice/Documents/web/runweild";
 
     if (HOME_DIR) {
         assertEquals(
             resolveWorktreeParent(projectRoot, undefined),
-            `${HOME_DIR}/.hns/worktrees/--Users-alice-Documents-web-harns--`,
+            `${HOME_DIR}/.wld/worktrees/--Users-alice-Documents-web-runweild--`,
         );
     } else {
-        assertEquals(resolveWorktreeParent(projectRoot, undefined), `${projectRoot}/.hns/worktrees`);
+        assertEquals(resolveWorktreeParent(projectRoot, undefined), `${projectRoot}/.wld/worktrees`);
     }
 
     assertEquals(resolveWorktreeParent(projectRoot, "/tmp/worktrees"), "/tmp/worktrees");
@@ -55,9 +55,9 @@ Deno.test("createExecutionWorktree creates a unique branch/path and registry ent
     let worktree;
     try {
         worktree = await createExecutionWorktree({ projectRoot, planName: "Demo Plan", worktreeRoot });
-        assertMatch(worktree.branch, /^harns\/worktree\/demo-plan-[a-f0-9]{8}$/);
+        assertMatch(worktree.branch, /^runweild\/worktree\/demo-plan-[a-f0-9]{8}$/);
         assertEquals(dirname(worktree.path), worktreeRoot);
-        assertMatch(basename(worktree.path), /harns-demo-plan-[a-f0-9]{8}$/);
+        assertMatch(basename(worktree.path), /runweild-demo-plan-[a-f0-9]{8}$/);
         assertEquals(await git(worktree.path, ["branch", "--show-current"]), worktree.branch);
         const registryEntry = await findByPlanName(projectRoot, "Demo Plan");
         assertEquals(registryEntry?.id, worktree.id);
@@ -94,7 +94,7 @@ Deno.test("mergeExecutionWorktree includes uncommitted worktree changes", async 
             projectRoot,
             branch: worktree.branch,
             worktreePath: worktree.path,
-            allowedDirtyPaths: [".hns/"],
+            allowedDirtyPaths: [".wld/"],
         });
 
         assertEquals(await Deno.readTextFile(`${projectRoot}/README.md`), "base\nchanged\n");

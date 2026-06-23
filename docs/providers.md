@@ -1,21 +1,21 @@
 # Providers and Models
 
-Harns uses Pi's provider and model infrastructure with Harns-owned config paths.
+RunWeild uses Pi's provider and model infrastructure with RunWeild-owned config paths.
 
 For complete provider-specific setup, OAuth/API-key options, environment variables, and custom provider details, see
 [Pi Providers](https://pi.dev/docs/latest/providers), [Pi Custom Models](https://pi.dev/docs/latest/models), and
 [Pi Custom Providers](https://pi.dev/docs/latest/custom-provider).
 
-## Harns storage paths
+## RunWeild storage paths
 
-| Data                  | Harns path             |
+| Data                  | RunWeild path          |
 | --------------------- | ---------------------- |
-| Credentials           | `~/.hns/auth.json`     |
-| Model registry/config | `~/.hns/models.json`   |
-| Settings              | `~/.hns/settings.json` |
+| Credentials           | `~/.wld/auth.json`     |
+| Model registry/config | `~/.wld/models.json`   |
+| Settings              | `~/.wld/settings.json` |
 
-If a Harns file does not exist, Harns may import the matching Pi file from `~/.pi/agent/` once. After that, Harns reads
-and writes the Harns-owned file.
+If a RunWeild file does not exist, RunWeild may import the matching Pi file from `~/.pi/agent/` once. After that,
+RunWeild reads and writes the RunWeild-owned file.
 
 ## Login commands
 
@@ -40,14 +40,14 @@ Use:
 or from the CLI:
 
 ```bash
-hns model <provider>/<model_id>
+wld model <provider>/<model_id>
 ```
 
-Harns expects strict `provider/model_id` references for explicit model settings and per-agent overrides.
+RunWeild expects strict `provider/model_id` references for explicit model settings and per-agent overrides.
 
 ## Agent model overrides
 
-Harns can assign different models to different agents:
+RunWeild can assign different models to different agents:
 
 ```jsonc
 {

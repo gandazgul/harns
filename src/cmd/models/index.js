@@ -19,7 +19,7 @@ export { getModelCompletions } from "./getArgumentCompletions.js";
  */
 
 /**
- * Handle the models command (`hns model` and `/model`).
+ * Handle the models command (`wld model` and `/model`).
  *
  * @param {string[]} argv
  * @param {import('../registry.js').CommandContext & { __testDeps?: CommandDependencies }} [options]
@@ -85,7 +85,7 @@ export async function runModelsCommand(argv, options = {}) {
             editor.disableSubmit = false;
             return;
         } else {
-            console.log("Usage: hns model <provider>/<model_id>");
+            console.log("Usage: wld model <provider>/<model_id>");
             return;
         }
     } else {

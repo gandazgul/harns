@@ -1,11 +1,11 @@
 # Contributing
 
-Thanks for helping improve Harns. Harns is source-available and accepts issues and pull requests, but it is not open
-source yet. Before contributing, read the [license](../LICENSE).
+Thanks for helping improve RunWeild. RunWeild is source-available and accepts issues and pull requests, but it is not
+open source yet. Before contributing, read the [license](../LICENSE).
 
 ## Start with the design docs
 
-Harns has strong workflow opinions. Before changing behavior, read the docs that explain the current model:
+RunWeild has strong workflow opinions. Before changing behavior, read the docs that explain the current model:
 
 ### Architecture Decision Records
 
@@ -46,38 +46,38 @@ Development and interactive workflow testing use these binaries in `PATH`:
 
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for memory-backed agent behavior.
 - [`cymbal`](https://github.com/1broseidon/cymbal) for code intelligence.
-- [`snip`](https://github.com/edouard-claude/snip) for compact command-output rewriting. Harns runtime treats Snip as
+- [`snip`](https://github.com/edouard-claude/snip) for compact command-output rewriting. RunWeild runtime treats Snip as
   optional and ships bundled filters for compact `deno check`, `deno fmt`, `deno lint`, and `deno test` output.
 
-  **How Harns integrates Snip at runtime:**
+  **How RunWeild integrates Snip at runtime:**
 
-  During session setup (`src/shared/session/session.js`), Harns checks whether `snip` is on `PATH`. If found, it
+  During session setup (`src/shared/session/session.js`), RunWeild checks whether `snip` is on `PATH`. If found, it
   registers the `snipExtension` from `src/extensions/snip/index.js` as a `tool_call` event handler.
 
   The extension listens for agent-initiated `bash` tool calls and prefixes simple eligible commands with `snip run --`.
   The bundled Deno filters are installed into Snip's default user filter directory by the installer or by
-  `hns snip-filters install`, so Harns does not maintain a separate Snip config. The extension skips non-`bash` tools,
-  empty commands, commands already prefixed with `snip`, and shell builtins such as `cd`. If Snip is missing or setup
-  fails for any reason, the original command runs unchanged (fail-open). Manual `!`/`!!` shell shortcuts are never
+  `wld snip-filters install`, so RunWeild does not maintain a separate Snip config. The extension skips non-`bash`
+  tools, empty commands, commands already prefixed with `snip`, and shell builtins such as `cd`. If Snip is missing or
+  setup fails for any reason, the original command runs unchanged (fail-open). Manual `!`/`!!` shell shortcuts are never
   rewritten — the hook only intercepts programmatic agent bash tool calls.
 
-  To make the bundled Deno filters available to plain Snip commands, run `hns snip-filters install`. This copies
-  Harns-managed filters into `~/.config/snip/filters/` without overwriting non-Harns files. Remove those user-level
-  copies with `hns snip-filters cleanup`.
+  To make the bundled Deno filters available to plain Snip commands, run `wld snip-filters install`. This copies
+  RunWeild-managed filters into `~/.config/snip/filters/` without overwriting non-RunWeild files. Remove those
+  user-level copies with `wld snip-filters cleanup`.
 
-  **Why Harns uses Snip instead of RTK:**
+  **Why RunWeild uses Snip instead of RTK:**
 
-  Harns switched from RTK to Snip because runtime command optimization must preserve agent trust in command output.
+  RunWeild switched from RTK to Snip because runtime command optimization must preserve agent trust in command output.
   RTK's caching and aggressive truncation made some workflows worse: cached `git` output can hide fresh repository
   state, and truncated test or CI output can make the model rerun commands or search for alternate evidence, spending
   more tokens than the compression saved.
 
-  Harns-owned Snip filters should optimize for decision-quality output, not maximum compression. For stateful commands
-  like `git status`, `git diff`, and `git log`, freshness is more important than savings. For validation commands,
-  success output should collapse to a clear pass summary; failure output should keep the actionable diagnostic detail
-  rather than leaving the agent to guess what failed. Snip is a better fit because it is an extensible filter engine:
-  command behavior lives in declarative YAML filters that can be added, tested, overridden, and reviewed without growing
-  special cases in Harns core.
+  RunWeild-owned Snip filters should optimize for decision-quality output, not maximum compression. For stateful
+  commands like `git status`, `git diff`, and `git log`, freshness is more important than savings. For validation
+  commands, success output should collapse to a clear pass summary; failure output should keep the actionable diagnostic
+  detail rather than leaving the agent to guess what failed. Snip is a better fit because it is an extensible filter
+  engine: command behavior lives in declarative YAML filters that can be added, tested, overridden, and reviewed without
+  growing special cases in RunWeild core.
 
 ## Bundled runtime extensions
 
@@ -98,7 +98,7 @@ rewriting, and focused tests.
 - Use JSDoc for types. Do not use TypeScript syntax in executable code.
 - Keep CLI entry points thin. Command behavior belongs under `src/cmd/<command>/` and shared behavior belongs under
   `src/shared/`.
-- Preserve the layered customization model: project `.hns/` overrides home `~/.hns/`, which overrides bundled defaults.
+- Preserve the layered customization model: project `.wld/` overrides home `~/.wld/`, which overrides bundled defaults.
 - Keep docs and plans as Markdown.
 
 ## Project structure
@@ -116,7 +116,7 @@ src/
     ui/                TUI components and theme glue
     workflow/          triage dispatch, plan execution, validation
   skills/              bundled skill definitions
-  tools/               Harns-specific agent tools
+  tools/               RunWeild-specific agent tools
 plans/                 persisted plans
 docs/                  ADRs, PRDs, and feature docs
 ```
@@ -136,7 +136,7 @@ docs/                  ADRs, PRDs, and feature docs
 
 ## Workflow expectations
 
-Harns itself is plan-by-default for non-trivial work. Contributions should preserve that product shape:
+RunWeild itself is plan-by-default for non-trivial work. Contributions should preserve that product shape:
 
 - `INQUIRY` handling should stay answer-focused through Guide.
 - `IDEATION` handling should clarify ideas through Ideator before routing implementation work.
@@ -148,8 +148,8 @@ Harns itself is plan-by-default for non-trivial work. Contributions should prese
 
 ## License note
 
-Harns is source-available and free to use, inspect, and run for personal, internal, or commercial work. You may submit
-issues and pull requests.
+RunWeild is source-available and free to use, inspect, and run for personal, internal, or commercial work. You may
+submit issues and pull requests.
 
-You may not distribute modified versions, publish derivative works, rebrand Harns, or offer it as a competing product or
-service without prior written permission.
+You may not distribute modified versions, publish derivative works, rebrand RunWeild, or offer it as a competing product
+or service without prior written permission.

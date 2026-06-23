@@ -64,7 +64,7 @@ function makeDeps(opts = {}) {
  * @returns {Promise<{ dir: string, planPath: string }>}
  */
 async function makePlanFile() {
-    const dir = await Deno.makeTempDir({ prefix: "harns-submit-plan-" });
+    const dir = await Deno.makeTempDir({ prefix: "runweild-submit-plan-" });
     const planPath = join(dir, "plan.md");
     await Deno.writeTextFile(planPath, "# Plan\n\nDo the thing.\n");
     return { dir, planPath };

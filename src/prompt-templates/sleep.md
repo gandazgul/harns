@@ -4,7 +4,7 @@ description: Optimize long-term memory quality
 
 # Sleep
 
-You are running Harns sleep mode to optimize long-term memory quality.
+You are running RunWeild sleep mode to optimize long-term memory quality.
 
 ## Goal
 

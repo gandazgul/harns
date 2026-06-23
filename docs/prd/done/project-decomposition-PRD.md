@@ -13,7 +13,7 @@ Epic into executable units. Each FEATURE plan follows the existing FEATURE lifec
 
 ## 2. Problem Statement
 
-Before this decomposition work, Harns had two execution paths for non-trivial work:
+Before this decomposition work, RunWeild had two execution paths for non-trivial work:
 
 - **FEATURE**: One plan, one engineer, one worktree, validate, merge. Clean feedback loop.
 - **PROJECT**: One massive design plan → Slicer silently appends a task table → all tasks execute in parallel in one
@@ -42,7 +42,7 @@ The PROJECT path has structural problems:
 | **Slicer is an interactive agent**                                            | The Slicer transitions from a silent one-shot prompt call to an interactive PM/lead-engineer session. It converses with the user to propose chunk boundaries, iterate on decomposition, and only writes FEATURE plans when the user confirms. The session can be paused and resumed.                                 |
 | **Architect stays the same**                                                  | The Architect writes a full design doc (the Epic). It may be clued into the goal of "this will be decomposed later" but the output format is the same. The Epic is a living document — the Architect can revise it as implementation reveals new information.                                                        |
 | **Loose parent-child pointers**                                               | Each FEATURE plan has a `parentPlan` front matter field pointing to its Epic. The Epic does not strictly list children — the system discovers them by scanning `parentPlan`. This is a one-directional, loose coupling.                                                                                              |
-| **Subdirectory naming**                                                       | FEATURE plans live under `plans/<epic-name>/01-description.md`. This groups them naturally and makes `hns plans` output clean.                                                                                                                                                                                       |
+| **Subdirectory naming**                                                       | FEATURE plans live under `plans/<epic-name>/01-description.md`. This groups them naturally and makes `wld plans` output clean.                                                                                                                                                                                       |
 | **`load-plan` is Epic-aware**                                                 | Loading an Epic explains that it is not directly executable, offers Slicer decomposition, and lets the user pick child FEATUREs once decomposition is available. Loading a FEATURE plan works as today.                                                                                                              |
 | **Execution DAG machinery is legacy/future machinery**                        | `project-executor.js` and `task-scheduling.js` remain in the codebase for legacy non-Epic compatibility and possible future multi-role FEATUREs. They do not define the active PROJECT Epic workflow.                                                                                                                |
 | **Design is a living document**                                               | The Epic plan is not frozen after approval. Re-opening the Epic or Slicer is allowed, but stale child detection and automatic re-slicing mechanics are deferred.                                                                                                                                                     |
@@ -154,7 +154,7 @@ The Slicer transitions from a silent one-shot to a conversational agent.
 
 **Key behaviors:**
 
-- The Slicer session is pause/resume friendly (uses existing session infrastructure under `~/.hns/sessions/`)
+- The Slicer session is pause/resume friendly (uses existing session infrastructure under `~/.wld/sessions/`)
 - "Write a draft" is a mid-conversation action — the user can see actual plan files before committing
 - The Slicer tracks deferred work through the conversation; in implemented v1 deferred FEATUREs are either left as draft
   child Plans or not generated yet
@@ -227,7 +227,7 @@ When the user chooses "pick a FEATURE", the system:
 2. Shows available FEATUREs with their statuses
 3. User picks one → loads that FEATURE plan normally
 
-### 4.7 `hns plans` Output Changes
+### 4.7 `wld plans` Output Changes
 
 The plans listing shows the Epic-FEATURE hierarchy:
 
@@ -268,7 +268,7 @@ the plan count in any real project (< 100 plans).
   normalization, and nested plan resolution.
 - **`plan-lifecycle.js`** — adds `ready_for_decomposition`, `epic_readiness_passed`, `decomposition_finalized`, and
   `epic_done_enough`.
-- **`hns plans` command** — shows hierarchy for Epics with discovered children.
+- **`wld plans` command** — shows hierarchy for Epics with discovered children.
 - **`load-plan` command** — routes Epics to Slicer, child selection, dependency warnings, or done-enough handling.
 
 **Dead code (kept, unused):**
@@ -330,7 +330,7 @@ Guidelines:
 - [ ] **Architect revisiting the Epic mid-project.** The Epic is a living document, but the mechanics of flagging stale
       FEATUREs and re-invoking the Architect are deferred to a follow-up.
 - [ ] **Visual board.** A kanban-style board for Epics and FEATUREs (like cline/kanban) is deferred. The CLI/TUI output
-      in `hns plans` is sufficient for v1.
+      in `wld plans` is sufficient for v1.
 - [ ] **Stale child detection.** A FEATURE plan may become stale if the Epic design changes. Detection and warning
       mechanics are deferred.
 
@@ -347,7 +347,7 @@ Guidelines:
       proceed.
 - [ ] **Epic completion detection** — Automatically transition Epic to `completed` when all visible FEATURE children
       reach `verified`.
-- [ ] **`hns plans` performance** — Current plan count is small (< 100). If scaling to hundreds of plans, consider
+- [ ] **`wld plans` performance** — Current plan count is small (< 100). If scaling to hundreds of plans, consider
       caching child discovery results in the Epic's front matter.
 
 ## 7. Success Metrics
@@ -356,7 +356,7 @@ Guidelines:
   MVP → defers the rest.
 - The Slicer conversation can be paused (close session) and resumed (re-open session or `load-plan EpicName`) without
   losing decomposition state.
-- `hns plans` clearly shows the Epic hierarchy with child FEATUREs.
+- `wld plans` clearly shows the Epic hierarchy with child FEATUREs.
 - `load-plan` correctly distinguishes Epics from FEATUREs and offers the right action.
 - The user can execute one FEATURE, verify it, merge it, and declare the Epic partially done — without executing the
   other FEATUREs.

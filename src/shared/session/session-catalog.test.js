@@ -15,8 +15,8 @@ import {
 } from "./session.js";
 import { setRootAgentSession } from "./session-state.js";
 
-const localPromptsDir = join(Deno.cwd(), ".hns", "prompts");
-const localSkillsDir = join(Deno.cwd(), ".hns", "skills");
+const localPromptsDir = join(Deno.cwd(), ".wld", "prompts");
+const localSkillsDir = join(Deno.cwd(), ".wld", "skills");
 
 async function cleanupLocalCatalogFixtures() {
     await Deno.remove(join(localPromptsDir, "code-review.md")).catch(() => {});
@@ -61,7 +61,7 @@ Deno.test("listPromptTemplates gives local templates precedence and parses metad
 });
 
 Deno.test("expandPromptTemplate strips front matter and appends user instructions", async () => {
-    const path = await Deno.makeTempFile({ prefix: "harns-template-", suffix: ".md" });
+    const path = await Deno.makeTempFile({ prefix: "runweild-template-", suffix: ".md" });
     try {
         await Deno.writeTextFile(
             path,
@@ -131,7 +131,7 @@ Deno.test("listSkills advertises bundled skills from the runtime-readable cache"
     assertEquals(ketch?.source, "bundled");
     const ketchPath = ketch?.path ?? "";
     assertEquals(
-        ketchPath.includes(".hns/bundled-skills/ketch/SKILL.md") ||
+        ketchPath.includes(".wld/bundled-skills/ketch/SKILL.md") ||
             ketchPath.includes("src/skills/ketch/SKILL.md"),
         true,
     );
@@ -149,7 +149,7 @@ Deno.test("bundled agent defs path and loaded instruction files are reported", a
     const bundledPath = await getBundledAgentDefsPath();
     assertEquals(bundledPath.endsWith("agent-definitions") || bundledPath.includes("bundled-agent-definitions"), true);
 
-    const projectHarnessPath = join(Deno.cwd(), "HARNS.md");
+    const projectHarnessPath = join(Deno.cwd(), "RUNWEILD.md");
     const originalProjectHarness = await Deno.readTextFile(projectHarnessPath).catch(() => null);
     try {
         await Deno.writeTextFile(projectHarnessPath, "Project instructions for coverage");
@@ -163,21 +163,21 @@ Deno.test("bundled agent defs path and loaded instruction files are reported", a
 });
 
 Deno.test("readGlobalAgentMd falls through configured global instruction paths", async () => {
-    const home = await Deno.makeTempDir({ prefix: "harns-global-agent-md-" });
-    const hnsDir = join(home, ".hns");
+    const home = await Deno.makeTempDir({ prefix: "runweild-global-agent-md-" });
+    const wldDir = join(home, ".wld");
     const externalDir = join(home, ".agents");
-    await Deno.mkdir(hnsDir, { recursive: true });
+    await Deno.mkdir(wldDir, { recursive: true });
     await Deno.mkdir(externalDir, { recursive: true });
     try {
         await Deno.writeTextFile(join(externalDir, "AGENTS.md"), "External instructions");
         assertEquals(await readGlobalAgentMd(home), "External instructions");
 
-        await Deno.writeTextFile(join(hnsDir, "AGENTS.md"), "Legacy Harns instructions");
-        assertEquals(await readGlobalAgentMd(home), "Legacy Harns instructions");
+        await Deno.writeTextFile(join(wldDir, "AGENTS.md"), "Legacy RunWeild instructions");
+        assertEquals(await readGlobalAgentMd(home), "Legacy RunWeild instructions");
 
-        await Deno.writeTextFile(join(hnsDir, "HARNS.md"), "Harns instructions");
-        assertEquals(await readGlobalAgentMd(home), "Harns instructions");
-        assertEquals(await readGlobalAgentMd(home, { includeExternal: false }), "Harns instructions");
+        await Deno.writeTextFile(join(wldDir, "RUNWEILD.md"), "RunWeild instructions");
+        assertEquals(await readGlobalAgentMd(home), "RunWeild instructions");
+        assertEquals(await readGlobalAgentMd(home, { includeExternal: false }), "RunWeild instructions");
     } finally {
         await Deno.remove(home, { recursive: true }).catch(() => {});
     }
@@ -186,16 +186,16 @@ Deno.test("readGlobalAgentMd falls through configured global instruction paths",
 Deno.test("assembleFinalSystemPrompt fills tools, instruction files, skills, and bundled paths", async () => {
     await cleanupLocalCatalogFixtures();
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-assemble-prompt-" });
-    const projectHarnessPath = join(Deno.cwd(), "HARNS.md");
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-assemble-prompt-" });
+    const projectHarnessPath = join(Deno.cwd(), "RUNWEILD.md");
     const originalProjectHarness = await Deno.readTextFile(projectHarnessPath).catch(() => null);
     const skillDir = join(localSkillsDir, "coverage-skill");
     const skillPath = join(skillDir, "SKILL.md");
 
     try {
         Deno.env.set("HOME", tempHome);
-        await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
-        await Deno.writeTextFile(join(tempHome, ".hns", "HARNS.md"), "Global prompt context");
+        await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });
+        await Deno.writeTextFile(join(tempHome, ".wld", "RUNWEILD.md"), "Global prompt context");
         await Deno.writeTextFile(projectHarnessPath, "Project prompt context");
         await Deno.mkdir(skillDir, { recursive: true });
         await Deno.writeTextFile(

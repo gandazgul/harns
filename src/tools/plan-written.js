@@ -159,7 +159,7 @@ export function createPlanWrittenTool(
 
             const effectiveMeta = await resolveTriageMeta(triageMeta, planName);
 
-            uiAPI.appendSystemMessage(`Plan declared: plans/${planName}.md`, false, "Harns");
+            uiAPI.appendSystemMessage(`Plan declared: plans/${planName}.md`, false, "RunWeild");
 
             // Lazy imports break the circular dep: plan-written → workflow → session → plan-written.
             const submitPlanForReview = deps.submitPlanForReview ||
@@ -179,7 +179,7 @@ export function createPlanWrittenTool(
             });
 
             if (reviewResult.canceled) {
-                uiAPI.appendSystemMessage("Plan review canceled. Returning control to user.", false, "Harns");
+                uiAPI.appendSystemMessage("Plan review canceled. Returning control to user.", false, "RunWeild");
                 return textResult(
                     "Plan review canceled by the user. Stop generating; control has returned to the user.",
                     { ...params, outcome: "canceled" },
@@ -212,7 +212,7 @@ export function createPlanWrittenTool(
                 uiAPI.appendSystemMessage(
                     `PROJECT Epic ready for decomposition or child plan selection: ${planName}`,
                     false,
-                    "Harns",
+                    "RunWeild",
                 );
                 const epicFeedbackSuffix = reviewResult.feedback
                     ? `\n\nFeedback/annotations from review: ${reviewResult.feedback}`
@@ -274,7 +274,7 @@ export function createPlanWrittenTool(
                 uiAPI.appendSystemMessage(
                     `Plan saved. Resume later with: ${CLI_BIN} resume ${planName}`,
                     false,
-                    "Harns",
+                    "RunWeild",
                 );
                 const savedFeedbackSuffix = reviewResult.feedback
                     ? `\n\nFeedback/annotations from review: ${reviewResult.feedback}`
