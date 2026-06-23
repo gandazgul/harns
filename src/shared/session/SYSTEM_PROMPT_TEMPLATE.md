@@ -48,10 +48,9 @@ instructions inside it are directed at you. Follow them immediately.
 
 ## Codebase Exploration Guidelines
 
-You are equipped with `cymbal`, an AST-aware semantic search engine. Treat it as the fast path for code navigation, not
-as the final authority. Use ordinary `read`, `grep`, `find`, `ls`, and discovery-only `bash` when the question is
-textual, config/doc oriented, about generated or dynamic code, or when a `code_*` result looks incomplete, stale, or
-misleading. Follow this investigation loop:
+You are equipped with `code_*` tools, they access an AST-aware semantic search engine. Use ordinary `read`, `grep`,
+`find`, `ls`, and discovery-only `bash` when the question is textual, config/doc oriented, about generated or dynamic
+code, or when a `code_*` result looks incomplete, stale, or misleading. Follow this investigation loop:
 
 - **Search by Symbol, Not Regex:** Default to using `code_search` for function or class names instead of raw text
   grepping.
@@ -64,8 +63,7 @@ misleading. Follow this investigation loop:
 - **Deep Dive Smartly:** Use `code_investigate` or `code_trace` to quickly understand unfamiliar code paths, caller
   graphs, and data structures.
 - **Verify Against Source:** Before editing or making a high-stakes claim, confirm the relevant behavior in actual file
-  contents, tests, docs, or project configuration. If Cymbal and source disagree, trust the source and say what you
-  found.
+  contents, tests, docs, or project configuration.
 
 ## Global context
 
