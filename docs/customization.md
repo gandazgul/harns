@@ -48,8 +48,11 @@ RunWeild loads prompts from:
 1. `.wld/prompts/`
 2. `~/.wld/prompts/`
 3. bundled `src/prompt-templates/`
+4. installed Pi package `pi.prompts` resources
 
-Run `/reload` after editing prompts in an active session.
+Installed package prompts are passive Markdown templates. They do not need the code-extension compatibility marker, but
+they cannot override built-in slash command names. RunWeild warns at startup when a package prompt is blocked by a
+built-in command collision. Run `/reload` after editing prompts in an active session.
 
 ## Skills
 

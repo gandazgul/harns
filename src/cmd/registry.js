@@ -375,15 +375,17 @@ export const commandRegistry = {
     [COMMAND_NAMES.INSTALL]: {
         name: COMMAND_NAMES.INSTALL,
         displayName: "Install",
-        description: "Install a theme package",
-        summary: "Install a theme package from npm, git, or local path.",
+        description: "Install a package",
+        summary: "Install package themes and prompt templates from npm, git, or local path.",
         usage: [
             `${bin("install npm:<spec>")}`,
             `${bin("install git:<url>")}`,
             `${bin("install local:<path>")}`,
         ],
         notes: [
-            "Only theme (.json) resources are registered. Logic extensions (skills/prompts) are ignored.",
+            "Theme (.json) resources and passive prompt templates are registered.",
+            "Pi package skills are ignored; install them separately with `npx skills add <source>`.",
+            "Code extensions are loaded only when marked WLD-compatible and approved during install.",
         ],
         execute: runInstallCommand,
         surfaces: ["cli"],

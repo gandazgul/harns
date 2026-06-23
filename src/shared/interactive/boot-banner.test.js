@@ -21,6 +21,12 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
         ],
         blockedPromptTemplates: [
             { name: "help", source: "local" },
+            {
+                name: "theme",
+                source: "package",
+                path: "/packages/prompts/theme.md",
+                packageSource: "npm:@example/prompts",
+            },
             { name: "sleep", source: "bundled" },
         ],
         chatPromptAgentName: "operator",
@@ -51,6 +57,14 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
     assertEquals(
         messages.some((message) =>
             message.isError && message.text.includes("./.wld/prompts/help.md command can't be invoked")
+        ),
+        true,
+    );
+    assertEquals(
+        messages.some((message) =>
+            message.isError &&
+            message.text.includes("package prompt /theme from npm:@example/prompts") &&
+            message.text.includes("can't be invoked")
         ),
         true,
     );
