@@ -11,7 +11,7 @@ import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 const DEFAULT_THEME = "catppuccin-mocha";
 
 /**
- * Executed when /theme or `hns theme` is called.
+ * Executed when /theme or `wld theme` is called.
  * @param {string[]} argv
  * @param {import('../../cmd/registry.js').CommandContext} options
  */
@@ -38,12 +38,12 @@ export async function runThemeCommand(argv, options = {}) {
         return;
     }
 
-    // hns theme <name>: non-interactive switch + persist.
+    // wld theme <name>: non-interactive switch + persist.
     if (arg) {
         await discoverAndRegisterThemes();
         const available = getAvailableThemes();
         if (!available.includes(arg)) {
-            console.error(`Theme "${arg}" not found. Run 'hns theme --list' to see available themes.`);
+            console.error(`Theme "${arg}" not found. Run 'wld theme --list' to see available themes.`);
             Deno.exit(1);
         }
         settings.setTheme(arg);
@@ -54,7 +54,7 @@ export async function runThemeCommand(argv, options = {}) {
 
     // Interactive picker (slash command).
     if (!options.uiAPI) {
-        console.log("Use 'hns theme <name>' or 'hns theme --list'");
+        console.log("Use 'wld theme <name>' or 'wld theme --list'");
         return;
     }
 

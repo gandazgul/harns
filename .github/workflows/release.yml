@@ -1,4 +1,4 @@
-name: release-hns
+name: release-wld
 
 on:
     push:
@@ -18,19 +18,19 @@ jobs:
                 include:
                     - target: aarch64-apple-darwin
                       asset_suffix: darwin-arm64
-                      binary_name: hns
+                      binary_name: wld
                     - target: x86_64-apple-darwin
                       asset_suffix: darwin-x64
-                      binary_name: hns
+                      binary_name: wld
                     - target: x86_64-unknown-linux-gnu
                       asset_suffix: linux-x64
-                      binary_name: hns
+                      binary_name: wld
                     - target: aarch64-unknown-linux-gnu
                       asset_suffix: linux-arm64
-                      binary_name: hns
+                      binary_name: wld
                     - target: x86_64-pc-windows-msvc
                       asset_suffix: windows-x64
-                      binary_name: hns.exe
+                      binary_name: wld.exe
 
         steps:
             - name: Checkout
@@ -64,14 +64,14 @@ jobs:
             - name: Package artifact
               run: |
                   VERSION="${GITHUB_REF_NAME}"
-                  ASSET="hns-${VERSION}-${{ matrix.asset_suffix }}.tar.gz"
+                  ASSET="wld-${VERSION}-${{ matrix.asset_suffix }}.tar.gz"
                   tar -czf "$ASSET" "${{ matrix.binary_name }}"
                   sha256sum "$ASSET" > "$ASSET.sha256"
 
             - name: Upload build artifact
               uses: actions/upload-artifact@v4
               with:
-                  name: hns-${{ matrix.asset_suffix }}
+                  name: wld-${{ matrix.asset_suffix }}
                   path: |
                       *.tar.gz
                       *.sha256
@@ -85,7 +85,7 @@ jobs:
               uses: actions/download-artifact@v4
               with:
                   path: release-artifacts
-                  pattern: hns-*
+                  pattern: wld-*
                   merge-multiple: false
 
             - name: Consolidate checksums

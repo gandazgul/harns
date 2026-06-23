@@ -1,20 +1,20 @@
 /**
  * @module constants
- * Shared constants for Harns CLI orchestration.
+ * Shared constants for RunWeild CLI orchestration.
  */
 
 import { dirname, fromFileUrl, join } from "@std/path";
 
 /** Name of the installed CLI binary shown in user-facing docs/help. */
-export const CLI_BIN = "hns";
+export const CLI_BIN = "wld";
 
 /** Fallback source-run invocation used in contributor docs and local dev. */
 export const DEV_CLI_RUN = "deno run -A src/cli.js";
 
-/** Primary project root used for Harns metadata, settings, and command state. */
+/** Primary project root used for RunWeild metadata, settings, and command state. */
 export const CWD = Deno.cwd();
 
-/** Harns source root path (works for source runs and compiled binaries). */
+/** RunWeild source root path (works for source runs and compiled binaries). */
 const SRC_DIR = dirname(fromFileUrl(import.meta.url));
 
 /** Directory containing bundled default agent definition markdown files. */
@@ -35,20 +35,20 @@ export const COMPLEXITIES = ["LOW", "MEDIUM", "HIGH"];
 /** Directory name where plan markdown files are stored. */
 export const PLANS_DIR_NAME = "plans";
 
-/** Directory name for project-local Harns metadata. */
-export const HARNS_DIR_NAME = ".hns";
+/** Directory name for project-local RunWeild metadata. */
+export const RUNWEILD_DIR_NAME = ".wld";
 
-/** Durable execution worktree registry filename inside .hns/. */
+/** Durable execution worktree registry filename inside .wld/. */
 export const WORKTREE_REGISTRY_FILE = "worktrees.json";
 
 /** Best-effort lock filename for serialized worktree registry updates. */
 export const WORKTREE_REGISTRY_LOCK_FILE = "worktrees.lock";
 
 /** Git branch prefix for isolated execution worktrees. */
-export const WORKTREE_BRANCH_PREFIX = "harns/worktree/";
+export const WORKTREE_BRANCH_PREFIX = "runweild/worktree/";
 
 /** Path infix for adjacent isolated execution worktree directories. */
-export const WORKTREE_PATH_PREFIX = "harns-";
+export const WORKTREE_PATH_PREFIX = "runweild-";
 
 /**
  * Read an environment variable when permission is available.

@@ -1,18 +1,18 @@
 /**
  * @module cmd/version
- * Print harns version and architecture.
+ * Print runweild version and architecture.
  */
 
-import { HNS_VERSION } from "../../shared/version.js";
+import { VERSION } from "../../shared/version.js";
 
 const TARGET_ARCH = Deno.build.target;
 
 /**
- * Run the version command — prints "harns <version> (<target-triple>)" to stdout.
+ * Run the version command — prints "runweild <version> (<target-triple>)" to stdout.
  *
  * @returns {Promise<void>}
  */
 export function runVersionCommand() {
-    console.log(`harns ${HNS_VERSION} (${TARGET_ARCH})`);
+    console.log(`runweild ${VERSION} (${TARGET_ARCH})`);
     return Promise.resolve();
 }

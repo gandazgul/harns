@@ -203,7 +203,7 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
             uiAPI.appendSystemMessage(
                 `${operatorDisplay} stopped without task_completed; QUICK_FIX may be incomplete.`,
                 false,
-                "Harns",
+                "RunWeild",
             );
         }
         return;

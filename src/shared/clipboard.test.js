@@ -35,7 +35,7 @@ function installClipboardDeps(outputs, removed = []) {
         /** @type {any} */ ({
             os: "darwin",
             Command: FakeCommand,
-            makeTempFile: () => Promise.resolve("/tmp/harns-clip.png"),
+            makeTempFile: () => Promise.resolve("/tmp/runweild-clip.png"),
             remove: (/** @type {string} */ path) => {
                 removed.push(path);
                 return Promise.resolve();
@@ -82,7 +82,7 @@ Deno.test("readClipboardImage extracts and base64 encodes clipboard png", async 
             mimeType: "image/png",
         });
         assertEquals(deps.calls.map((call) => call.command), ["osascript", "osascript", "base64"]);
-        assertEquals(removed, ["/tmp/harns-clip.png"]);
+        assertEquals(removed, ["/tmp/runweild-clip.png"]);
     } finally {
         deps.restore();
     }
@@ -108,7 +108,7 @@ Deno.test("readClipboardImage cleans up when extraction or base64 fails", async 
     ], removed);
     try {
         assertEquals(await readClipboardImage(), null);
-        assertEquals(removed, ["/tmp/harns-clip.png", "/tmp/harns-clip.png"]);
+        assertEquals(removed, ["/tmp/runweild-clip.png", "/tmp/runweild-clip.png"]);
     } finally {
         base64Fail.restore();
     }

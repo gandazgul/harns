@@ -1,8 +1,8 @@
 /**
  * @module cmd/init
- * Init command handler — bootstraps Harns into a project.
+ * Init command handler — bootstraps RunWeild into a project.
  *
- * Implements both CLI (`hns init`) and TUI slash (`/init`) dispatch.
+ * Implements both CLI (`wld init`) and TUI slash (`/init`) dispatch.
  * Uses init-state guard to warn on re-runs. Loads the init agent from the
  * bundled workflow-prompts directory, so it stays invisible to /agent listings
  * and uses its own model/tools.
@@ -83,8 +83,8 @@ export async function runInitCommand(argv, options = {}) {
 
     // ── Init-state guard ──────────────────────────────────────────
     if (await isInitDone()) {
-        const msg = `[Harns] Init has already been run for this project (${cwd()}).\n` +
-            `[Harns] To re-run, delete or edit the entry in ~/.hns/init-state.json manually.`;
+        const msg = `[RunWeild] Init has already been run for this project (${cwd()}).\n` +
+            `[RunWeild] To re-run, delete or edit the entry in ~/.wld/init-state.json manually.`;
         if (options.uiAPI) {
             options.uiAPI.appendSystemMessage(msg);
         } else {
@@ -108,7 +108,7 @@ export async function runInitCommand(argv, options = {}) {
     try {
         await runAgentSession({
             agentName: AGENTS.INIT,
-            userRequest: "Initialize this project for Harns. Follow the instructions in your system prompt.",
+            userRequest: "Initialize this project for RunWeild. Follow the instructions in your system prompt.",
             uiAPI: options.uiAPI,
             sessionManager: options.sessionManager,
             _agentDefOverride: agentDef,
@@ -124,11 +124,11 @@ export async function runInitCommand(argv, options = {}) {
             const { createAgentHandler } = await import("../../shared/session/agent-handler.js");
             setActiveAgent(AGENTS.ROUTER, createAgentHandler(AGENTS.ROUTER), options.uiAPI);
         } else {
-            console.log(`\n[Harns] ✅ Init complete for ${cwd()}.`);
+            console.log(`\n[RunWeild] ✅ Init complete for ${cwd()}.`);
         }
     } catch (err) {
         // Don't record success if the agent failed or was aborted
-        const msg = `[Harns] Init failed: ${err instanceof Error ? err.message : String(err)}`;
+        const msg = `[RunWeild] Init failed: ${err instanceof Error ? err.message : String(err)}`;
         if (options.uiAPI) {
             options.uiAPI.appendSystemMessage(msg, true);
         } else {

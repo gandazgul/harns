@@ -168,7 +168,7 @@ Deno.test("runModelsCommand cli usage when no arg", async () => {
         console.log = orig;
     }
 
-    assertEquals(logs.some((m) => m.includes("Usage: hns model")), true);
+    assertEquals(logs.some((m) => m.includes("Usage: wld model")), true);
 });
 
 Deno.test("runModelsCommand unknown model in cli", async () => {

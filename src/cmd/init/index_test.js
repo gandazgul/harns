@@ -126,7 +126,7 @@ Deno.test("runInitCommand runs init agent and records completion in CLI mode", a
         "offered",
         "ran",
         "done",
-        "\n[Harns] ✅ Init complete for /tmp/project.",
+        "\n[RunWeild] ✅ Init complete for /tmp/project.",
     ]);
     assertEquals(/** @type {any} */ (sessionArgs)._agentDefOverride, agentDef);
     assertEquals(/** @type {any} */ (sessionArgs).agentName, "init");
@@ -165,7 +165,7 @@ Deno.test("runInitCommand reports failure and does not record completion", async
     }
 
     assertEquals(completed, false);
-    assertEquals(errors, ["[Harns] Init failed: agent stopped"]);
+    assertEquals(errors, ["[RunWeild] Init failed: agent stopped"]);
 });
 
 Deno.test("runInitCommand definition has correct flags", async () => {

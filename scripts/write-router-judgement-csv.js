@@ -13,7 +13,7 @@ import {
     withRouterJudgementMetrics,
 } from "./router-eval-utils.js";
 
-const DEFAULT_INPUT = "/private/tmp/harns-router-decisions.jsonl";
+const DEFAULT_INPUT = "/private/tmp/runweild-router-decisions.jsonl";
 const DEFAULT_OUTPUT = "router-judgements.csv";
 
 export const JUDGEMENT_COLUMNS = ROUTER_JUDGEMENT_COLUMNS;

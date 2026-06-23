@@ -1,15 +1,15 @@
 /**
  * @module shared/session/active-agent-session
  *
- * Persists Harns-specific root-agent state in Pi's append-only session stream.
- * Pi records model changes, but Harns owns root-agent switching, so we store a
+ * Persists RunWeild-specific root-agent state in Pi's append-only session stream.
+ * Pi records model changes, but RunWeild owns root-agent switching, so we store a
  * small custom marker that `/resume` can use for newer sessions.
  */
 
 import { AGENTS } from "../../constants.js";
 import { loadAgentDef } from "./agents.js";
 
-export const ACTIVE_AGENT_CUSTOM_TYPE = "harns.active_agent";
+export const ACTIVE_AGENT_CUSTOM_TYPE = "runweild.active_agent";
 
 /**
  * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager
@@ -81,7 +81,8 @@ function getSessionEntries(sessionManager) {
 function readAgentNameFromEntry(entry) {
     if (!entry || typeof entry !== "object") return "";
     if (/** @type {{ type?: string }} */ (entry).type !== "custom") return "";
-    if (/** @type {{ customType?: string }} */ (entry).customType !== ACTIVE_AGENT_CUSTOM_TYPE) return "";
+    const customType = /** @type {{ customType?: string }} */ (entry).customType;
+    if (customType !== ACTIVE_AGENT_CUSTOM_TYPE) return "";
 
     const data = /** @type {{ data?: { agentName?: unknown } }} */ (entry).data;
     return data && typeof data.agentName === "string" ? data.agentName.trim() : "";

@@ -6,11 +6,11 @@ Accepted
 
 ## Context
 
-Harns uses a layered agent definition system where users can override bundled agent configurations via local
-(`.hns/agents/`) or home (`~/.hns/agents/`) markdown files. The `tools:` frontmatter list determines which tools an
+RunWeild uses a layered agent definition system where users can override bundled agent configurations via local
+(`.wld/agents/`) or home (`~/.wld/agents/`) markdown files. The `tools:` frontmatter list determines which tools an
 agent can use.
 
-As Harns adds infrastructure tools (`codebase_search`, `memory_recall`, `return_to_router`, `triage_report`,
+As RunWeild adds infrastructure tools (`codebase_search`, `memory_recall`, `return_to_router`, `triage_report`,
 `plan_written`), a tension emerges: these tools are foundational to how the SDLC works — removing them breaks the
 system's ability to route, plan, and recall context. But the override system allows users to replace the entire tool
 list, potentially crippling agents unintentionally.
@@ -24,7 +24,7 @@ Introduce a **two-tier tool classification**:
 
 ### Core Tools
 
-Tools that are infrastructure for the Harns SDLC. They cannot be removed by user overrides:
+Tools that are infrastructure for the RunWeild SDLC. They cannot be removed by user overrides:
 
 - `codebase_search` — semantic code retrieval
 - `memory_recall`, `memory_recall_global` — memory search
@@ -53,7 +53,7 @@ deduplicated.
 Concretely:
 
 - Bundled `router.md` lists `triage_report`, `codebase_search`, `memory_recall`, etc.
-- A user override at `.hns/agents/router.md` with `tools: [read, bash]` won't strip the core tools — they're re-injected
+- A user override at `.wld/agents/router.md` with `tools: [read, bash]` won't strip the core tools — they're re-injected
   from the bundled layer.
 - Users CAN add core tools to agents that don't have them by default (e.g., adding `triage_report` to a custom Agent or
   adding `memory_list` to a custom Agent).
@@ -77,4 +77,4 @@ just with different behavior. This preserves the system contract while allowing 
 
 - **Slight complexity in `loadAgentDef`** — the merge logic needs to identify and protect bundled core tools.
 - **Less flexibility for radical customization** — users who want a completely different SDLC would need to fork rather
-  than override. This is intentional — Harns is opinionated, and those users should use Pi directly.
+  than override. This is intentional — RunWeild is opinionated, and those users should use Pi directly.

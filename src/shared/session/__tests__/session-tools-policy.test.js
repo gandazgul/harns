@@ -5,7 +5,7 @@ import { __resetSettingsForTests } from "../../settings.js";
 import { loadAgentDef, resolveSessionToolNames } from "../agents.js";
 import { buildAgentSession, resolveEffectiveSessionToolNames } from "../session.js";
 
-const localAgentsDir = join(CWD, ".hns", "agents");
+const localAgentsDir = join(CWD, ".wld", "agents");
 const routerOverridePath = join(localAgentsDir, "router.md");
 
 /**
@@ -144,7 +144,7 @@ Deno.test("resolveEffectiveSessionToolNames normalizes legacy multi replace tool
 Deno.test("buildAgentSession wires task_completed with agent displayName", async () => {
     /** @type {Array<{ agentName: string, text: string }>} */
     const rendered = [];
-    const debugLogPath = await Deno.makeTempFile({ prefix: "harns-session-debug-test-", suffix: ".log" });
+    const debugLogPath = await Deno.makeTempFile({ prefix: "runweild-session-debug-test-", suffix: ".log" });
     const uiAPI = /** @type {import('../../ui/types.js').UiAPI} */ ({
         appendSystemMessage: () => {},
         appendAgentMessageStart: (agentName) => ({
@@ -159,14 +159,14 @@ Deno.test("buildAgentSession wires task_completed with agent displayName", async
     /** @type {import('@earendil-works/pi-coding-agent').AgentSession | undefined} */
     let session;
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-session-tools-policy-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-session-tools-policy-" });
 
     try {
         Deno.env.set("HOME", tempHome);
         __resetSettingsForTests();
-        await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
+        await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });
         await Deno.writeTextFile(
-            join(tempHome, ".hns", "models.json"),
+            join(tempHome, ".wld", "models.json"),
             JSON.stringify({
                 providers: {
                     test: {
@@ -219,9 +219,9 @@ Deno.test("buildAgentSession wires task_completed with agent displayName", async
  * @param {string} tempHome
  */
 async function writeVisionModelConfig(tempHome) {
-    await Deno.mkdir(join(tempHome, ".hns"), { recursive: true });
+    await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });
     await Deno.writeTextFile(
-        join(tempHome, ".hns", "models.json"),
+        join(tempHome, ".wld", "models.json"),
         JSON.stringify({
             providers: {
                 test: {
@@ -240,7 +240,7 @@ async function writeVisionModelConfig(tempHome) {
 
 Deno.test("buildAgentSession injects see_image only for text-only model with vision fallback", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-see-image-injection-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-injection-" });
     /** @type {import('@earendil-works/pi-coding-agent').AgentSession[]} */
     const sessions = [];
     try {
@@ -248,7 +248,7 @@ Deno.test("buildAgentSession injects see_image only for text-only model with vis
         __resetSettingsForTests();
         await writeVisionModelConfig(tempHome);
         await Deno.writeTextFile(
-            join(tempHome, ".hns", "settings.json"),
+            join(tempHome, ".wld", "settings.json"),
             JSON.stringify({
                 visionFallback: { model: "test/vision" },
             }),
@@ -299,14 +299,14 @@ Deno.test("buildAgentSession injects see_image only for text-only model with vis
 
 Deno.test("buildAgentSession omits see_image for text-only model without fallback", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-see-image-no-fallback-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-no-fallback-" });
     /** @type {import('@earendil-works/pi-coding-agent').AgentSession | undefined} */
     let session;
     try {
         Deno.env.set("HOME", tempHome);
         __resetSettingsForTests();
         await writeVisionModelConfig(tempHome);
-        await Deno.writeTextFile(join(tempHome, ".hns", "settings.json"), JSON.stringify({}));
+        await Deno.writeTextFile(join(tempHome, ".wld", "settings.json"), JSON.stringify({}));
 
         const built = await buildAgentSession({
             agentName: "operator",
@@ -333,13 +333,13 @@ Deno.test("buildAgentSession omits see_image for text-only model without fallbac
 
 Deno.test("buildAgentSession fails clearly for invalid vision fallback", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-see-image-invalid-fallback-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-invalid-fallback-" });
     try {
         Deno.env.set("HOME", tempHome);
         __resetSettingsForTests();
         await writeVisionModelConfig(tempHome);
         await Deno.writeTextFile(
-            join(tempHome, ".hns", "settings.json"),
+            join(tempHome, ".wld", "settings.json"),
             JSON.stringify({
                 visionFallback: { model: "not-valid" },
             }),

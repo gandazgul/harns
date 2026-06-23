@@ -29,12 +29,12 @@ Deno.test("runThemeCommand without args outside TUI prints CLI guidance", async 
         console.log = originalLog;
     }
 
-    assertEquals(logs, ["Use 'hns theme <name>' or 'hns theme --list'"]);
+    assertEquals(logs, ["Use 'wld theme <name>' or 'wld theme --list'"]);
 });
 
 Deno.test("runThemeCommand interactive cancel restores original persisted theme", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "harns-theme-test-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runweild-theme-test-" });
 
     try {
         Deno.env.set("HOME", tempHome);
