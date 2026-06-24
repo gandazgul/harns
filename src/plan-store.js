@@ -75,6 +75,14 @@ function getStoredPlanLocation(cwd, planName) {
 // ─── Front Matter ─────────────────────────────────────────────────────
 
 /**
+ * @typedef {"none"|"ask"|"always"|null} HumanReviewMode
+ */
+
+/**
+ * @typedef {"not_required"|"skipped"|"approved"|null} HumanReviewDecision
+ */
+
+/**
  * @typedef {Object} PlanFrontMatter
  * @property {"QUICK_FIX"|"FEATURE"|"PROJECT"} classification
  * @property {"LOW"|"MEDIUM"|"HIGH"} complexity
@@ -91,9 +99,9 @@ function getStoredPlanLocation(cwd, planName) {
  * @property {string|null} [failedAt] - ISO timestamp when execution failed
  * @property {string|null} [implementedAt] - ISO timestamp when execution finished
  * @property {string|null} [verifiedAt] - ISO timestamp when validation passed
- * @property {"none"|"ask"|"always"|null} [humanReviewMode] - Human code review mode used for final validation
- * @property {"not_required"|"skipped"|"approved"|null} [humanReviewDecision] - Human code review outcome included in final validation
- * @property {string|null} [humanReviewedAt] - ISO timestamp when human review approved final validation
+ * @property {HumanReviewMode} [humanReviewMode] - Human code review mode used for final validation; cleared when execution restarts or review reopens
+ * @property {HumanReviewDecision} [humanReviewDecision] - Human code review outcome included in final validation; cleared when execution restarts or review reopens
+ * @property {string|null} [humanReviewedAt] - ISO timestamp when human review approved final validation; cleared when execution restarts or review reopens
  * @property {"done_enough"|null} [epicCompletionMode] - Explicit Epic completion mode when an Epic is marked done enough for now
  * @property {string|null} [epicDoneEnoughAt] - ISO timestamp when an Epic was marked done enough for now
  * @property {string|null} [epicDoneEnoughSummary] - Human-readable summary captured when an Epic was marked done enough for now
@@ -353,6 +361,26 @@ function normalizeWorktreeStatus(status) {
 }
 
 /**
+ * @param {unknown} mode
+ * @returns {PlanFrontMatter["humanReviewMode"]}
+ */
+function normalizeHumanReviewMode(mode) {
+    if (mode === null) return null;
+    if (mode === "none" || mode === "ask" || mode === "always") return mode;
+    return undefined;
+}
+
+/**
+ * @param {unknown} decision
+ * @returns {PlanFrontMatter["humanReviewDecision"]}
+ */
+function normalizeHumanReviewDecision(decision) {
+    if (decision === null) return null;
+    if (decision === "not_required" || decision === "skipped" || decision === "approved") return decision;
+    return undefined;
+}
+
+/**
  * Inject or update front matter on a plan's markdown content.
  * If front matter already exists, merge with existing values.
  *
@@ -399,6 +427,15 @@ export function injectFrontMatter(markdown, overrides = {}) {
         failedAt: optionalFrontMatterValue(overrides, existingFm, "failedAt"),
         implementedAt: optionalFrontMatterValue(overrides, existingFm, "implementedAt"),
         verifiedAt: optionalFrontMatterValue(overrides, existingFm, "verifiedAt"),
+        humanReviewMode: normalizeHumanReviewMode(
+            Object.hasOwn(overrides, "humanReviewMode") ? overrides.humanReviewMode : existingFm.humanReviewMode,
+        ),
+        humanReviewDecision: normalizeHumanReviewDecision(
+            Object.hasOwn(overrides, "humanReviewDecision")
+                ? overrides.humanReviewDecision
+                : existingFm.humanReviewDecision,
+        ),
+        humanReviewedAt: optionalFrontMatterValue(overrides, existingFm, "humanReviewedAt"),
         epicCompletionMode: /** @type {"done_enough" | null | undefined} */ (
             optionalFrontMatterValue(overrides, existingFm, "epicCompletionMode") === "done_enough"
                 ? "done_enough"
@@ -457,6 +494,9 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
             failedAt: attrs.failedAt,
             implementedAt: attrs.implementedAt,
             verifiedAt: attrs.verifiedAt,
+            humanReviewMode: normalizeHumanReviewMode(attrs.humanReviewMode),
+            humanReviewDecision: normalizeHumanReviewDecision(attrs.humanReviewDecision),
+            humanReviewedAt: attrs.humanReviewedAt,
             epicCompletionMode: attrs.epicCompletionMode === "done_enough" ? attrs.epicCompletionMode : undefined,
             epicDoneEnoughAt: attrs.epicDoneEnoughAt,
             epicDoneEnoughSummary: attrs.epicDoneEnoughSummary,

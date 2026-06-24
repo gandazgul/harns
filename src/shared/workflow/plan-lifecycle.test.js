@@ -106,6 +106,11 @@ Deno.test("buildPlanEventUpdates records and clears human review metadata", () =
     assertEquals(started.humanReviewDecision, null);
     assertEquals(started.humanReviewedAt, null);
 
+    const reset = buildPlanEventUpdates("recovery_reset", "implemented");
+    assertEquals(reset.humanReviewMode, null);
+    assertEquals(reset.humanReviewDecision, null);
+    assertEquals(reset.humanReviewedAt, null);
+
     const reopened = buildPlanEventUpdates("review_reopened", "verified");
     assertEquals(reopened.humanReviewMode, null);
     assertEquals(reopened.humanReviewDecision, null);

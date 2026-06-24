@@ -631,6 +631,66 @@ Deno.test("runValidationLoop ask mode can skip human review and merge", async ()
     assertEquals(actions, ["prompt", "merge", "event:validation_passed:ask:skipped"]);
 });
 
+Deno.test("runValidationLoop ask mode opens human review before merge when approved", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const actions = [];
+    uiAPI.promptSelect = () => {
+        actions.push("prompt");
+        return Promise.resolve("open");
+    };
+
+    setActiveExecutionWorkflow({
+        planName: "p",
+        triageMeta: { classification: "FEATURE" },
+        baselineTree: "baseline-tree",
+        projectRoot: "/primary",
+        executionCwd: "/worktree",
+        worktreeId: "wt1",
+        worktreeBranch: "runweild/worktree/p-wt1",
+    });
+
+    await runValidationLoop({
+        planName: "p",
+        planContent: "plan",
+        triageMeta: { classification: "FEATURE" },
+        uiAPI,
+        sessionManager: undefined,
+        __deps: /** @type {any} */ ({
+            runLocalCI: () => Promise.resolve({ exitCode: 0, output: "" }),
+            getDiffText: () => Promise.resolve("diff --git a/file.js b/file.js\n+change\n"),
+            runAgentSession: () =>
+                Promise.resolve(
+                    /** @type {any} */ ([{
+                        role: "assistant",
+                        content: [{ type: "text", text: "APPROVED" }],
+                    }]),
+                ),
+            getCodeReviewMode: () => "ask",
+            runPlannotatorCodeReview: (/** @type {any} */ opts) => {
+                actions.push(`human-review:${opts.executionCwd}:${opts.diffText.includes("+change")}`);
+                return Promise.resolve({ approved: true, feedback: "", annotations: [], exit: false });
+            },
+            mergeExecutionWorktree: () => {
+                actions.push("merge");
+                return Promise.resolve();
+            },
+            removeExecutionWorktree: () => Promise.resolve(),
+            removeWorktreeRegistryEntry: () => Promise.resolve(),
+            updateWorktreeRegistryEntry: () => Promise.resolve({}),
+            recordPlanEvent: (/** @type {any} */ event) => {
+                actions.push(
+                    `event:${event.event}:${event.details.humanReviewMode}:${event.details.humanReviewDecision}`,
+                );
+                return Promise.resolve({});
+            },
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(actions, ["prompt", "human-review:/worktree:true", "merge", "event:validation_passed:ask:approved"]);
+});
+
 Deno.test("runValidationLoop sends human feedback to Engineer and continues validation", async () => {
     const uiAPI = makeUi();
     /** @type {string[]} */
@@ -852,6 +912,7 @@ Deno.test("runValidationLoop records worktree_merge_failed when merge-back fails
                 actions.push(`event:${event.event}:${event.details.failureReason}`);
                 return Promise.resolve({});
             },
+            getCodeReviewMode: () => "none",
             setActiveAgent: () => {},
         }),
     });
@@ -910,6 +971,7 @@ Deno.test("runValidationLoop still prompts when merge-conflict metadata updates 
                 actions.push("plan-event-failed");
                 return Promise.reject(new Error("front matter conflict markers"));
             },
+            getCodeReviewMode: () => "none",
             setActiveAgent: () => {},
         }),
     });
@@ -990,6 +1052,7 @@ Deno.test("runValidationLoop retries worktree merge after user fixes primary che
                 actions.push("remove");
                 return Promise.resolve();
             },
+            getCodeReviewMode: () => "none",
             setActiveAgent: () => {},
         }),
     });

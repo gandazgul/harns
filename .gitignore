@@ -10,3 +10,5 @@ debug.log
 .wld/debug/
 .wld/worktrees.json
 .wld/worktrees.lock
+
+prototypes/
