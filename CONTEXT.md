@@ -25,7 +25,7 @@ query
 **Triage**: Structured classification of a User Request by workflow type and complexity, usually performed by the
 Router. _Avoid_: Assessment, evaluation, analysis
 
-**Triage Report**: The structured output of Triage containing routing intent, complexity, summary, and affected paths.
+**Triage Report**: The structured output of Triage containing routing intent, complexity, summary, affected paths, and an optional auto-generated Session Name.
 _Avoid_: Triage result, classification result
 
 **Diagnostic Triage**: Read-only Triage for user-reported broken behavior that gathers enough evidence to estimate
