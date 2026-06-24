@@ -2,22 +2,22 @@ import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { discoverProviderModel, migratePiModelConfigOnce } from "./model-registry.js";
 
-Deno.test("migratePiModelConfigOnce copies Pi files into RunWeild when missing", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-model-config-" });
+Deno.test("migratePiModelConfigOnce copies Pi files into RunWield when missing", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-model-config-" });
     try {
         const piDir = join(tempDir, ".pi", "agent");
-        const runweildDir = join(tempDir, ".wld");
+        const runwieldDir = join(tempDir, ".wld");
         await Deno.mkdir(piDir, { recursive: true });
         await Deno.writeTextFile(join(piDir, "models.json"), '{"providers":{}}');
         await Deno.writeTextFile(join(piDir, "auth.json"), '{"openai":{"type":"api_key","key":"abc"}}');
 
-        const result = migratePiModelConfigOnce({ homeDir: tempDir, runweildDir });
+        const result = migratePiModelConfigOnce({ homeDir: tempDir, runwieldDir });
 
         assertEquals(result.copied.sort(), ["auth.json", "models.json"]);
         assertEquals(result.failed, []);
-        assertEquals(await Deno.readTextFile(join(runweildDir, "models.json")), '{"providers":{}}');
+        assertEquals(await Deno.readTextFile(join(runwieldDir, "models.json")), '{"providers":{}}');
         assertEquals(
-            await Deno.readTextFile(join(runweildDir, "auth.json")),
+            await Deno.readTextFile(join(runwieldDir, "auth.json")),
             '{"openai":{"type":"api_key","key":"abc"}}',
         );
     } finally {
@@ -25,44 +25,44 @@ Deno.test("migratePiModelConfigOnce copies Pi files into RunWeild when missing",
     }
 });
 
-Deno.test("migratePiModelConfigOnce leaves existing RunWeild files untouched", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-model-config-" });
+Deno.test("migratePiModelConfigOnce leaves existing RunWield files untouched", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-model-config-" });
     try {
         const piDir = join(tempDir, ".pi", "agent");
-        const runweildDir = join(tempDir, ".wld");
+        const runwieldDir = join(tempDir, ".wld");
         await Deno.mkdir(piDir, { recursive: true });
-        await Deno.mkdir(runweildDir, { recursive: true });
+        await Deno.mkdir(runwieldDir, { recursive: true });
         await Deno.writeTextFile(join(piDir, "models.json"), '{"providers":{"pi":{}}}');
-        await Deno.writeTextFile(join(runweildDir, "models.json"), '{"providers":{"runweild":{}}}');
+        await Deno.writeTextFile(join(runwieldDir, "models.json"), '{"providers":{"runwield":{}}}');
 
-        const result = migratePiModelConfigOnce({ homeDir: tempDir, runweildDir });
+        const result = migratePiModelConfigOnce({ homeDir: tempDir, runwieldDir });
 
         assertEquals(result.copied, []);
-        assertEquals(await Deno.readTextFile(join(runweildDir, "models.json")), '{"providers":{"runweild":{}}}');
+        assertEquals(await Deno.readTextFile(join(runwieldDir, "models.json")), '{"providers":{"runwield":{}}}');
     } finally {
         await Deno.remove(tempDir, { recursive: true });
     }
 });
 
 Deno.test("migratePiModelConfigOnce supports legacy ~/.pi file location", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-model-config-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-model-config-" });
     try {
         const piDir = join(tempDir, ".pi");
-        const runweildDir = join(tempDir, ".wld");
+        const runwieldDir = join(tempDir, ".wld");
         await Deno.mkdir(piDir, { recursive: true });
         await Deno.writeTextFile(join(piDir, "auth.json"), '{"openai-codex":{"type":"oauth"}}');
 
-        const result = migratePiModelConfigOnce({ homeDir: tempDir, runweildDir });
+        const result = migratePiModelConfigOnce({ homeDir: tempDir, runwieldDir });
 
         assertEquals(result.copied, ["auth.json"]);
-        assertEquals(await Deno.readTextFile(join(runweildDir, "auth.json")), '{"openai-codex":{"type":"oauth"}}');
+        assertEquals(await Deno.readTextFile(join(runwieldDir, "auth.json")), '{"openai-codex":{"type":"oauth"}}');
     } finally {
         await Deno.remove(tempDir, { recursive: true });
     }
 });
 
 Deno.test("discoverProviderModel registers a model returned by OpenAI-compatible /models", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-model-discovery-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-model-discovery-" });
     try {
         await Deno.writeTextFile(
             join(tempDir, "models.json"),
@@ -97,7 +97,7 @@ Deno.test("discoverProviderModel registers a model returned by OpenAI-compatible
         });
 
         const result = await discoverProviderModel(registry, "crofai", "deepseek-v4-pro", {
-            runweildDir: tempDir,
+            runwieldDir: tempDir,
             fetchFn: /** @type {typeof fetch} */ ((
                 /** @type {string} */ url,
                 /** @type {{ headers?: Record<string, string> }} */ init,
@@ -122,7 +122,7 @@ Deno.test("discoverProviderModel registers a model returned by OpenAI-compatible
 });
 
 Deno.test("discoverProviderModel defaults discovered models to text-only input", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-model-discovery-input-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-model-discovery-input-" });
     try {
         await Deno.writeTextFile(
             join(tempDir, "models.json"),
@@ -159,7 +159,7 @@ Deno.test("discoverProviderModel defaults discovered models to text-only input",
         // Default discovery (active model path): must NOT claim image support,
         // otherwise raw image bytes get sent to a text-only model and silently fail.
         await discoverProviderModel(registry, "crofai", "deepseek-v4-pro", {
-            runweildDir: tempDir,
+            runwieldDir: tempDir,
             fetchFn,
         });
         assertEquals(registeredConfig.models[0].input, ["text"]);
@@ -167,7 +167,7 @@ Deno.test("discoverProviderModel defaults discovered models to text-only input",
         // Explicit vision-fallback path: caller opts the discovered model into image input.
         registeredConfig = undefined;
         await discoverProviderModel(registry, "crofai", "deepseek-v4-pro", {
-            runweildDir: tempDir,
+            runwieldDir: tempDir,
             input: ["text", "image"],
             fetchFn,
         });
@@ -178,7 +178,7 @@ Deno.test("discoverProviderModel defaults discovered models to text-only input",
 });
 
 Deno.test("discoverProviderModel honors provider imageInputModels allowlist", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-model-discovery-allowlist-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-model-discovery-allowlist-" });
     try {
         await Deno.writeTextFile(
             join(tempDir, "models.json"),
@@ -212,12 +212,12 @@ Deno.test("discoverProviderModel honors provider imageInputModels allowlist", as
             })));
 
         // Listed in imageInputModels -> vision-capable.
-        await discoverProviderModel(registry, "crofai", "vision-model", { runweildDir: tempDir, fetchFn });
+        await discoverProviderModel(registry, "crofai", "vision-model", { runwieldDir: tempDir, fetchFn });
         assertEquals(registeredConfig.models[0].input, ["text", "image"]);
 
         // Not listed -> text-only.
         registeredConfig = undefined;
-        await discoverProviderModel(registry, "crofai", "text-model", { runweildDir: tempDir, fetchFn });
+        await discoverProviderModel(registry, "crofai", "text-model", { runwieldDir: tempDir, fetchFn });
         assertEquals(registeredConfig.models[0].input, ["text"]);
     } finally {
         await Deno.remove(tempDir, { recursive: true });

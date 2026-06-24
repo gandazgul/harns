@@ -1,6 +1,6 @@
 /**
  * @module shared/workflow/validation
- * Mechanical and semantic validation for completed RunWeild execution workflows.
+ * Mechanical and semantic validation for completed RunWield execution workflows.
  */
 
 import { extractYaml } from "@std/front-matter";
@@ -32,7 +32,7 @@ const SUCCESS_MESSAGE_STYLE = { bodyColor: "success" };
 
 /**
  * Load reviewer as a bare workflow prompt instead of a normal agent definition.
- * Normal agent definitions are wrapped with RunWeild' shared system prompt, which
+ * Normal agent definitions are wrapped with RunWield' shared system prompt, which
  * advertises skills, memory, and exploration tools. Semantic review is a
  * mechanical plan-vs-diff check, so it intentionally receives none of that.
  *
@@ -103,7 +103,7 @@ export async function runLocalCI(uiAPI, cwd = CWD) {
         return {
             exitCode: 1,
             output:
-                "RunWeild could not auto-detect a build or test command for this repository. Please explore the project and manually run the appropriate compilation or linting commands to validate your changes.",
+                "RunWield could not auto-detect a build or test command for this repository. Please explore the project and manually run the appropriate compilation or linting commands to validate your changes.",
         };
     }
 
@@ -217,8 +217,8 @@ async function promptForMergeFailureAction(uiAPI, reason) {
  * @param {boolean} [isError]
  * @param {{ headingColor?: string, bodyColor?: string }} [style]
  */
-function appendRunWeildSystemMessage(uiAPI, text, isError = false, style = {}) {
-    uiAPI?.appendSystemMessage?.(text, isError, "RunWeild", style);
+function appendRunWieldSystemMessage(uiAPI, text, isError = false, style = {}) {
+    uiAPI?.appendSystemMessage?.(text, isError, "RunWield", style);
 }
 
 /**
@@ -358,14 +358,14 @@ export async function runValidationLoop({
 
     while (!executionComplete && !haltReason && validationCycles < MAX_VALIDATION_CYCLES) {
         validationCycles++;
-        appendRunWeildSystemMessage(uiAPI, `Starting Validation Cycle ${validationCycles}/${MAX_VALIDATION_CYCLES}`);
+        appendRunWieldSystemMessage(uiAPI, `Starting Validation Cycle ${validationCycles}/${MAX_VALIDATION_CYCLES}`);
 
         let buildPasses = false;
         let mechanicalAttempts = 0;
 
         while (!buildPasses && mechanicalAttempts < 3) {
             mechanicalAttempts++;
-            appendRunWeildSystemMessage(uiAPI, `Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
+            appendRunWieldSystemMessage(uiAPI, `Running CI Validation (Attempt ${mechanicalAttempts}/3)...`);
             uiAPI?.setBusy?.(true);
             let ciResult;
             try {
@@ -376,9 +376,9 @@ export async function runValidationLoop({
 
             if (ciResult.exitCode === 0) {
                 buildPasses = true;
-                appendRunWeildSystemMessage(uiAPI, "Build and tests passed.", false, SUCCESS_MESSAGE_STYLE);
+                appendRunWieldSystemMessage(uiAPI, "Build and tests passed.", false, SUCCESS_MESSAGE_STYLE);
             } else {
-                appendRunWeildSystemMessage(
+                appendRunWieldSystemMessage(
                     uiAPI,
                     `Build failed. Dispatching ${getAgentDisplayName(AGENTS.OPERATOR)} to fix syntax/types...`,
                     true,
@@ -406,7 +406,7 @@ export async function runValidationLoop({
             break;
         }
 
-        appendRunWeildSystemMessage(uiAPI, "Running Semantic Code Review...");
+        appendRunWieldSystemMessage(uiAPI, "Running Semantic Code Review...");
         uiAPI?.setBusy?.(true);
         let diffText = "";
         let reviewResponse = "";
@@ -447,7 +447,7 @@ export async function runValidationLoop({
         }
 
         if (!diffText.trim()) {
-            appendRunWeildSystemMessage(
+            appendRunWieldSystemMessage(
                 uiAPI,
                 "No changes detected in diff. Assuming approved.",
                 false,
@@ -463,7 +463,7 @@ export async function runValidationLoop({
         }
 
         if (isApprovedReviewResponse(reviewResponse)) {
-            appendRunWeildSystemMessage(uiAPI, "Semantic Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
+            appendRunWieldSystemMessage(uiAPI, "Semantic Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
             const codeReviewMode = getCodeReviewModeImpl();
             if (codeReviewMode === "none") {
                 humanReviewMetadata = {
@@ -494,7 +494,7 @@ export async function runValidationLoop({
                 }
 
                 if (shouldOpenReview) {
-                    appendRunWeildSystemMessage(uiAPI, "Opening Plannotator Human Code Review...");
+                    appendRunWieldSystemMessage(uiAPI, "Opening Plannotator Human Code Review...");
                     const humanReview = await runPlannotatorCodeReviewImpl({
                         planName,
                         diffText,
@@ -511,7 +511,7 @@ export async function runValidationLoop({
                     }
 
                     if (humanReview.approved) {
-                        appendRunWeildSystemMessage(uiAPI, "Human Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
+                        appendRunWieldSystemMessage(uiAPI, "Human Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
                         humanReviewMetadata = {
                             humanReviewMode: codeReviewMode,
                             humanReviewDecision: "approved",
@@ -524,7 +524,7 @@ export async function runValidationLoop({
                             humanReview.feedback || "(no free-text feedback provided)",
                             annotationText ? `Annotations:\n${annotationText}` : "",
                         ].filter(Boolean).join("\n\n");
-                        appendRunWeildSystemMessage(
+                        appendRunWieldSystemMessage(
                             uiAPI,
                             `Human review returned feedback. Sending feedback back to ${
                                 getAgentDisplayName(AGENTS.ENGINEER)
@@ -551,7 +551,7 @@ export async function runValidationLoop({
                 }
             }
         } else {
-            appendRunWeildSystemMessage(
+            appendRunWieldSystemMessage(
                 uiAPI,
                 `Review failed. Sending feedback back to ${getAgentDisplayName(AGENTS.ENGINEER)}...\n\n` +
                     `Reviewer Feedback:\n${reviewResponse || "(no reviewer output captured)"}`,
@@ -588,7 +588,7 @@ export async function runValidationLoop({
             while (executionComplete) {
                 try {
                     cleanupMergedWorktrees = shouldCleanupMergedWorktreesImpl();
-                    appendRunWeildSystemMessage(
+                    appendRunWieldSystemMessage(
                         uiAPI,
                         `Merging validated worktree branch ${worktreeBranch} into primary checkout.`,
                     );
@@ -621,7 +621,7 @@ export async function runValidationLoop({
                             const cleanupReason = cleanupError instanceof Error
                                 ? cleanupError.message
                                 : String(cleanupError);
-                            appendRunWeildSystemMessage(
+                            appendRunWieldSystemMessage(
                                 uiAPI,
                                 `Worktree merged, but cleanup failed: ${cleanupReason}`,
                                 true,
@@ -631,7 +631,7 @@ export async function runValidationLoop({
                     break;
                 } catch (/** @type {any} */ error) {
                     const reason = error instanceof Error ? error.message : String(error);
-                    appendRunWeildSystemMessage(uiAPI, `Worktree merge failed: ${reason}`, true);
+                    appendRunWieldSystemMessage(uiAPI, `Worktree merge failed: ${reason}`, true);
                     if (worktreeId) {
                         try {
                             await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, {
@@ -641,7 +641,7 @@ export async function runValidationLoop({
                             const metadataReason = metadataError instanceof Error
                                 ? metadataError.message
                                 : String(metadataError);
-                            appendRunWeildSystemMessage(
+                            appendRunWieldSystemMessage(
                                 uiAPI,
                                 `Could not update worktree registry while merge conflict is active: ${metadataReason}`,
                                 true,
@@ -661,7 +661,7 @@ export async function runValidationLoop({
                             const metadataReason = metadataError instanceof Error
                                 ? metadataError.message
                                 : String(metadataError);
-                            appendRunWeildSystemMessage(
+                            appendRunWieldSystemMessage(
                                 uiAPI,
                                 `Could not update plan metadata while merge conflict is active: ${metadataReason}`,
                                 true,
@@ -673,7 +673,7 @@ export async function runValidationLoop({
                     if (action === "retry") {
                         continue;
                     }
-                    appendRunWeildSystemMessage(uiAPI, `Workflow halted: Worktree merge failed: ${reason}`, true);
+                    appendRunWieldSystemMessage(uiAPI, `Workflow halted: Worktree merge failed: ${reason}`, true);
                     executionComplete = false;
                     haltReason = `Worktree merge failed: ${reason}`;
                 }
@@ -681,7 +681,7 @@ export async function runValidationLoop({
         }
 
         if (executionComplete) {
-            appendRunWeildSystemMessage(
+            appendRunWieldSystemMessage(
                 uiAPI,
                 `${triageClassificationDisplay} execution and validation complete.`,
                 false,
@@ -704,7 +704,7 @@ export async function runValidationLoop({
         }
     } else {
         const reason = haltReason || "Validation stopped before completion.";
-        appendRunWeildSystemMessage(uiAPI, `Workflow halted: ${reason}`, true);
+        appendRunWieldSystemMessage(uiAPI, `Workflow halted: ${reason}`, true);
         if (worktreeId) {
             await updateWorktreeRegistryEntryImpl(projectRoot, worktreeId, { status: "validation_failed" });
         }

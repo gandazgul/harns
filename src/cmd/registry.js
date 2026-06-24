@@ -133,7 +133,7 @@ export const commandRegistry = {
             "/login api-key openai",
         ],
         notes: [
-            "Credentials are stored in RunWeild config at ~/.wld/auth.json.",
+            "Credentials are stored in RunWield config at ~/.wld/auth.json.",
             "Use /status to inspect configured providers.",
         ],
         execute: runLoginCommand,
@@ -163,7 +163,7 @@ export const commandRegistry = {
             "/status",
         ],
         notes: [
-            "This reports model/auth status for the current RunWeild configuration.",
+            "This reports model/auth status for the current RunWield configuration.",
         ],
         execute: runStatusCommand,
         surfaces: ["slash"],
@@ -310,7 +310,7 @@ export const commandRegistry = {
         name: COMMAND_NAMES.VERSION,
         displayName: "Version",
         description: "Show version and architecture info",
-        summary: "Print runweild version and platform architecture.",
+        summary: "Print runwield version and platform architecture.",
         usage: [
             `${bin("--version")}`,
             `${bin("version")}`,
@@ -343,8 +343,8 @@ export const commandRegistry = {
         name: COMMAND_NAMES.INIT,
         aliases: ["initialize"],
         displayName: "Init",
-        description: "Initialize RunWeild into the current project",
-        summary: "Initialize RunWeild into the current project (bootstraps context index and memory).",
+        description: "Initialize RunWield into the current project",
+        summary: "Initialize RunWield into the current project (bootstraps context index and memory).",
         usage: [
             `${bin("init")}`,
         ],
@@ -406,16 +406,16 @@ export const commandRegistry = {
         name: COMMAND_NAMES.SNIP_FILTERS,
         aliases: ["snip-filter"],
         displayName: "Snip Filters",
-        description: "Install or clean up RunWeild Deno Snip filters",
-        summary: "Install, clean up, or inspect RunWeild-managed Deno Snip filters in Snip's default filter directory.",
+        description: "Install or clean up RunWield Deno Snip filters",
+        summary: "Install, clean up, or inspect RunWield-managed Deno Snip filters in Snip's default filter directory.",
         usage: [
             `${bin("snip-filters status")}`,
             `${bin("snip-filters install")}`,
             `${bin("snip-filters cleanup")}`,
         ],
         notes: [
-            "Install copies RunWeild-managed Deno filters into ~/.config/snip/filters so plain Snip commands can find them.",
-            "Cleanup removes only files marked as RunWeild-managed.",
+            "Install copies RunWield-managed Deno filters into ~/.config/snip/filters so plain Snip commands can find them.",
+            "Cleanup removes only files marked as RunWield-managed.",
         ],
         execute: runSnipFiltersCommand,
         surfaces: ["cli"],

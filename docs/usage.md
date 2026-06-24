@@ -1,9 +1,9 @@
-# Using RunWeild
+# Using RunWield
 
-This page covers daily RunWeild usage and the places where RunWeild differs from Pi.
+This page covers daily RunWield usage and the places where RunWield differs from Pi.
 
 For editor features, terminal shortcuts, image paste, file references, shell commands, and message queue behavior that
-RunWeild inherits from Pi, see [Pi Usage](https://pi.dev/docs/latest/usage) and
+RunWield inherits from Pi, see [Pi Usage](https://pi.dev/docs/latest/usage) and
 [Pi Keybindings](https://pi.dev/docs/latest/keybindings).
 
 ## Default workflow: Router first
@@ -22,7 +22,7 @@ Router is the default Agent for fresh triage. It calls `triage_report`, and that
 | `INQUIRY`      | The user needs an answer, explanation, or guidance. | Guide answers directly and can return to Router if the request becomes executable work.                               |
 | `IDEATION`     | The user wants to explore or sharpen an idea.       | Ideator interviews, researches, and produces a PRD or synthesis before routing implementation back through Router.    |
 | `QUICK_FIX`    | Small, low-risk executable work.                    | Operator executes directly and self-verifies.                                                                         |
-| `FEATURE`      | Non-trivial implementation needs a reviewable plan. | Planner writes a plan, user approves it, Engineer executes it, RunWeild validates it.                                 |
+| `FEATURE`      | Non-trivial implementation needs a reviewable plan. | Planner writes a plan, user approves it, Engineer executes it, RunWield validates it.                                 |
 | `PROJECT`      | Large work needs architecture and slicing.          | Architect designs the Epic, interactive Slicer creates child FEATURE plans, execution proceeds one feature at a time. |
 
 ## Interactive sessions
@@ -46,8 +46,8 @@ Use:
 
 ### Image attachments with text-only models
 
-If the active model supports image input, RunWeild sends pasted images directly to it. If the active model is text-only,
-configure [`visionFallback.model`](settings.md#visionfallback) to let RunWeild save pasted images as session attachments
+If the active model supports image input, RunWield sends pasted images directly to it. If the active model is text-only,
+configure [`visionFallback.model`](settings.md#visionfallback) to let RunWield save pasted images as session attachments
 and expose the `see_image` tool to the active agent. Without a configured fallback, image paste/submission is blocked
 with a link back to the `visionFallback` settings section.
 
@@ -94,7 +94,7 @@ wld load-plan plans/my-feature.md
 
 Loading a plan lets you inspect it, continue work, recover failed work, or re-open review depending on the plan status.
 
-Plans live under `plans/` and use Markdown plus YAML front matter. RunWeild treats the plan file as durable workflow
+Plans live under `plans/` and use Markdown plus YAML front matter. RunWield treats the plan file as durable workflow
 state, not just a generated note.
 
 PROJECT plans are Epic containers by default. Loading an approved or decomposing Epic opens the interactive Slicer so
@@ -151,7 +151,7 @@ wld remove <source>              # remove a theme package
 
 ## File references and shell commands
 
-RunWeild inherits Pi's TUI behavior:
+RunWield inherits Pi's TUI behavior:
 
 - Type `@` to fuzzy-search project files.
 - Use `!command` to run a shell command and send output to the model.
@@ -162,7 +162,7 @@ Full details: [Pi Usage](https://pi.dev/docs/latest/usage).
 
 ## Project data locations
 
-RunWeild uses RunWeild-owned paths instead of Pi-owned paths:
+RunWield uses RunWield-owned paths instead of Pi-owned paths:
 
 | Data                         | Location                                   |
 | ---------------------------- | ------------------------------------------ |
@@ -170,7 +170,7 @@ RunWeild uses RunWeild-owned paths instead of Pi-owned paths:
 | Credentials                  | `~/.wld/auth.json`                         |
 | Custom models                | `~/.wld/models.json`                       |
 | Sessions                     | `~/.wld/sessions/`                         |
-| Global RunWeild instructions | `~/.wld/RUNWEILD.md` or `~/.wld/AGENTS.md` |
+| Global RunWield instructions | `~/.wld/RUNWEILD.md` or `~/.wld/AGENTS.md` |
 | Home agents                  | `~/.wld/agents/`                           |
 | Home prompts                 | `~/.wld/prompts/`                          |
 | Project settings             | `.wld/settings.json`                       |
@@ -178,4 +178,4 @@ RunWeild uses RunWeild-owned paths instead of Pi-owned paths:
 | Project prompts              | `.wld/prompts/`                            |
 | Project plans                | `plans/`                                   |
 
-On first use, RunWeild imports some Pi config files into `~/.wld/` when the RunWeild copy does not exist.
+On first use, RunWield imports some Pi config files into `~/.wld/` when the RunWield copy does not exist.

@@ -33,7 +33,7 @@ standalone FEATURE Plans, PROJECT Epics, child FEATURE Plans, and worktree-backe
 - The pre-resume safety gate is called a **Resume Check**.
 - Resume Check compares staleness against the Plan’s last substantive pre-hold baseline, not `heldAt`.
 - If Resume Check finds problems, the Plan remains `on_hold` until the user chooses recovery.
-- If recovery fails or the user chooses to restart, RunWeild can **Reset status to draft** while preserving the Plan
+- If recovery fails or the user chooses to restart, RunWield can **Reset status to draft** while preserving the Plan
   body.
 - `wld plans` remains non-interactive.
 - `load-plan` should be consistently menu-first for every Plan status.

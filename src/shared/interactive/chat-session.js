@@ -14,7 +14,7 @@ import {
     visibleWidth,
 } from "@earendil-works/pi-tui";
 import { initTUI } from "../ui/tui.js";
-import { applyPersistedTheme, getEditorTheme, initRunWeildTheme, onThemeChange, theme } from "../ui/theme.js";
+import { applyPersistedTheme, getEditorTheme, initRunWieldTheme, onThemeChange, theme } from "../ui/theme.js";
 import { VERSION } from "../version.js";
 import { endBlink, renderBootLogo } from "../ui/boot-logo.js";
 import { createUiApi } from "../ui/api.js";
@@ -566,7 +566,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     // can override via options.initialAgentName.
     const initialAgentInternalName = options.initialAgentName || AGENTS.ROUTER;
     await ensureMnemosyneBinary();
-    initRunWeildTheme();
+    initRunWieldTheme();
     await applyPersistedTheme();
     const tui = initTUI();
 
@@ -574,7 +574,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     const suppressStartupHeader = options.sessionStartMode === "continue";
 
     // Header
-    const titleLine = `${theme.fg("accent", theme.bold("RunWeild ─ Plan-by-Default Harness"))} ${
+    const titleLine = `${theme.fg("accent", theme.bold("RunWield ─ Plan-by-Default Harness"))} ${
         theme.fg("dim", `${VERSION}`)
     }`;
 
@@ -920,7 +920,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
         const alreadyOffered = await isInitOfferedFn();
         if (!alreadyOffered) {
             const choice = await uiAPI.promptSelect(
-                "Would you like to run /init to bootstrap RunWeild?",
+                "Would you like to run /init to bootstrap RunWield?",
                 [
                     { value: "yes", label: "Yes" },
                     { value: "no", label: "No" },
@@ -1280,7 +1280,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
                 uiAPI.appendSystemMessage(
                     "I'm not able to change the model right now wait until idle or cancel with Esc.",
                     false,
-                    "RunWeild",
+                    "RunWield",
                 );
                 return;
             }

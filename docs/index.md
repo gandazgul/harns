@@ -1,20 +1,20 @@
-# RunWeild Documentation
+# RunWield Documentation
 
-RunWeild is an opinionated coding harness built on top of [Pi](https://pi.dev). It keeps Pi's terminal-first agent
+RunWield is an opinionated coding harness built on top of [Pi](https://pi.dev). It keeps Pi's terminal-first agent
 experience, then adds explicit triage, durable plans, role-scoped agents, workflow validation, project memory, and plan
 recovery.
 
-Use these docs for RunWeild-specific behavior. When a topic behaves the same as Pi, this index links to the upstream
+Use these docs for RunWield-specific behavior. When a topic behaves the same as Pi, this index links to the upstream
 [Pi documentation](https://pi.dev/docs/latest) instead of duplicating it.
 
 ## Get Started
 
-### 1. Install RunWeild
+### 1. Install RunWield
 
 On macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gandazgul/runweild/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gandazgul/runwield/main/install.sh | bash
 ```
 
 The installer downloads the `wld` binary and installs it to `~/.local/bin` by default. Make sure that directory is on
@@ -30,7 +30,7 @@ deno task compile
 
 ### 2. Install runtime helpers
 
-RunWeild works best when these optional-but-expected binaries are available on `PATH`:
+RunWield works best when these optional-but-expected binaries are available on `PATH`:
 
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for project and global memory.
 - [`cymbal`](https://github.com/1broseidon/cymbal) for code search, symbol lookup, impact analysis, and tracing.
@@ -44,17 +44,17 @@ Start an interactive session and run:
 /login
 ```
 
-Then choose a subscription provider or API-key provider. RunWeild stores credentials under `~/.wld/auth.json`.
+Then choose a subscription provider or API-key provider. RunWield stores credentials under `~/.wld/auth.json`.
 
 You can also configure providers and custom models manually in `~/.wld/models.json`, for example when using Ollama,
-vLLM, LM Studio, API proxies, or custom model entries. RunWeild uses Pi's model/provider system, so the full provider
+vLLM, LM Studio, API proxies, or custom model entries. RunWield uses Pi's model/provider system, so the full provider
 and model configuration format is documented in [Pi Providers](https://pi.dev/docs/latest/providers) and
-[Pi Custom Models](https://pi.dev/docs/latest/models). See [RunWeild providers](providers.md) for the RunWeild-specific
+[Pi Custom Models](https://pi.dev/docs/latest/models). See [RunWield providers](providers.md) for the RunWield-specific
 storage paths and commands.
 
 ### 4. Initialize a project
 
-Run RunWeild from the project root:
+Run RunWield from the project root:
 
 ```bash
 wld init
@@ -85,7 +85,7 @@ Router is the default Agent for fresh triage. Its `triage_report` assigns one ro
 
 ### Work through the router by default
 
-Use `wld "request"` when you want RunWeild to choose the right workflow. Router records the routing intent through
+Use `wld "request"` when you want RunWield to choose the right workflow. Router records the routing intent through
 `triage_report`; implementation intents also record complexity and affected paths. That tool outcome hands off to Guide,
 Ideator, Operator, Planner, or Architect as appropriate.
 
@@ -99,7 +99,7 @@ wld agent engineer "..."   # start with Engineer instead of Router
 Inside the TUI, use `/agent <name>` to switch agents.
 
 User-selectable bundled agents include `router`, `guide`, `ideator`, `operator`, `planner`, `architect`, `engineer`, and
-`tester`. RunWeild also uses workflow-only pseudo-agents such as Slicer and Reviewer during plan readiness and
+`tester`. RunWield also uses workflow-only pseudo-agents such as Slicer and Reviewer during plan readiness and
 validation; they do not appear in normal `/agent` listings.
 
 Documentation work no longer has a dedicated agent. It is handled through the bundled `documentation` skill, which any
@@ -139,44 +139,44 @@ Type `/` to open command completion. Common commands:
 
 For editor behavior, message queue behavior, file references, shell commands, and terminal shortcuts that match Pi, see
 [Pi Using Pi](https://pi.dev/docs/latest/usage) and [Pi Keybindings](https://pi.dev/docs/latest/keybindings). See
-[Using RunWeild](usage.md) for RunWeild-specific differences.
+[Using RunWield](usage.md) for RunWield-specific differences.
 
 ## Documentation TOC
 
-### RunWeild basics
+### RunWield basics
 
 - [Quickstart](quickstart.md) - install, authenticate, initialize, and run the first routed request.
-- [Using RunWeild](usage.md) - day-to-day commands, routing, agents, plans, and TUI differences from Pi.
+- [Using RunWield](usage.md) - day-to-day commands, routing, agents, plans, and TUI differences from Pi.
 - [Plans and workflows](workflows.md) - triage classes, plan review, execution, validation, and recovery.
-- [Sessions](sessions.md) - RunWeild session paths, root-agent behavior, resume, and compaction notes.
-- [Providers and models](providers.md) - RunWeild credential/config paths and links to Pi provider setup.
+- [Sessions](sessions.md) - RunWield session paths, root-agent behavior, resume, and compaction notes.
+- [Providers and models](providers.md) - RunWield credential/config paths and links to Pi provider setup.
 - [Customization](customization.md) - settings, agent overrides, prompts, skills, and themes.
 - [Contributing](contributing.md) - development setup, contribution guidelines, ADRs, and PRDs.
 
-### RunWeild reference
+### RunWield reference
 
-- [Settings Reference](settings.md) - global/project settings and RunWeild custom keys.
-- [Themes](themes.md) - RunWeild theme package behavior and theme files.
+- [Settings Reference](settings.md) - global/project settings and RunWield custom keys.
+- [Themes](themes.md) - RunWield theme package behavior and theme files.
 - [Plan Lifecycle](plan-lifecycle.md) - durable plan and worktree state machine.
 - [Router Model Selection](router-model-selection.md) - evaluation findings for the Router model choice.
 - [Compaction Research](compaction-research.md) - research notes for context compaction behavior.
 
 ### Pi docs that mostly apply unchanged
 
-RunWeild inherits Pi's terminal UI and much of its model/provider, session, theme, and customization infrastructure. Use
+RunWield inherits Pi's terminal UI and much of its model/provider, session, theme, and customization infrastructure. Use
 these upstream docs for full detail:
 
 - [Pi documentation home](https://pi.dev/docs/latest)
 - [Pi Quickstart](https://pi.dev/docs/latest/quickstart)
 - [Pi Usage](https://pi.dev/docs/latest/usage)
 - [Pi Providers](https://pi.dev/docs/latest/providers)
-- [Pi Settings](https://pi.dev/docs/latest/settings) - pair with [RunWeild Settings Reference](settings.md).
+- [Pi Settings](https://pi.dev/docs/latest/settings) - pair with [RunWield Settings Reference](settings.md).
 - [Pi Keybindings](https://pi.dev/docs/latest/keybindings)
-- [Pi Sessions](https://pi.dev/docs/latest/sessions) - pair with [RunWeild Sessions](sessions.md).
+- [Pi Sessions](https://pi.dev/docs/latest/sessions) - pair with [RunWield Sessions](sessions.md).
 - [Pi Compaction](https://pi.dev/docs/latest/compaction)
-- [Pi Skills](https://pi.dev/docs/latest/skills) - pair with [RunWeild Customization](customization.md).
+- [Pi Skills](https://pi.dev/docs/latest/skills) - pair with [RunWield Customization](customization.md).
 - [Pi Prompt Templates](https://pi.dev/docs/latest/prompt-templates)
-- [Pi Themes](https://pi.dev/docs/latest/themes) - pair with [RunWeild Themes](themes.md).
+- [Pi Themes](https://pi.dev/docs/latest/themes) - pair with [RunWield Themes](themes.md).
 - [Pi Terminal Setup](https://pi.dev/docs/latest/terminal-setup)
 - [Pi tmux](https://pi.dev/docs/latest/tmux)
 - [Pi Windows](https://pi.dev/docs/latest/windows)

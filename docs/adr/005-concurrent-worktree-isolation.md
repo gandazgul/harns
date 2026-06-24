@@ -6,9 +6,9 @@ Accepted
 
 ## Context
 
-RunWeild previously executed plan work in the primary working tree (CWD = `Deno.cwd()`). This meant:
+RunWield previously executed plan work in the primary working tree (CWD = `Deno.cwd()`). This meant:
 
-- Two RunWeild instances executing plans concurrently could step on each other's file changes.
+- Two RunWield instances executing plans concurrently could step on each other's file changes.
 - Failed execution recovery could reset the primary checkout to a baseline snapshot and destroy unrelated user edits.
 - Plan recovery had no isolated place to inspect, merge, continue, or discard a partial execution.
 
@@ -16,7 +16,7 @@ ADR-003 introduced execution baseline trees (git tree objects captured before ex
 mechanism, but those trees operated on the same working tree. ADR-004 centralized the plan lifecycle, but did not change
 the single-worktree constraint.
 
-We need a mechanism that lets multiple RunWeild instances, or multiple sequential plan executions, operate independently
+We need a mechanism that lets multiple RunWield instances, or multiple sequential plan executions, operate independently
 on the same repository.
 
 ## Decision
@@ -31,24 +31,24 @@ avoids per-task worktree complexity while allowing concurrent plan executions to
 
 ### Worktree Lifecycle
 
-1. **Creation** — Before `execution_started`, RunWeild creates or reuses a worktree branch with the prefix
-   `runweild/worktree/` from the selected base ref. The worktree path is created adjacent to the primary repo and
-   includes a sanitized plan slug plus a short id, e.g. `../<repo>-runweild-<plan-slug>-<id>`.
-2. **Execution** — Implementation runs in the worktree cwd. RunWeild records the execution baseline tree from that
-   worktree. Agent sessions and file-writing tools receive the worktree cwd explicitly; RunWeild does not mutate the
+1. **Creation** — Before `execution_started`, RunWield creates or reuses a worktree branch with the prefix
+   `runwield/worktree/` from the selected base ref. The worktree path is created adjacent to the primary repo and
+   includes a sanitized plan slug plus a short id, e.g. `../<repo>-runwield-<plan-slug>-<id>`.
+2. **Execution** — Implementation runs in the worktree cwd. RunWield records the execution baseline tree from that
+   worktree. Agent sessions and file-writing tools receive the worktree cwd explicitly; RunWield does not mutate the
    process cwd with `Deno.chdir()`.
 3. **Implementation complete** — `implementation_finished` means implementation finished in the worktree. It sets Plan
    Status `implemented` and worktree status `completed`, but does **not** merge the branch into the primary checkout.
 4. **Validation** — Workflow Validation runs local CI, workflow diff computation, semantic review, and repair sessions
    in the execution worktree.
-5. **Merge-back** — Only after Workflow Validation passes does RunWeild merge the worktree branch into the primary
+5. **Merge-back** — Only after Workflow Validation passes does RunWield merge the worktree branch into the primary
    checkout. `validation_passed` and Plan Status `verified` are recorded only after that merge succeeds.
 6. **Recovery/failure** — If execution, validation, or merge-back fails, the worktree is left in place. Recovery can
    inspect, continue, retry validation, merge, recreate, or abandon the isolated worktree depending on plan state.
 
 ### CWD Plumbing
 
-`CWD` remains the primary project root. It anchors saved plan files, RunWeild settings, `.wld/worktrees.json`, and
+`CWD` remains the primary project root. It anchors saved plan files, RunWield settings, `.wld/worktrees.json`, and
 `.wld/worktrees.lock`.
 
 Execution code must pass an explicit execution cwd to every operation that reads or writes implementation files:
@@ -80,8 +80,8 @@ runtime state, not source state, and should stay ignored by Git alongside `.wld/
             "baseBranch": "main",
             "baseRef": "HEAD",
             "baseCommit": "abc123def...",
-            "branch": "runweild/worktree/add-dark-mode-toggle-5fe73e21",
-            "path": "/absolute/path/to/repo-runweild-add-dark-mode-toggle-5fe73e21",
+            "branch": "runwield/worktree/add-dark-mode-toggle-5fe73e21",
+            "path": "/absolute/path/to/repo-runwield-add-dark-mode-toggle-5fe73e21",
             "status": "active",
             "createdAt": "2026-06-15T12:00:00.000Z",
             "updatedAt": "2026-06-15T12:00:00.000Z"
@@ -90,7 +90,7 @@ runtime state, not source state, and should stay ignored by Git alongside `.wld/
 }
 ```
 
-A best-effort advisory lockfile at `<project>/.wld/worktrees.lock` prevents concurrent RunWeild instances from racing
+A best-effort advisory lockfile at `<project>/.wld/worktrees.lock` prevents concurrent RunWield instances from racing
 while creating, updating, or deleting registry entries.
 
 ### Front Matter Additions
@@ -106,9 +106,9 @@ The plan's `PlanFrontMatter` includes optional worktree fields:
 
 ### Merge Strategy
 
-RunWeild performs a branch merge from the primary checkout after validation passes. The merge helper refuses to proceed
-when the primary checkout has blocking uncommitted changes, while allowing RunWeild-owned metadata paths needed during
-the workflow. If merge fails or is refused, RunWeild records `worktree_merge_failed`, keeps Plan Status `implemented`,
+RunWield performs a branch merge from the primary checkout after validation passes. The merge helper refuses to proceed
+when the primary checkout has blocking uncommitted changes, while allowing RunWield-owned metadata paths needed during
+the workflow. If merge fails or is refused, RunWield records `worktree_merge_failed`, keeps Plan Status `implemented`,
 sets `worktreeStatus: "merge_conflict"`, and leaves the worktree branch/path intact for recovery.
 
 Dirty primary checkout state is therefore a **merge-back risk**, not a worktree creation blocker. Worktree creation can
@@ -137,14 +137,14 @@ with a destructive warning.
 `wld plans` displays concise worktree state when a plan has worktree metadata, for example:
 
 ```text
-Worktree: merge_conflict (runweild/worktree/add-dark-mode-toggle-5fe73e21)
+Worktree: merge_conflict (runwield/worktree/add-dark-mode-toggle-5fe73e21)
 ```
 
 ## Consequences
 
 ### Positive
 
-- Multiple RunWeild instances can execute plans concurrently without implementation-file conflicts.
+- Multiple RunWield instances can execute plans concurrently without implementation-file conflicts.
 - The primary working tree is not touched during implementation or validation repair.
 - Workflow Validation checks the isolated execution result before anything is merged back.
 - Plan recovery can inspect, continue, retry validation, merge, recreate, or abandon an isolated checkout.
@@ -154,7 +154,7 @@ Worktree: merge_conflict (runweild/worktree/add-dark-mode-toggle-5fe73e21)
 
 - Worktree creation and deletion add latency to execution start/recovery.
 - Disk usage increases while worktrees remain active.
-- Branch namespace `runweild/worktree/*` needs periodic cleanup when worktrees are abandoned.
+- Branch namespace `runwield/worktree/*` needs periodic cleanup when worktrees are abandoned.
 - The `.wld/worktrees.json` registry and lockfile must be kept consistent after crashes or interrupted sessions.
 - Merge-back can be blocked by dirty primary-checkout files or conflicts even after validation passes in the worktree.
 

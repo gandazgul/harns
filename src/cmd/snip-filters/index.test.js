@@ -8,27 +8,27 @@ Deno.test("runSnipFiltersCommand installs, cleans up, and reports status", async
     const log = (message) => logs.push(message);
     await runSnipFiltersCommand(["install"], {
         __testDeps: {
-            installRunWeildSnipFiltersForUser: () =>
+            installRunWieldSnipFiltersForUser: () =>
                 Promise.resolve({
                     filtersDir: "/home/me/.config/snip/filters",
                     installed: ["/home/me/.config/snip/filters/deno-test.yaml"],
                     skipped: [{
                         path: "/home/me/.config/snip/filters/deno-lint.yaml",
-                        reason: "existing non-RunWeild filter",
+                        reason: "existing non-RunWield filter",
                     }],
                 }),
             log,
         },
     });
 
-    assertStringIncludes(logs.join("\n"), "Installed RunWeild Snip filters");
+    assertStringIncludes(logs.join("\n"), "Installed RunWield Snip filters");
     assertStringIncludes(logs.join("\n"), "deno-test.yaml");
-    assertStringIncludes(logs.join("\n"), "existing non-RunWeild filter");
+    assertStringIncludes(logs.join("\n"), "existing non-RunWield filter");
 
     logs.length = 0;
     await runSnipFiltersCommand(["cleanup"], {
         __testDeps: {
-            cleanupRunWeildSnipFiltersForUser: () =>
+            cleanupRunWieldSnipFiltersForUser: () =>
                 Promise.resolve({
                     filtersDir: "/home/me/.config/snip/filters",
                     removed: ["/home/me/.config/snip/filters/deno-test.yaml"],
@@ -37,13 +37,13 @@ Deno.test("runSnipFiltersCommand installs, cleans up, and reports status", async
             log,
         },
     });
-    assertStringIncludes(logs.join("\n"), "Cleaned up RunWeild Snip filters");
+    assertStringIncludes(logs.join("\n"), "Cleaned up RunWield Snip filters");
     assertStringIncludes(logs.join("\n"), "deno-test.yaml");
 
     logs.length = 0;
     await runSnipFiltersCommand(["status"], {
         __testDeps: {
-            getRunWeildSnipFilterInstallStatus: () =>
+            getRunWieldSnipFilterInstallStatus: () =>
                 Promise.resolve({
                     filtersDir: "/home/me/.config/snip/filters",
                     installed: [],

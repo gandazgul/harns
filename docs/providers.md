@@ -1,21 +1,21 @@
 # Providers and Models
 
-RunWeild uses Pi's provider and model infrastructure with RunWeild-owned config paths.
+RunWield uses Pi's provider and model infrastructure with RunWield-owned config paths.
 
 For complete provider-specific setup, OAuth/API-key options, environment variables, and custom provider details, see
 [Pi Providers](https://pi.dev/docs/latest/providers), [Pi Custom Models](https://pi.dev/docs/latest/models), and
 [Pi Custom Providers](https://pi.dev/docs/latest/custom-provider).
 
-## RunWeild storage paths
+## RunWield storage paths
 
-| Data                  | RunWeild path          |
+| Data                  | RunWield path          |
 | --------------------- | ---------------------- |
 | Credentials           | `~/.wld/auth.json`     |
 | Model registry/config | `~/.wld/models.json`   |
 | Settings              | `~/.wld/settings.json` |
 
-If a RunWeild file does not exist, RunWeild may import the matching Pi file from `~/.pi/agent/` once. After that,
-RunWeild reads and writes the RunWeild-owned file.
+If a RunWield file does not exist, RunWield may import the matching Pi file from `~/.pi/agent/` once. After that,
+RunWield reads and writes the RunWield-owned file.
 
 ## Login commands
 
@@ -43,11 +43,11 @@ or from the CLI:
 wld model <provider>/<model_id>
 ```
 
-RunWeild expects strict `provider/model_id` references for explicit model settings and per-agent overrides.
+RunWield expects strict `provider/model_id` references for explicit model settings and per-agent overrides.
 
 ## Agent model overrides
 
-RunWeild can assign different models to different agents:
+RunWield can assign different models to different agents:
 
 ```jsonc
 {

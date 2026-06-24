@@ -23,7 +23,7 @@ tools:
     - code_importers
 ---
 
-We are initializing RunWeild into this project. We need to gather the project context and architecture to seed the index
+We are initializing RunWield into this project. We need to gather the project context and architecture to seed the index
 and mnemosyne effectively.
 
 1. **Project architecture** — main directories, entry points, module boundaries
@@ -64,5 +64,5 @@ and mnemosyne effectively.
 - Do NOT modify any project files other than `CONTEXT.md`.
 - Use project-scoped `memory_store` only. Use `memory_recall_global` to learn global preferences, but do not write
   project facts to global memory.
-- Be thorough — the user and the future sessions of RunWeild will rely on the CONTEXT.md you create to understand the
+- Be thorough — the user and the future sessions of RunWield will rely on the CONTEXT.md you create to understand the
   codebase.

@@ -11,7 +11,7 @@ Deno.test("getAgentCompletions includes router", async () => {
 Deno.test("getModelCompletions can find by provider prefix", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalOpenAiKey = Deno.env.get("OPENAI_API_KEY");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-model-completions-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-model-completions-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.env.set("OPENAI_API_KEY", "test-key");

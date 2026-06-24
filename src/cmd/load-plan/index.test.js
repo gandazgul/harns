@@ -1686,8 +1686,8 @@ Deno.test("runLoadPlanCommand refuses worktree reset when recorded recreate base
                         status: "failed",
                         executionBaselineTree: "baseline-tree",
                         worktreeId: "wt-missing-base",
-                        worktreePath: "/tmp/runweild-plan-worktree",
-                        worktreeBranch: "runweild/worktree/plan-missing-base",
+                        worktreePath: "/tmp/runwield-plan-worktree",
+                        worktreeBranch: "runwield/worktree/plan-missing-base",
                         worktreeStatus: "execution_failed",
                     },
                 }),
@@ -1738,8 +1738,8 @@ Deno.test("runLoadPlanCommand recreates worktree reset from recorded base commit
                         status: "failed",
                         executionBaselineTree: "baseline-tree",
                         worktreeId: "wt-recorded-base",
-                        worktreePath: "/tmp/runweild-plan-worktree",
-                        worktreeBranch: "runweild/worktree/plan-recorded-base",
+                        worktreePath: "/tmp/runwield-plan-worktree",
+                        worktreeBranch: "runwield/worktree/plan-recorded-base",
                         worktreeStatus: "execution_failed",
                     },
                 }),
@@ -1747,8 +1747,8 @@ Deno.test("runLoadPlanCommand recreates worktree reset from recorded base commit
                 Promise.resolve({
                     id: "wt-recorded-base",
                     planName: "plan-recorded-base",
-                    path: "/tmp/runweild-plan-worktree",
-                    branch: "runweild/worktree/plan-recorded-base",
+                    path: "/tmp/runwield-plan-worktree",
+                    branch: "runwield/worktree/plan-recorded-base",
                     baseRef: "main",
                     baseCommit: "abc123",
                     baseTree: "baseline-tree",
@@ -1766,8 +1766,8 @@ Deno.test("runLoadPlanCommand recreates worktree reset from recorded base commit
                 createdBaseRef = args.baseRef;
                 return Promise.resolve({
                     id: "wt-recreated",
-                    path: "/tmp/runweild-plan-worktree-2",
-                    branch: "runweild/worktree/plan-recorded-base-2",
+                    path: "/tmp/runwield-plan-worktree-2",
+                    branch: "runwield/worktree/plan-recorded-base-2",
                     status: "active",
                     baseRef: "abc123",
                     baseCommit: "abc123",
@@ -1911,8 +1911,8 @@ Deno.test("runLoadPlanCommand only offers manual merge for merge-conflict worktr
                             summary: "s",
                             affectedPaths: [],
                             status: "implemented",
-                            worktreePath: "/tmp/runweild-plan-worktree",
-                            worktreeBranch: `runweild/worktree/plan-${worktreeStatus}`,
+                            worktreePath: "/tmp/runwield-plan-worktree",
+                            worktreeBranch: `runwield/worktree/plan-${worktreeStatus}`,
                             worktreeStatus,
                         },
                     }),
@@ -1953,8 +1953,8 @@ Deno.test("runLoadPlanCommand refuses forced manual merge before validation-back
                         summary: "s",
                         affectedPaths: [],
                         status: "implemented",
-                        worktreePath: "/tmp/runweild-plan-worktree",
-                        worktreeBranch: "runweild/worktree/plan-completed-worktree",
+                        worktreePath: "/tmp/runwield-plan-worktree",
+                        worktreeBranch: "runwield/worktree/plan-completed-worktree",
                         worktreeStatus: "completed",
                     },
                 }),
@@ -1980,7 +1980,7 @@ Deno.test("runLoadPlanCommand refuses forced manual merge before validation-back
 });
 
 Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recovery", async () => {
-    const worktreePath = await Deno.makeTempDir({ prefix: "runweild-load-plan-merge-" });
+    const worktreePath = await Deno.makeTempDir({ prefix: "runwield-load-plan-merge-" });
     try {
         const { uiAPI, selections } = makeUi();
         selections.push("merge");
@@ -2010,7 +2010,7 @@ Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recover
                             status: "implemented",
                             worktreeId: "wt1",
                             worktreePath,
-                            worktreeBranch: "runweild/worktree/plan-merge-conflict",
+                            worktreeBranch: "runwield/worktree/plan-merge-conflict",
                             worktreeStatus: "merge_conflict",
                         },
                     }),
@@ -2020,7 +2020,7 @@ Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recover
                     Promise.resolve({
                         exists: true,
                         path: worktreePath,
-                        branch: "runweild/worktree/plan-merge-conflict",
+                        branch: "runwield/worktree/plan-merge-conflict",
                         statusText: "",
                         diff: "",
                     }),
@@ -2054,7 +2054,7 @@ Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recover
             }),
         });
 
-        assertEquals(mergedBranch, "runweild/worktree/plan-merge-conflict");
+        assertEquals(mergedBranch, "runwield/worktree/plan-merge-conflict");
         assertEquals(removedPath, worktreePath);
         assertEquals(removedRegistryId, "wt1");
         assertEquals(registryStatus, "merged");

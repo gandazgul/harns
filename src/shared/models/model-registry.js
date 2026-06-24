@@ -8,7 +8,7 @@ const MODEL_CONFIG_FILES = ["models.json", "auth.json"];
 /**
  * @returns {string}
  */
-export function getRunWeildModelConfigDir() {
+export function getRunWieldModelConfigDir() {
     return getSettingsDir("global");
 }
 
@@ -72,7 +72,7 @@ function readOpenAiModelIds(payload) {
  *
  * This is intentionally targeted: settings may name a model that is valid for
  * a provider whose `models.json` entry has only `baseUrl`/`apiKey`. In that
- * case the upstream registry has no concrete model object yet, so RunWeild asks
+ * case the upstream registry has no concrete model object yet, so RunWield asks
  * the provider before treating the settings model as unknown.
  *
  * The `/models` endpoint does not report per-model input modalities, so
@@ -87,7 +87,7 @@ function readOpenAiModelIds(payload) {
  * @param {string} provider
  * @param {string} modelId
  * @param {{
- *   runweildDir?: string,
+ *   runwieldDir?: string,
  *   fetchFn?: typeof fetch,
  *   input?: ("text" | "image")[],
  * }} [options]
@@ -97,8 +97,8 @@ export async function discoverProviderModel(modelRegistry, provider, modelId, op
     const existing = modelRegistry.find(provider, modelId);
     if (existing) return existing;
 
-    const runweildDir = options.runweildDir ?? getRunWeildModelConfigDir();
-    const modelsConfig = readJsoncObject(join(runweildDir, "models.json"));
+    const runwieldDir = options.runwieldDir ?? getRunWieldModelConfigDir();
+    const modelsConfig = readJsoncObject(join(runwieldDir, "models.json"));
     const providerConfig = /** @type {Record<string, any> | undefined} */ (
         modelsConfig?.providers?.[provider]
     );
@@ -173,8 +173,8 @@ function getPiConfigMigrationCandidates(fileName, homeDir) {
 }
 
 /**
- * One-time import of model/auth files into RunWeild-owned config.
- * Existing RunWeild files always win; source files are never used as a runtime fallback.
+ * One-time import of model/auth files into RunWield-owned config.
+ * Existing RunWield files always win; source files are never used as a runtime fallback.
  *
  * @param {{ targetDir: string, sourceCandidatesByFile: (fileName: string) => string[] }} options
  * @returns {{ copied: string[], skipped: string[], failed: Array<{ file: string, error: string }> }}
@@ -214,17 +214,17 @@ function migrateModelConfigFilesOnce(options) {
 }
 
 /**
- * One-time import of Pi-owned model/auth files into RunWeild-owned config.
- * Existing RunWeild files always win; Pi is never used as a runtime fallback.
+ * One-time import of Pi-owned model/auth files into RunWield-owned config.
+ * Existing RunWield files always win; Pi is never used as a runtime fallback.
  *
- * @param {{ homeDir?: string, runweildDir?: string }} [options]
+ * @param {{ homeDir?: string, runwieldDir?: string }} [options]
  * @returns {{ copied: string[], skipped: string[], failed: Array<{ file: string, error: string }> }}
  */
 export function migratePiModelConfigOnce(options = {}) {
     const homeDir = options.homeDir ?? Deno.env.get("HOME") ?? "";
-    const runweildDir = options.runweildDir ?? getRunWeildModelConfigDir();
+    const runwieldDir = options.runwieldDir ?? getRunWieldModelConfigDir();
     return migrateModelConfigFilesOnce({
-        targetDir: runweildDir,
+        targetDir: runwieldDir,
         sourceCandidatesByFile: (fileName) => getPiConfigMigrationCandidates(fileName, homeDir),
     });
 }
@@ -234,10 +234,10 @@ export function migratePiModelConfigOnce(options = {}) {
  * @returns {ModelRegistry}
  */
 export function getModelRegistry() {
-    const agentDir = getRunWeildModelConfigDir();
-    const piMigration = migratePiModelConfigOnce({ runweildDir: agentDir });
+    const agentDir = getRunWieldModelConfigDir();
+    const piMigration = migratePiModelConfigOnce({ runwieldDir: agentDir });
     for (const failure of piMigration.failed) {
-        console.warn(`Failed to migrate Pi ${failure.file} to RunWeild config: ${failure.error}`);
+        console.warn(`Failed to migrate Pi ${failure.file} to RunWield config: ${failure.error}`);
     }
 
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));

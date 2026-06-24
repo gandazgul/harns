@@ -107,7 +107,7 @@ Deno.test("setActiveModel reports setModel rejection instead of leaving an unhan
 
     try {
         Deno.env.set("OPENAI_API_KEY", "test-key");
-        await withTempHome("runweild-set-active-model-", async () => {
+        await withTempHome("runwield-set-active-model-", async () => {
             setActiveUiAPI(
                 /** @type {any} */ ({
                     appendSystemMessage: (/** @type {string} */ message) => messages.push(message),
@@ -345,9 +345,9 @@ Deno.test("trackPendingSteeringMessage only consumes queue updates from the sess
 Deno.test("setActiveModel rebuilds root session tool set when switching between vision and text-only models", async () => {
     const originalOpenAiKey = Deno.env.get("OPENAI_API_KEY");
     const originalCwd = Deno.cwd();
-    const tempProject = await Deno.makeTempDir({ prefix: "runweild-model-switch-project-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-model-switch-project-" });
     try {
-        await withTempHome("runweild-model-switch-home-", async (tempHome) => {
+        await withTempHome("runwield-model-switch-home-", async (tempHome) => {
             Deno.chdir(tempProject);
             Deno.env.set("OPENAI_API_KEY", "test-key");
             await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });

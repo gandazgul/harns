@@ -1,6 +1,6 @@
 /**
  * @module cli
- * RunWeild — Plan-by-Default Coding Harness
+ * RunWield — Plan-by-Default Coding Harness
  *
  * Usage:
  *   wld "<user request>"
@@ -113,7 +113,7 @@ async function main() {
             return;
         }
         if (!printCommandHelp(helpRequest.commandName)) {
-            console.error(`[RunWeild] Unknown command for help: ${helpRequest.commandName}`);
+            console.error(`[RunWield] Unknown command for help: ${helpRequest.commandName}`);
             console.log();
             Deno.exit(1);
         }
@@ -125,7 +125,7 @@ async function main() {
     if (positionalCommand) {
         if (!hasCommandSurface(positionalCommand, "cli")) {
             console.error(
-                `[RunWeild] Command '${firstPositional}' is only available inside interactive chat as /${firstPositional}.`,
+                `[RunWield] Command '${firstPositional}' is only available inside interactive chat as /${firstPositional}.`,
             );
             Deno.exit(1);
         }
@@ -141,7 +141,7 @@ async function main() {
     }
 
     if (normalizedArgs[0]?.startsWith("-")) {
-        console.error(`[RunWeild] Unknown option: ${normalizedArgs[0]}`);
+        console.error(`[RunWield] Unknown option: ${normalizedArgs[0]}`);
         console.error("Use positional commands, for example: wld <command> [args]");
         Deno.exit(1);
     }
@@ -159,7 +159,7 @@ main().catch((err) => {
     if (err instanceof Error && err.message.includes("Mnemosyne binary not found")) {
         console.error(err.message);
     } else {
-        console.error("[RunWeild] Fatal error:", err);
+        console.error("[RunWield] Fatal error:", err);
     }
     Deno.exit(1);
 });

@@ -1,14 +1,14 @@
 # Sessions
 
-RunWeild inherits Pi's session model and TUI behavior, but stores session data under RunWeild-owned paths and adds
-RunWeild-specific root-agent behavior.
+RunWield inherits Pi's session model and TUI behavior, but stores session data under RunWield-owned paths and adds
+RunWield-specific root-agent behavior.
 
 For full session tree, fork, clone, export, and compaction details that match Pi, see
 [Pi Sessions](https://pi.dev/docs/latest/sessions) and [Pi Compaction](https://pi.dev/docs/latest/compaction).
 
 ## Storage
 
-RunWeild stores sessions under:
+RunWield stores sessions under:
 
 ```text
 ~/.wld/sessions/
@@ -49,5 +49,5 @@ outcomes such as `triage_report`, `plan_written`, and `task_completed`, not by s
 
 ## Resume compaction
 
-When resuming a large session, RunWeild can offer to compact the session first. The threshold is controlled by
+When resuming a large session, RunWield can offer to compact the session first. The threshold is controlled by
 `compactOnResumeThresholdPercent` in settings. See [Settings Reference](settings.md).

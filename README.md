@@ -1,8 +1,8 @@
 <p align="center"><img src="logo.svg" width="120" /></p>
 
-# RunWeild
+# RunWield
 
-**RunWeild** is an opinionated, plan-by-default coding harness for developers who want agents to slow down at the right
+**RunWield** is an opinionated, plan-by-default coding harness for developers who want agents to slow down at the right
 moments: classify the work, write a reviewable plan when the blast radius is real, execute through specialized roles,
 and then prove the result.
 
@@ -12,9 +12,9 @@ It is built on top of [Pi](https://pi.dev), with a Deno CLI, an interactive TUI,
 
 > For full documentation, see **[docs/index.md](docs/index.md)**.
 
-## Why RunWeild
+## Why RunWield
 
-Most coding harnesses optimize for getting an agent typing quickly. RunWeild optimizes for getting the right kind of
+Most coding harnesses optimize for getting an agent typing quickly. RunWield optimizes for getting the right kind of
 work done with the right amount of ceremony.
 
 - **Triage is explicit.** Every routed request gets a routing intent: `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or
@@ -29,14 +29,14 @@ work done with the right amount of ceremony.
 - **Epic work keeps a clear trail.** PROJECT Epics stay as containers, while child FEATURE plans carry their own review,
   execution, validation, and merge history.
 - **Completion has a handshake.** Execution agents are expected to call `task_completed`; for saved plan execution,
-  RunWeild treats that as the strong signal before running validation.
-- **Validation is built into plan workflows.** After completed executable plan work, RunWeild runs the configured local
+  RunWield treats that as the strong signal before running validation.
+- **Validation is built into plan workflows.** After completed executable plan work, RunWield runs the configured local
   validation command and then a semantic review loop against the original plan. PROJECT Epics validate through their
   child FEATURE plans.
 - **Context is durable.** Sessions live under `~/.wld/sessions/`, settings under `~/.wld/settings.json`, plans in the
   repo, and [Mnemosyne](https://github.com/gandazgul/mnemosyne) keeps recallable project and global memory.
 
-Use RunWeild when you want an agent workflow that leaves durable plans, review points, validation notes, and a clear
+Use RunWield when you want an agent workflow that leaves durable plans, review points, validation notes, and a clear
 record of why each change happened. Use a lighter harness when you only want a one-shot chat wrapper around edit tools.
 
 ## High-Level Flow
@@ -88,7 +88,7 @@ graph TD
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gandazgul/runweild/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gandazgul/runwield/main/install.sh | bash
 ```
 
 The installer downloads the latest release binary for macOS or Linux, verifies checksums, and installs `wld`. By default
@@ -112,22 +112,22 @@ Interactive agent workflows require these binaries in `PATH`:
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for project/global memory
 - [`cymbal`](https://github.com/1broseidon/cymbal) for code search, symbol lookup, impact analysis, and tracing
 
-RunWeild also uses [`snip`](https://github.com/edouard-claude/snip) when `snip` is available in `PATH`. Snip proxies
+RunWield also uses [`snip`](https://github.com/edouard-claude/snip) when `snip` is available in `PATH`. Snip proxies
 eligible agent-initiated shell commands so agents see compact command output. Snip is optional and fail-open: if it is
-missing, RunWeild skips the prefix hook and shows a short warning on the first few boots for each project. Manual `!`
-and `!!` shell commands are never rewritten. RunWeild ships Snip filters for `deno check`, `deno fmt`, `deno lint`, and
+missing, RunWield skips the prefix hook and shows a short warning on the first few boots for each project. Manual `!`
+and `!!` shell commands are never rewritten. RunWield ships Snip filters for `deno check`, `deno fmt`, `deno lint`, and
 `deno test`. The installer can opt-in install those filters into Snip's default user filter directory so plain
 `snip run -- deno ...` commands can use them; remove those user-level copies with `wld snip-filters cleanup`.
 
-RunWeild stores its own data under `~/.wld/`:
+RunWield stores its own data under `~/.wld/`:
 
 - `~/.wld/sessions/` for session history
 - `~/.wld/settings.json` for global settings
-- `~/.wld/RUNWEILD.md` or `~/.wld/AGENTS.md` for global RunWeild instructions
+- `~/.wld/RUNWEILD.md` or `~/.wld/AGENTS.md` for global RunWield instructions
 - `~/.wld/agents/` for home-level agent overrides
 - `~/.wld/prompts/` for home-level prompt templates
 
-By default, RunWeild also reads shared multi-agent instructions from `~/.agents/AGENTS.md` when no RunWeild-owned global
+By default, RunWield also reads shared multi-agent instructions from `~/.agents/AGENTS.md` when no RunWield-owned global
 instruction file exists. Disable that shared fallback with `"enableExternalGlobalAgentsMd": false` in
 `~/.wld/settings.json`.
 
@@ -142,7 +142,7 @@ Project-level plans and optional overrides live in the current repository:
 
 ## First Run
 
-Initialize RunWeild in a project when you want it to build durable context:
+Initialize RunWield in a project when you want it to build durable context:
 
 ```bash
 wld init
@@ -180,7 +180,7 @@ wld plans                           # list saved plans
 wld load-plan <name-or-path>        # review, execute, or continue a plan
 wld init                            # bootstrap project context
 wld snip-filters install            # optional: install Deno filters for plain snip commands
-wld snip-filters cleanup            # remove RunWeild-managed user Snip filters
+wld snip-filters cleanup            # remove RunWield-managed user Snip filters
 wld help
 wld help <command>
 ```
@@ -193,7 +193,7 @@ they do not collide with built-ins. Bundled skills can be invoked as `/skill:<na
 
 ## Skills
 
-RunWeild intentionally focuses on skill discovery and invocation rather than becoming another skill package manager. It
+RunWield intentionally focuses on skill discovery and invocation rather than becoming another skill package manager. It
 loads skills from these locations, in priority order:
 
 1. Local project skills: `<repo>/.wld/skills`
@@ -205,12 +205,12 @@ Each skill lives in a directory with a `SKILL.md` file. Skills are advertised to
 full instructions are injected only when a user invokes the skill with `/skill:<name>` or an agent loads a matching
 skill. The bundled `documentation` skill guides Markdown docs work that used to require a dedicated docs role.
 
-External tools can own skill installation and updates. RunWeild should interoperate with that ecosystem by reading
+External tools can own skill installation and updates. RunWield should interoperate with that ecosystem by reading
 `~/.agents/skills`, making loaded skills visible, and providing clear invocation behavior.
 
 ## Plans
 
-Plans are markdown files with YAML front matter in `plans/`. RunWeild records:
+Plans are markdown files with YAML front matter in `plans/`. RunWield records:
 
 - routing intent: `INQUIRY`, `IDEATION`, `QUICK_FIX`, `FEATURE`, or `PROJECT` for routed requests
 - plan classification: `FEATURE` or `PROJECT` for saved implementation plans
@@ -239,7 +239,7 @@ Use `wld load-plan <name-or-path>` to:
 - re-open an approved, implemented, or verified plan for review
 - view plan or Epic details
 - continue a draft or feedback plan
-- load an external markdown plan and let RunWeild add front matter
+- load an external markdown plan and let RunWield add front matter
 
 `/resume` is different: it resumes a recent interactive chat session, not a plan file.
 
@@ -270,12 +270,12 @@ Agent definitions are layered in this order, highest precedence first:
 3. Bundled: `src/agent-definitions`
 
 Scalar front matter fields override lower layers. Prompt bodies append by default. A layer can set
-`promptOverride: true` to replace lower-layer prompt content. Tool lists replace lower layers, but RunWeild re-adds
+`promptOverride: true` to replace lower-layer prompt content. Tool lists replace lower layers, but RunWield re-adds
 protected tools required for its workflow.
 
 ## Themes
 
-RunWeild includes the embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
+RunWield includes the embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
 
 ```bash
 wld install npm:<package-spec>
@@ -285,7 +285,7 @@ wld remove <source>
 ```
 
 Only JSON theme files are registered. Logic extensions, JavaScript, prompts, and skills inside packages are ignored.
-Install skills with whichever external skill tooling you prefer; RunWeild reads compatible skills from
+Install skills with whichever external skill tooling you prefer; RunWield reads compatible skills from
 `~/.agents/skills` and its local/home/bundled skill directories.
 
 Switch themes inside the TUI with `/theme`; the picker previews themes live and persists the selected theme.
@@ -321,7 +321,7 @@ src/
     ui/                TUI components and theme glue
     workflow/          triage dispatch, plan execution, validation
   skills/              bundled skill definitions
-  tools/               RunWeild-specific agent tools
+  tools/               RunWield-specific agent tools
 plans/                 persisted plans
 docs/                  ADRs, PRDs, and feature docs
 ```
@@ -365,15 +365,15 @@ Confirm the compiled Plannotator package can resolve:
 
 ## License
 
-RunWeild is source-available and free to use, but it is not open source yet.
+RunWield is source-available and free to use, but it is not open source yet.
 
-You may install, run, inspect, and use RunWeild for personal, internal, or commercial work. You may also submit issues
+You may install, run, inspect, and use RunWield for personal, internal, or commercial work. You may also submit issues
 and pull requests.
 
-You may not distribute modified versions, publish derivative works, rebrand RunWeild, or offer it as a competing product
+You may not distribute modified versions, publish derivative works, rebrand RunWield, or offer it as a competing product
 or service without prior written permission.
 
-RunWeild also includes third-party dependencies, including Pi and Plannotator-related packages, which remain under their
+RunWield also includes third-party dependencies, including Pi and Plannotator-related packages, which remain under their
 own license terms.
 
 See [LICENSE](LICENSE).

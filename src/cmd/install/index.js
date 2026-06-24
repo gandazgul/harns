@@ -1,6 +1,6 @@
 /**
  * @module cmd/install
- * RunWeild install command wrapping Pi's PackageManager.
+ * RunWield install command wrapping Pi's PackageManager.
  */
 
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
@@ -58,7 +58,7 @@ export function confirmWldExtensionInstall(source, extensionCount, log = console
     log(`Package source contains WLD-compatible code extensions: ${extensionCount}`);
     log("");
     log("Extensions can register tools, alter prompts, intercept tool calls, read project/session data, and call external services.");
-    log("RunWeild has not vetted this extension package. It could leak data, run unwanted commands, or cause other issues.");
+    log("RunWield has not vetted this extension package. It could leak data, run unwanted commands, or cause other issues.");
     log("");
     const answer = globalThis.prompt(`Enable extensions from ${source} for loading? [y/N] `) || "";
     return /^(?:y|yes)$/i.test(answer.trim());
@@ -139,7 +139,7 @@ export async function runInstallCommand(argv, _options = {}) {
             log(`  Code extensions ignored: ${ignoredExtensionCount} (missing pi.wld compatibility marker)`);
         }
         if (counts.skills > 0) {
-            log(`  Skills ignored: ${counts.skills} (RunWeild does not load Pi package skills)`);
+            log(`  Skills ignored: ${counts.skills} (RunWield does not load Pi package skills)`);
             log(`  Install skills separately with: npx skills add ${source}`);
             log("  Use -a/--agent to choose the target agent when needed.");
         }

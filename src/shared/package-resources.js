@@ -1,6 +1,6 @@
 /**
  * @module shared/package-resources
- * Helpers for consuming Pi package resources through RunWeild policy.
+ * Helpers for consuming Pi package resources through RunWield policy.
  */
 
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";

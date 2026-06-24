@@ -1,7 +1,7 @@
 /**
  * @module scripts/extract-router-decisions
  *
- * Extract Router triage decisions from persisted RunWeild session JSONL files.
+ * Extract Router triage decisions from persisted RunWield session JSONL files.
  */
 
 import { basename, join } from "@std/path";
@@ -147,7 +147,7 @@ export function extractRouterDecisionsFromEntries(entries, options = {}) {
 
         if (
             (type === "custom" || type === "custom_message") &&
-            entry.customType === "runweild.active_agent" &&
+            entry.customType === "runwield.active_agent" &&
             entry.data && typeof entry.data === "object"
         ) {
             const agentName = /** @type {{ agentName?: unknown }} */ (entry.data).agentName;

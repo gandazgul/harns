@@ -143,17 +143,17 @@ export async function runPlannotatorCodeReview({
     const htmlContent = await loadReviewEditorHtmlImpl();
     const server = await startReviewServerImpl({
         rawPatch: diffText,
-        gitRef: `RunWeild workflow diff: ${planName}`,
+        gitRef: `RunWield workflow diff: ${planName}`,
         htmlContent,
-        origin: "runweild",
+        origin: "runwield",
         agentCwd: executionCwd,
     });
 
-    uiAPI.appendSystemMessage(`Code review UI available at: ${server.url}`, false, "RunWeild");
+    uiAPI.appendSystemMessage(`Code review UI available at: ${server.url}`, false, "RunWield");
 
     const opened = await openInDefaultBrowserImpl(server.url);
     if (!opened) {
-        uiAPI.appendSystemMessage(`Could not auto-open browser. Open manually: ${server.url}`, false, "RunWeild");
+        uiAPI.appendSystemMessage(`Could not auto-open browser. Open manually: ${server.url}`, false, "RunWield");
     }
 
     try {

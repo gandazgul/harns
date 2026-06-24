@@ -1,6 +1,6 @@
 /**
  * @module cmd/version
- * Print runweild version and architecture.
+ * Print runwield version and architecture.
  */
 
 import { VERSION } from "../../shared/version.js";
@@ -8,11 +8,11 @@ import { VERSION } from "../../shared/version.js";
 const TARGET_ARCH = Deno.build.target;
 
 /**
- * Run the version command — prints "runweild <version> (<target-triple>)" to stdout.
+ * Run the version command — prints "runwield <version> (<target-triple>)" to stdout.
  *
  * @returns {Promise<void>}
  */
 export function runVersionCommand() {
-    console.log(`runweild ${VERSION} (${TARGET_ARCH})`);
+    console.log(`runwield ${VERSION} (${TARGET_ARCH})`);
     return Promise.resolve();
 }
