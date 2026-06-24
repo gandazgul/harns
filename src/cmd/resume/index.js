@@ -14,6 +14,7 @@ import { restorePersistedMessagesToUi } from "../../shared/interactive/message-h
 import { getMergedCustomSetting, getSettingsManager } from "../../shared/settings.js";
 import { getModelRegistry } from "../../shared/models/model-registry.js";
 import { resolveResumeAgentName } from "../../shared/session/active-agent-session.js";
+import { setTerminalTitleForSession } from "../../shared/ui/terminal-title.js";
 
 /** Default threshold percentage for compaction-offer prompt. */
 const DEFAULT_COMPACT_ON_RESUME_PCT = 50;
@@ -156,6 +157,7 @@ async function resumeWithManager(rootSessionManager, uiAPI, deps, resumeOptions)
     }
     deps.restorePersistedMessagesToUi(rootSessionManager, uiAPI);
     uiAPI.appendSystemMessage(resumeOptions.message || `Resumed session: ${rootSessionManager.getSessionId()}`);
+    setTerminalTitleForSession(rootSessionManager, Deno.cwd());
 }
 
 /**
