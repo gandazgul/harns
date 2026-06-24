@@ -107,9 +107,9 @@ Deno.test("runPlannotatorCodeReview starts server with diff payload and always s
     assertEquals(openedUrls, ["http://localhost:1234"]);
     assertEquals(serverOptions[0], {
         rawPatch: "diff --git a/src/a.js b/src/a.js\n+change",
-        gitRef: "RunWeild workflow diff: human-review-plan",
+        gitRef: "RunWield workflow diff: human-review-plan",
         htmlContent: "<html>review</html>",
-        origin: "runweild",
+        origin: "runwield",
         agentCwd: "/tmp/worktree",
     });
 });

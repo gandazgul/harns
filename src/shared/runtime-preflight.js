@@ -61,7 +61,7 @@ export async function ensureMnemosyneBinary() {
 
     throw new Error(
         [
-            "[RunWeild] Mnemosyne binary not found in PATH.",
+            "[RunWield] Mnemosyne binary not found in PATH.",
             `Install it: ${MNEMOSYNE_INSTALL_URL}`,
         ].join("\n"),
     );
@@ -89,7 +89,7 @@ export async function ensureCymbalBinary() {
 
     throw new Error(
         [
-            "[RunWeild] Cymbal binary not found in PATH.",
+            "[RunWield] Cymbal binary not found in PATH.",
             `Install it: ${CYMBAL_INSTALL_URL}`,
         ].join("\n"),
     );
@@ -98,7 +98,7 @@ export async function ensureCymbalBinary() {
 /**
  * Check whether Snip is available in PATH.
  *
- * Snip is optional: RunWeild registers its command-prefix extension only when
+ * Snip is optional: RunWield registers its command-prefix extension only when
  * this returns true.
  *
  * @returns {Promise<boolean>}

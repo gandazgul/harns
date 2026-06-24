@@ -1,6 +1,6 @@
 /**
  * @module shared/worktree-registry
- * Durable registry for RunWeild execution worktrees.
+ * Durable registry for RunWield execution worktrees.
  */
 
 import { dirname, join } from "@std/path";

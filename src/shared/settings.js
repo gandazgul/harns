@@ -32,7 +32,7 @@ export function getSettingsDir(scope) {
 }
 
 /**
- * RunWeild custom storage for SettingsManager.
+ * RunWield custom storage for SettingsManager.
  *
  * Implementation Details:
  * - Global Scope:
@@ -55,31 +55,31 @@ function fileExists(path) {
 }
 
 /**
- * One-time import of legacy Pi settings into RunWeild-owned settings.
- * Existing RunWeild settings always win; Pi is never used as a runtime fallback.
+ * One-time import of legacy Pi settings into RunWield-owned settings.
+ * Existing RunWield settings always win; Pi is never used as a runtime fallback.
  *
- * @param {{ homeDir?: string, runweildPath?: string, piPath?: string }} [options]
+ * @param {{ homeDir?: string, runwieldPath?: string, piPath?: string }} [options]
  * @returns {{ copied: boolean, skipped: boolean, error?: string }}
  */
 export function migratePiSettingsOnce(options = {}) {
     const homeDir = options.homeDir ?? Deno.env.get("HOME") ?? "";
-    const runweildPath = options.runweildPath ?? join(homeDir, ".wld", "settings.json");
+    const runwieldPath = options.runwieldPath ?? join(homeDir, ".wld", "settings.json");
     const piPath = options.piPath ?? join(homeDir, ".pi", "agent", "settings.json");
 
-    if (fileExists(runweildPath) || !fileExists(piPath)) {
+    if (fileExists(runwieldPath) || !fileExists(piPath)) {
         return { copied: false, skipped: true };
     }
 
     try {
-        Deno.mkdirSync(dirname(runweildPath), { recursive: true });
-        Deno.copyFileSync(piPath, runweildPath);
+        Deno.mkdirSync(dirname(runwieldPath), { recursive: true });
+        Deno.copyFileSync(piPath, runwieldPath);
         return { copied: true, skipped: false };
     } catch (error) {
         return { copied: false, skipped: false, error: error instanceof Error ? error.message : String(error) };
     }
 }
 
-class RunWeildSettingsStorage {
+class RunWieldSettingsStorage {
     /**
      * Resolves the path for a given scope.
      * @param {"global" | "project"} scope
@@ -98,7 +98,7 @@ class RunWeildSettingsStorage {
     #readSettings(scope) {
         const path = this.#resolvePath(scope);
         if (scope === "global") {
-            migratePiSettingsOnce({ runweildPath: path });
+            migratePiSettingsOnce({ runwieldPath: path });
         }
         try {
             const raw = Deno.readTextFileSync(path);
@@ -165,7 +165,7 @@ class RunWeildSettingsStorage {
         const content = this.#readSettings(scope);
         let newContent = callback(content);
         if (newContent !== undefined) {
-            newContent = preserveRunWeildCustomSettingsForWrite(content, newContent);
+            newContent = preserveRunWieldCustomSettingsForWrite(content, newContent);
         }
         if (newContent !== undefined && newContent !== content) {
             // Ensure the file exists before locking; proper-lockfile requires the
@@ -190,7 +190,7 @@ class RunWeildSettingsStorage {
     }
 }
 
-/** @type {RunWeildSettingsStorage | null} */
+/** @type {RunWieldSettingsStorage | null} */
 let storageInstance = null;
 
 /** @type {SettingsManager | null} */
@@ -201,7 +201,7 @@ let settingsManager = null;
  */
 export function initSettings() {
     if (!settingsManager) {
-        storageInstance = new RunWeildSettingsStorage();
+        storageInstance = new RunWieldSettingsStorage();
         settingsManager = SettingsManager.fromStorage(storageInstance);
     }
 }
@@ -245,15 +245,15 @@ function stripJsoncComments(raw) {
 }
 
 /**
- * Preserve RunWeild custom settings when Pi's SettingsManager writes its known
+ * Preserve RunWield custom settings when Pi's SettingsManager writes its known
  * schema back to disk. Without this, operations like changing theme/model can
- * silently drop RunWeild-only keys such as `modelPresets`.
+ * silently drop RunWield-only keys such as `modelPresets`.
  *
  * @param {string | undefined} previousContent
  * @param {string} nextContent
  * @returns {string}
  */
-export function preserveRunWeildCustomSettingsForWrite(previousContent, nextContent) {
+export function preserveRunWieldCustomSettingsForWrite(previousContent, nextContent) {
     if (!previousContent) return nextContent;
 
     try {

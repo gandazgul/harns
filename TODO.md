@@ -34,16 +34,16 @@
 
 ### P2 - Extension and Package Ecosystem
 
-- [ ] Allow explicitly RunWeild-compatible Pi-shaped code extensions:
-      [plans/allow-runweild-compatible-pi-extensions.md](plans/allow-runweild-compatible-pi-extensions.md).
+- [ ] Allow explicitly RunWield-compatible Pi-shaped code extensions:
+      [plans/allow-runwield-compatible-pi-extensions.md](plans/allow-runwield-compatible-pi-extensions.md).
 - [ ] Allow installed Pi packages to contribute passive slash prompt templates:
-      [plans/allow-runweild-compatible-extension-prompts.md](plans/allow-runweild-compatible-extension-prompts.md).
+      [plans/allow-runwield-compatible-extension-prompts.md](plans/allow-runwield-compatible-extension-prompts.md).
 - [ ] Improve install output for ignored package skills:
       [plans/message-for-ignored-pi-package-skills.md](plans/message-for-ignored-pi-package-skills.md).
 - [ ] Build the optional Colgrep semantic search extension:
       [plans/colgrep-semantic-search-extension.md](plans/colgrep-semantic-search-extension.md).
 - [ ] Continue to document that `~/.agents/skills` is the preferred skill-install path instead of implementing native
-      RunWeild skill installation.
+      RunWield skill installation.
 
 ### P3 - Search, Memory, and Metrics
 

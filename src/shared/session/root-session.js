@@ -16,23 +16,23 @@ export function encodeCwdForSessionDir(cwd) {
 }
 
 /**
- * Resolve the root RunWeild sessions base directory.
+ * Resolve the root RunWield sessions base directory.
  *
  * @returns {string}
  */
-export function getRunWeildSessionsBaseDir() {
+export function getRunWieldSessionsBaseDir() {
     const home = Deno.env.get("HOME") || "~";
     return join(home, ".wld", "sessions");
 }
 
 /**
- * Resolve RunWeild root session directory for a cwd.
+ * Resolve RunWield root session directory for a cwd.
  *
  * @param {string} cwd
  * @returns {string}
  */
-export function getRunWeildSessionDir(cwd) {
-    return join(getRunWeildSessionsBaseDir(), encodeCwdForSessionDir(cwd));
+export function getRunWieldSessionDir(cwd) {
+    return join(getRunWieldSessionsBaseDir(), encodeCwdForSessionDir(cwd));
 }
 
 /**
@@ -42,8 +42,8 @@ export function getRunWeildSessionDir(cwd) {
  * @param {string} sessionId
  * @returns {string}
  */
-export function getRunWeildSessionImageDir(cwd, sessionId) {
-    return join(getRunWeildSessionDir(cwd), `${sessionId}_images`);
+export function getRunWieldSessionImageDir(cwd, sessionId) {
+    return join(getRunWieldSessionDir(cwd), `${sessionId}_images`);
 }
 
 /**
@@ -68,7 +68,7 @@ function ensureDir(dir) {
  */
 export async function createRootSessionManager(mode, cwd) {
     const { SessionManager } = await import("@earendil-works/pi-coding-agent");
-    const sessionDir = getRunWeildSessionDir(cwd);
+    const sessionDir = getRunWieldSessionDir(cwd);
     ensureDir(sessionDir);
 
     if (mode === "continue") {
@@ -213,7 +213,7 @@ export async function exportRootSessionToHtml(sessionManager, outputPath) {
         }</header><pre>${escapeHtml(JSON.stringify(entry, null, 2))}</pre></section>`;
     }).join("\n");
 
-    const title = `RunWeild Session Export — ${sessionManager.getSessionId()}`;
+    const title = `RunWield Session Export — ${sessionManager.getSessionId()}`;
     const html = [
         "<!doctype html>",
         "<html lang='en'>",

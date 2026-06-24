@@ -144,7 +144,7 @@ Deno.test("resolveEffectiveSessionToolNames normalizes legacy multi replace tool
 Deno.test("buildAgentSession wires task_completed with agent displayName", async () => {
     /** @type {Array<{ agentName: string, text: string }>} */
     const rendered = [];
-    const debugLogPath = await Deno.makeTempFile({ prefix: "runweild-session-debug-test-", suffix: ".log" });
+    const debugLogPath = await Deno.makeTempFile({ prefix: "runwield-session-debug-test-", suffix: ".log" });
     const uiAPI = /** @type {import('../../ui/types.js').UiAPI} */ ({
         appendSystemMessage: () => {},
         appendAgentMessageStart: (agentName) => ({
@@ -159,7 +159,7 @@ Deno.test("buildAgentSession wires task_completed with agent displayName", async
     /** @type {import('@earendil-works/pi-coding-agent').AgentSession | undefined} */
     let session;
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-session-tools-policy-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-session-tools-policy-" });
 
     try {
         Deno.env.set("HOME", tempHome);
@@ -240,7 +240,7 @@ async function writeVisionModelConfig(tempHome) {
 
 Deno.test("buildAgentSession injects see_image only for text-only model with vision fallback", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-injection-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-see-image-injection-" });
     /** @type {import('@earendil-works/pi-coding-agent').AgentSession[]} */
     const sessions = [];
     try {
@@ -299,7 +299,7 @@ Deno.test("buildAgentSession injects see_image only for text-only model with vis
 
 Deno.test("buildAgentSession omits see_image for text-only model without fallback", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-no-fallback-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-see-image-no-fallback-" });
     /** @type {import('@earendil-works/pi-coding-agent').AgentSession | undefined} */
     let session;
     try {
@@ -333,7 +333,7 @@ Deno.test("buildAgentSession omits see_image for text-only model without fallbac
 
 Deno.test("buildAgentSession fails clearly for invalid vision fallback", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-invalid-fallback-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-see-image-invalid-fallback-" });
     try {
         Deno.env.set("HOME", tempHome);
         __resetSettingsForTests();

@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createEditWithFallbackToolDefinition } from "../../tools/edit-with-fallback.js";
-import { createRunWeildGrepToolDefinition } from "../../tools/grep.js";
+import { createRunWieldGrepToolDefinition } from "../../tools/grep.js";
 import { extractYaml, test as hasFrontMatter } from "@std/front-matter";
 import { dirname, join } from "@std/path";
 import { AGENT_DEFS_DIR, AGENTS, CWD, HOME_DIR, PROMPT_TEMPLATES_DIR, SKILLS_DIR } from "../../constants.js";
@@ -1181,7 +1181,7 @@ export async function buildAgentSession({
 
     // Auto-wire internal custom tools if requested by name and not already provided.
     // This keeps agent frontmatter declarative: adding/removing tool names controls availability,
-    // while RunWeild runtime injects the concrete tool implementations.
+    // while RunWield runtime injects the concrete tool implementations.
 
     if (tools.includes("return_to_router") && !finalCustomTools.find((t) => t.name === "return_to_router")) {
         finalCustomTools.push({
@@ -1221,7 +1221,7 @@ export async function buildAgentSession({
 
     // Override the built-in grep tool to accept shell-shaped multi-path input.
     if (!finalCustomTools.find((t) => t.name === "grep")) {
-        finalCustomTools.push(createRunWeildGrepToolDefinition(sessionCwd));
+        finalCustomTools.push(createRunWieldGrepToolDefinition(sessionCwd));
     }
 
     if (tools.includes("multi_file_edit") && !finalCustomTools.find((t) => t.name === "multi_file_edit")) {
@@ -1266,7 +1266,7 @@ export async function buildAgentSession({
 
     if (!sessionManager && shouldWriteDebugLog(debugLogPath)) {
         const debugMsg =
-            `[RunWeild] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
+            `[RunWield] buildAgentSession("${agentName}"): no sessionManager — using in-memory. Messages will NOT persist.`;
         appendDebugLog(debugLogPath, debugMsg);
     }
 
@@ -1289,12 +1289,12 @@ export async function buildAgentSession({
 
     if (extensionsResult?.errors?.length) {
         for (const err of extensionsResult.errors) {
-            const msg = `[RunWeild] Extension warning (${err.path}): ${err.error}`;
+            const msg = `[RunWield] Extension warning (${err.path}): ${err.error}`;
             if (uiAPI) uiAPI.appendSystemMessage(msg);
             else console.warn(msg);
             if (String(err.error).toLowerCase().includes("mnemosyne")) {
                 const msg2 =
-                    "[RunWeild] Memory extension issue detected. Install mnemosyne: https://github.com/gandazgul/mnemosyne#quick-start";
+                    "[RunWield] Memory extension issue detected. Install mnemosyne: https://github.com/gandazgul/mnemosyne#quick-start";
                 if (uiAPI) uiAPI.appendSystemMessage(msg2);
                 else console.warn(msg2);
             }

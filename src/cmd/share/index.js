@@ -75,7 +75,7 @@ export async function runShareCommand(_argv, options = {}) {
         const tmpDir = (deps.tmpDir || (() => Deno.env.get("TMPDIR")))() || "/tmp";
         const sessionId = /** @type {{ getSessionId?: () => string }} */ (sessionManager).getSessionId?.() ||
             String((deps.now || Date.now)());
-        const tmpFile = join(tmpDir, `runweild-session-${sessionId}.html`);
+        const tmpFile = join(tmpDir, `runwield-session-${sessionId}.html`);
         await (deps.exportRootSessionToHtml || exportRootSessionToHtml)(sessionManager, tmpFile);
 
         // 4. Upload to secret Gist

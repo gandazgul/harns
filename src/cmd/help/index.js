@@ -17,7 +17,7 @@ import { getCliCommandDefinitions, getCommandDefinition } from "../registry.js";
  * Print global CLI usage/help text.
  */
 export function printGlobalHelp() {
-    console.log("RunWeild — Plan-by-Default Coding Harness\n");
+    console.log("RunWield — Plan-by-Default Coding Harness\n");
     console.log("Usage:");
     console.log(`  ${CLI_BIN} \"<user request>\"`);
     console.log(`  ${CLI_BIN} --continue \"<optional message>\"`);
@@ -90,7 +90,7 @@ export async function runHelpCommand(argv, options = {}) {
 
     const found = printCommandHelp(commandName);
     if (!found && commandName) {
-        console.error(`[RunWeild] Unknown command for help: ${commandName}`);
+        console.error(`[RunWield] Unknown command for help: ${commandName}`);
         console.log();
         exit(1);
     }

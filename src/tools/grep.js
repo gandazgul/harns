@@ -38,7 +38,7 @@ const grepSchema = Type.Object({
  *   literal?: boolean,
  *   context?: number,
  *   limit?: number,
- * }} RunWeildGrepParams
+ * }} RunWieldGrepParams
  *
  * @typedef {{
  *   path: string,
@@ -173,19 +173,19 @@ function displayPath(targetPath, cwd) {
 
 /**
  * @param {unknown} input
- * @returns {RunWeildGrepParams}
+ * @returns {RunWieldGrepParams}
  */
 function prepareGrepArguments(input) {
     if (!input || typeof input !== "object") {
-        return /** @type {RunWeildGrepParams} */ (input);
+        return /** @type {RunWieldGrepParams} */ (input);
     }
 
     const args = /** @type {Record<string, unknown>} */ (input);
     if (args.path === undefined && Array.isArray(args.paths)) {
-        return /** @type {RunWeildGrepParams} */ ({ ...args, path: args.paths });
+        return /** @type {RunWieldGrepParams} */ ({ ...args, path: args.paths });
     }
 
-    return /** @type {RunWeildGrepParams} */ (input);
+    return /** @type {RunWieldGrepParams} */ (input);
 }
 
 /**
@@ -316,7 +316,7 @@ function mergeDetails(results) {
  * @param {string} cwd
  * @returns {import('@earendil-works/pi-coding-agent').ToolDefinition<any, any>}
  */
-export function createRunWeildGrepToolDefinition(cwd) {
+export function createRunWieldGrepToolDefinition(cwd) {
     const original = createGrepToolDefinition(cwd);
     const originalExecute = original.execute;
     const tool = /** @type {import('@earendil-works/pi-coding-agent').ToolDefinition<any, any>} */ (original);
@@ -331,7 +331,7 @@ export function createRunWeildGrepToolDefinition(cwd) {
     tool.parameters = grepSchema;
     tool.prepareArguments = prepareGrepArguments;
     tool.execute = async (toolCallId, params, signal, onUpdate, ctx) => {
-        const grepParams = /** @type {RunWeildGrepParams} */ (params);
+        const grepParams = /** @type {RunWieldGrepParams} */ (params);
         const targets = await buildSearchTargets(grepParams.path, grepParams.glob, cwd);
 
         if (targets.length === 1 && !Array.isArray(grepParams.path) && !targets[0].forcePrefix) {

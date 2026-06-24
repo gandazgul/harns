@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${WLD_REPO:-gandazgul/runweild}"
+REPO="${WLD_REPO:-gandazgul/runwield}"
 REQUESTED_VERSION="${1:-}"
 
 need_cmd() {
@@ -192,7 +192,7 @@ prompt_add_path_to_profile() {
 
   mkdir -p "$(dirname "$config_file")"
   touch "$config_file"
-  printf '\n# RunWeild\n%s\n' "$command" >> "$config_file"
+  printf '\n# RunWield\n%s\n' "$command" >> "$config_file"
   echo "[wld installer] Added ${bin_dir} to ${config_file}."
 }
 
@@ -232,7 +232,7 @@ prompt_install_snip_filters() {
   ( : <>/dev/tty ) 2>/dev/null || return 0
 
   exec 3<>/dev/tty
-  printf "[wld installer] Install RunWeild Deno Snip filters into ~/.config/snip/filters for plain snip commands? [Y/n] " >&3
+  printf "[wld installer] Install RunWield Deno Snip filters into ~/.config/snip/filters for plain snip commands? [Y/n] " >&3
   if ! IFS= read -r answer <&3; then
     answer=
   fi
@@ -247,7 +247,7 @@ prompt_install_snip_filters() {
   esac
 
   if "$wld_bin" snip-filters install; then
-    echo "[wld installer] RunWeild Deno Snip filters installed."
+    echo "[wld installer] RunWield Deno Snip filters installed."
     echo "[wld installer] To remove them later, run: wld snip-filters cleanup"
   else
     echo "[wld installer] Snip filter install failed. You can retry with: wld snip-filters install" >&2

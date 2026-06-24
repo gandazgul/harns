@@ -57,7 +57,7 @@ Deno.test("extractRouterDecisionsFromEntries pairs router user request with tria
     const rows = extractRouterDecisionsFromEntries([
         { type: "session", id: "s1" },
         { type: "model_change", provider: "ollama-cloud", modelId: "gemma4:31b-cloud" },
-        { type: "custom", customType: "runweild.active_agent", data: { agentName: "router" } },
+        { type: "custom", customType: "runwield.active_agent", data: { agentName: "router" } },
         {
             type: "message",
             id: "u1",

@@ -1,7 +1,7 @@
 ---
 classification: "FEATURE"
 complexity: "MEDIUM"
-summary: "Allow RunWeild to install and load explicitly WLD-compatible Pi-shaped code extension packages after clear user consent, while keeping passive themes and prompts unchanged."
+summary: "Allow RunWield to install and load explicitly WLD-compatible Pi-shaped code extension packages after clear user consent, while keeping passive themes and prompts unchanged."
 affectedPaths:
     - "src/cmd/install/index.js"
     - "src/cmd/install/index.test.js"
@@ -19,23 +19,23 @@ status: "verified"
 
 ## Context
 
-RunWeild currently wraps Pi's package manager for install/remove, and external themes and package prompt templates are
+RunWield currently wraps Pi's package manager for install/remove, and external themes and package prompt templates are
 already registered at runtime. Themes and prompts should continue to work as they do today because they are passive
 resources.
 
 Installed Pi extension resources are counted as ignored because arbitrary extension logic has real power: extensions can
 register tools, alter prompts, intercept tool calls, read project/session data, call external services, and mutate agent
 behavior. At the same time, optional code extensions are the right shape for features like Colgrep semantic search,
-where users should opt in instead of making the dependency part of core RunWeild.
+where users should opt in instead of making the dependency part of core RunWield.
 
 ## Objective
 
-Enable RunWeild to install and load a narrow class of Pi-shaped code extension packages that explicitly declare WLD
+Enable RunWield to install and load a narrow class of Pi-shaped code extension packages that explicitly declare WLD
 compatibility and receive user consent during install. Continue registering themes and prompt templates through their
 existing passive-resource paths. Continue ignoring skills in this feature.
 
 The package metadata annotation is author self-attestation: it means the package author says the extension was made for
-WLD/RunWeild or tested with WLD/RunWeild. It is not vetting by RunWeild and is not a security guarantee. RunWeild must
+WLD/RunWield or tested with WLD/RunWield. It is not vetting by RunWield and is not a security guarantee. RunWield must
 make executable extension loading visible, testable, and gated by an explicit user yes/no prompt.
 
 ## Approach
@@ -43,9 +43,9 @@ make executable extension loading visible, testable, and gated by an explicit us
 Introduce two gates on top of Pi package resolution:
 
 1. **Package self-attestation:** Pi packages may still use `pi.extensions` to point at extension entry files, but
-   RunWeild only considers those entries when the package also declares a WLD-specific annotation.
-2. **User consent:** before any compatible code extension is enabled for loading, RunWeild asks the user to consent
-   after a clear warning that extension code is powerful, not vetted by RunWeild, and may leak data or cause other
+   RunWield only considers those entries when the package also declares a WLD-specific annotation.
+2. **User consent:** before any compatible code extension is enabled for loading, RunWield asks the user to consent
+   after a clear warning that extension code is powerful, not vetted by RunWield, and may leak data or cause other
    issues.
 
 Example package metadata:
@@ -64,7 +64,7 @@ Example package metadata:
 ```
 
 The compatibility marker must live in package metadata, not inside the extension's runtime code. The install flow is the
-consent boundary: if the user agrees, RunWeild persists the package entry with its compatible extension resources
+consent boundary: if the user agrees, RunWield persists the package entry with its compatible extension resources
 enabled; after that, installed WLD-compatible extension resources are loaded like any other installed package resource.
 
 When `wld install <source>` finds one or more WLD-compatible code extensions, show a prompt like:
@@ -73,7 +73,7 @@ When `wld install <source>` finds one or more WLD-compatible code extensions, sh
 Package source contains WLD-compatible code extensions: 2
 
 Extensions can register tools, alter prompts, intercept tool calls, read project/session data, and call external
-services. RunWeild has not vetted this extension package. It could leak data, run unwanted commands, or cause other
+services. RunWield has not vetted this extension package. It could leak data, run unwanted commands, or cause other
 issues.
 
 Enable these extensions for loading? [y/N]
@@ -84,7 +84,7 @@ user answers no or the install is running non-interactively without an affirmati
 resources as usual but leave extension resources out of the persisted package entry and report the compatible extensions
 as skipped.
 
-RunWeild should resolve installed packages through Pi's `DefaultPackageManager`, continue handing theme resources to the
+RunWield should resolve installed packages through Pi's `DefaultPackageManager`, continue handing theme resources to the
 existing theme registry, keep package prompt handling separate, filter only extension resources to compatible and
 installed package entries, pass those extension paths to `DefaultResourceLoader`, and report ignored resources clearly.
 
@@ -103,7 +103,7 @@ installed package entries, pass those extension paths to `DefaultResourceLoader`
   `pi.wld`, and filtering resolved Pi extension resources to the WLD-compatible subset.
 - `src/shared/extensions/wld-extension-manifest.test.js` - cover manifest parsing, missing metadata, incompatible
   packages, local paths, npm/git package metadata, malformed package files, and enabled/skipped resource filtering.
-- `src/cmd/registry.js` - update install/reload help text so RunWeild no longer claims all logic extensions are ignored.
+- `src/cmd/registry.js` - update install/reload help text so RunWield no longer claims all logic extensions are ignored.
 - `docs/settings.md` - document the WLD extension compatibility marker, install behavior, consent prompt, and security
   posture.
 
@@ -126,7 +126,7 @@ installed package entries, pass those extension paths to `DefaultResourceLoader`
 - [x] Update `runInstallCommand` to count compatible extensions separately from ignored extensions, while still ignoring
       skills.
 - [x] Add an install consent prompt for compatible extensions. The prompt must default to no and clearly state that
-      extensions are powerful code, not vetted by RunWeild, and may leak data or cause other issues.
+      extensions are powerful code, not vetted by RunWield, and may leak data or cause other issues.
 - [x] When the user consents, keep compatible extension resources enabled in the installed package entry. When the user
       declines, persist `extensions: []` while still allowing passive resources from the package.
 - [x] Update install tests to assert that compatible extension resources are reported as enabled/loadable only after
@@ -146,18 +146,18 @@ installed package entries, pass those extension paths to `DefaultResourceLoader`
 - Automated:
   `deno test src/cmd/install/index.test.js src/shared/extensions/wld-extension-manifest.test.js src/shared/session/session-catalog.test.js`
 - Automated: `deno run ci`
-- Manual: install a fixture package with `pi.wld.compatible: true`, answer yes to the warning, and confirm RunWeild
+- Manual: install a fixture package with `pi.wld.compatible: true`, answer yes to the warning, and confirm RunWield
   reports the extension as loadable.
-- Manual: install a fixture package with `pi.wld.compatible: true`, answer no to the warning, and confirm RunWeild keeps
+- Manual: install a fixture package with `pi.wld.compatible: true`, answer no to the warning, and confirm RunWield keeps
   passive resources but does not persist/load extension resources.
-- Manual: install a fixture package with plain `pi.extensions` but no WLD marker and confirm RunWeild reports it as
+- Manual: install a fixture package with plain `pi.extensions` but no WLD marker and confirm RunWield reports it as
   ignored and does not load it.
 
 ## Edge Cases & Considerations
 
 - Extension code can mutate agent behavior through Pi hooks and access sensitive local context. Compatibility
   self-attestation plus install-time user consent is an explicit trusted-code decision, not a sandbox.
-- RunWeild should not auto-load arbitrary `.pi/extensions` directories or plain Pi package extensions just because Pi
+- RunWield should not auto-load arbitrary `.pi/extensions` directories or plain Pi package extensions just because Pi
   can discover them.
 - Themes are explicitly out of the new trust gate. They should keep working as passive JSON resources with the existing
   theme precedence and validation behavior.

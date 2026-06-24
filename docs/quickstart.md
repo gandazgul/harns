@@ -1,6 +1,6 @@
 # Quickstart
 
-This page gets you from install to a useful first RunWeild session.
+This page gets you from install to a useful first RunWield session.
 
 For terminal setup, keybindings, and model-provider background that are inherited from Pi, see the
 [Pi Quickstart](https://pi.dev/docs/latest/quickstart).
@@ -10,7 +10,7 @@ For terminal setup, keybindings, and model-provider background that are inherite
 On macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gandazgul/runweild/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gandazgul/runwield/main/install.sh | bash
 ```
 
 The installer installs the `wld` binary to `~/.local/bin` by default. If your shell cannot find `wld`, add the install
@@ -20,7 +20,7 @@ To choose a different install directory:
 
 ```bash
 WLD_INSTALL_DIR="$HOME/bin" \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/gandazgul/runweild/main/install.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/gandazgul/runwield/main/install.sh)"
 ```
 
 ## Run from source
@@ -40,17 +40,17 @@ deno task compile
 
 ## Runtime helpers
 
-Interactive RunWeild workflows expect these tools to be available when you want the full experience:
+Interactive RunWield workflows expect these tools to be available when you want the full experience:
 
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) - project/global memory.
 - [`cymbal`](https://github.com/1broseidon/cymbal) - symbol-aware code search and impact analysis.
 - [`snip`](https://github.com/edouard-claude/snip) - optional compact shell-output rewriting.
 
-RunWeild still starts if Snip is missing. Memory and code-intelligence features require their corresponding binaries.
+RunWield still starts if Snip is missing. Memory and code-intelligence features require their corresponding binaries.
 
 ## Authenticate
 
-Start RunWeild in a project directory:
+Start RunWield in a project directory:
 
 ```bash
 cd /path/to/project
@@ -63,7 +63,7 @@ Then run:
 /login
 ```
 
-Choose a subscription provider or API-key provider. RunWeild stores credentials in `~/.wld/auth.json`.
+Choose a subscription provider or API-key provider. RunWield stores credentials in `~/.wld/auth.json`.
 
 You can also use provider API keys through environment variables where supported by Pi's provider system. See
 [Pi Providers](https://pi.dev/docs/latest/providers) for provider-specific setup.
@@ -76,7 +76,7 @@ Run:
 wld init
 ```
 
-This bootstraps durable RunWeild context:
+This bootstraps durable RunWield context:
 
 - explores the repository,
 - writes `CONTEXT.md`,
@@ -122,7 +122,7 @@ wld version
 
 ## Next steps
 
-- [Using RunWeild](usage.md) - day-to-day workflow and commands.
-- [Plans and workflows](workflows.md) - RunWeild planning and validation behavior.
-- [Providers and models](providers.md) - RunWeild-specific provider paths.
+- [Using RunWield](usage.md) - day-to-day workflow and commands.
+- [Plans and workflows](workflows.md) - RunWield planning and validation behavior.
+- [Providers and models](providers.md) - RunWield-specific provider paths.
 - [Settings Reference](settings.md) - configure defaults and agent model overrides.

@@ -1,6 +1,6 @@
 # Customization
 
-RunWeild keeps Pi's customizable terminal-agent foundation and adds RunWeild-specific layers for agents, prompts,
+RunWield keeps Pi's customizable terminal-agent foundation and adds RunWield-specific layers for agents, prompts,
 skills, settings, and themes.
 
 For the full upstream concepts, see:
@@ -12,11 +12,11 @@ For the full upstream concepts, see:
 
 ## Layering model
 
-RunWeild resolves customization in this order:
+RunWield resolves customization in this order:
 
 1. Project-local `.wld/`
 2. Home `~/.wld/`
-3. Bundled defaults in the RunWeild install
+3. Bundled defaults in the RunWield install
 
 Project-local resources override home resources, which override bundled resources.
 
@@ -31,7 +31,7 @@ Project settings override global settings. See [Settings Reference](settings.md)
 
 ## Agents
 
-Agent definitions are Markdown files. RunWeild looks for them in:
+Agent definitions are Markdown files. RunWield looks for them in:
 
 1. `.wld/agents/`
 2. `~/.wld/agents/`
@@ -43,7 +43,7 @@ Use agent overrides when you want to change prompts, role behavior, or tool acce
 
 Prompt templates can become slash commands when they do not collide with built-in commands.
 
-RunWeild loads prompts from:
+RunWield loads prompts from:
 
 1. `.wld/prompts/`
 2. `~/.wld/prompts/`
@@ -51,12 +51,12 @@ RunWeild loads prompts from:
 4. installed Pi package `pi.prompts` resources
 
 Installed package prompts are passive Markdown templates. They do not need the code-extension compatibility marker, but
-they cannot override built-in slash command names. RunWeild warns at startup when a package prompt is blocked by a
+they cannot override built-in slash command names. RunWield warns at startup when a package prompt is blocked by a
 built-in command collision. Run `/reload` after editing prompts in an active session.
 
 ## Skills
 
-RunWeild loads skills from:
+RunWield loads skills from:
 
 1. project skills: `.wld/skills/`
 2. home skills: `~/.wld/skills/`
@@ -74,7 +74,7 @@ documentation.
 
 ## Themes
 
-RunWeild includes an embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
+RunWield includes an embedded `catppuccin-mocha` theme and supports theme packages from npm, git, or local paths.
 
 ```bash
 wld theme --list

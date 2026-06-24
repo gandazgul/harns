@@ -26,7 +26,7 @@ Deno.test("isWldCompatibleExtensionManifest recognizes the WLD code-extension ma
 });
 
 Deno.test("filterWldCompatibleExtensionResources returns enabled package resources with compatible package metadata", async () => {
-    const root = await Deno.makeTempDir({ prefix: "runweild-wld-extension-" });
+    const root = await Deno.makeTempDir({ prefix: "runwield-wld-extension-" });
     const compatiblePath = join(root, "compatible.js");
     const incompatibleRoot = join(root, "incompatible");
     const incompatiblePath = join(incompatibleRoot, "index.js");
@@ -81,7 +81,7 @@ Deno.test("filterWldCompatibleExtensionResources returns enabled package resourc
 });
 
 Deno.test("findPackageRootForExtensionResource ascends from nested extension files", async () => {
-    const root = await Deno.makeTempDir({ prefix: "runweild-wld-extension-root-" });
+    const root = await Deno.makeTempDir({ prefix: "runwield-wld-extension-root-" });
     const nested = join(root, "src", "extensions");
     const extensionPath = join(nested, "index.js");
 
@@ -105,7 +105,7 @@ Deno.test("findPackageRootForExtensionResource ascends from nested extension fil
 });
 
 Deno.test("resolveInstalledWldExtensionResources skips missing packages and filters compatible extensions", async () => {
-    const root = await Deno.makeTempDir({ prefix: "runweild-wld-extension-resolve-" });
+    const root = await Deno.makeTempDir({ prefix: "runwield-wld-extension-resolve-" });
     const extensionPath = join(root, "index.js");
     /** @type {string[]} */
     const missingActions = [];

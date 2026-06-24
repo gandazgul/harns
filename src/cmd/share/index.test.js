@@ -61,7 +61,7 @@ Deno.test("runShareCommand checks gh, exports, uploads, and cleans up", async ()
                     exported.push(`${manager === sessionManager}:${outPath}`);
                     return Promise.resolve();
                 },
-                tmpDir: () => "/tmp/runweild-share",
+                tmpDir: () => "/tmp/runwield-share",
                 remove: (/** @type {string} */ path) => {
                     removed.push(path);
                     return Promise.resolve();
@@ -79,10 +79,10 @@ Deno.test("runShareCommand checks gh, exports, uploads, and cleans up", async ()
     assertEquals(calls, [
         { cmd: "gh", args: ["--version"] },
         { cmd: "gh", args: ["auth", "status"] },
-        { cmd: "gh", args: ["gist", "create", "--public=false", "/tmp/runweild-share/runweild-session-abc.html"] },
+        { cmd: "gh", args: ["gist", "create", "--public=false", "/tmp/runwield-share/runwield-session-abc.html"] },
     ]);
-    assertEquals(exported, ["true:/tmp/runweild-share/runweild-session-abc.html"]);
-    assertEquals(removed, ["/tmp/runweild-share/runweild-session-abc.html"]);
+    assertEquals(exported, ["true:/tmp/runwield-share/runwield-session-abc.html"]);
+    assertEquals(removed, ["/tmp/runwield-share/runwield-session-abc.html"]);
     assertEquals(messages, ["Session shared successfully!\nhttps://gist.example/1"]);
 });
 

@@ -42,7 +42,7 @@ export function formatTaskCompletedMarkdown(message) {
  * @param {unknown} message
  */
 export function appendTaskCompletedMessage(uiAPI, agentName, message) {
-    const displayName = agentName || "RunWeild";
+    const displayName = agentName || "RunWield";
     const markdown = formatTaskCompletedMarkdown(message);
 
     const appender = uiAPI.appendAgentMessageStart?.(displayName);

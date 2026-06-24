@@ -199,7 +199,7 @@ export async function isInitOffered() {
 }
 
 /**
- * Check whether RunWeild should show the missing-Snip boot warning for this CWD.
+ * Check whether RunWield should show the missing-Snip boot warning for this CWD.
  *
  * @param {number} [limit]
  * @returns {Promise<boolean>}
@@ -210,7 +210,7 @@ export async function shouldShowSnipMissingWarning(limit = 3) {
 }
 
 /**
- * Record that RunWeild showed the missing-Snip boot warning for this CWD.
+ * Record that RunWield showed the missing-Snip boot warning for this CWD.
  *
  * @returns {Promise<void>}
  */

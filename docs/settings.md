@@ -1,15 +1,15 @@
 # Settings Reference
 
-RunWeild reads settings from JSONC files, so comments and trailing commas are allowed.
+RunWield reads settings from JSONC files, so comments and trailing commas are allowed.
 
 - Global settings: `~/.wld/settings.json`
 - Project settings: `<project>/.wld/settings.json`
 
 Project settings override global settings. For ordinary Pi-backed settings, nested objects are shallow-merged and arrays
-replace the global value. For RunWeild custom object keys such as `agents` and `modelPresets`, RunWeild merges the
+replace the global value. For RunWield custom object keys such as `agents` and `modelPresets`, RunWield merges the
 top-level object keys only, so a project `agents.router` object replaces the global `agents.router` object.
 
-If `~/.wld/settings.json` does not exist, RunWeild imports `~/.pi/agent/settings.json` once. After that, RunWeild only
+If `~/.wld/settings.json` does not exist, RunWield imports `~/.pi/agent/settings.json` once. After that, RunWield only
 reads and writes `~/.wld/settings.json`.
 
 Run `/reload` in an active TUI session after editing settings by hand. `/reload` refreshes settings, the active theme,
@@ -121,7 +121,7 @@ Agent object values:
 
 Type: string.
 
-Names the active entry in `modelPresets`. If unset, missing, or unknown, RunWeild uses the base `agents` overrides. If a
+Names the active entry in `modelPresets`. If unset, missing, or unknown, RunWield uses the base `agents` overrides. If a
 session has a manual `/model` override, the manual override wins until the active agent changes.
 
 ### `modelPresets`
@@ -146,7 +146,7 @@ Defines named groups of agent overrides:
 
 Each preset has the same `agents.<agentName>.model`, `agents.<agentName>.thinkingLevel`, and
 `agents.<agentName>.temperature` shape as the base `agents` key. Presets are partial: if the active preset does not
-define a value for an agent, RunWeild falls back to that agent's base `agents` entry.
+define a value for an agent, RunWield falls back to that agent's base `agents` entry.
 
 ### visionFallback
 
@@ -186,13 +186,13 @@ Example with LM Studio and Gemma 4 12B:
 ```
 
 Gemma 4 12B is a recommended local image-description fallback when available in LM Studio. Configure the LM Studio
-provider/model in RunWeild' model registry with image input support and auth/base URL as usual, then set
+provider/model in RunWield' model registry with image input support and auth/base URL as usual, then set
 `visionFallback.model` to that `provider/model_id`.
 
 Behavior:
 
 - Vision-capable active model: images are sent directly; `see_image` is not injected just because fallback exists.
-- Text-only active model with fallback: image paste/submission is allowed, RunWeild warns that `visionFallback.model`
+- Text-only active model with fallback: image paste/submission is allowed, RunWield warns that `visionFallback.model`
   will describe images, raw image bytes are withheld from the primary model, and `see_image` can inspect
   `attachment:<uuid>` or safe project-relative image paths.
 - Text-only active model without fallback: image paste/submission is blocked non-destructively with:
@@ -205,7 +205,7 @@ See docs/settings.md#visionfallback to configure an image fallback model.
 #### Declaring vision support for discovered models
 
 OpenAI-compatible `/models` endpoints (used to auto-discover models for providers configured with only `baseUrl` +
-`apiKey` in `~/.wld/models.json`) do not report per-model input modalities. RunWeild therefore registers discovered
+`apiKey` in `~/.wld/models.json`) do not report per-model input modalities. RunWield therefore registers discovered
 models as **text-only** by default — sending raw image bytes to a text-only model can fail silently on some providers.
 
 To mark specific discovered models as vision-capable, add an `imageInputModels` array to the provider entry in
@@ -240,7 +240,7 @@ Model resolution for an agent invocation:
 5. `defaultProvider` plus `defaultModel`.
 6. Layered agent definition frontmatter `model` (`./.wld` > `~/.wld` > bundled).
 
-If none of these resolve to a registered, authenticated model, RunWeild reports an error instead of falling through to
+If none of these resolve to a registered, authenticated model, RunWield reports an error instead of falling through to
 the underlying agent library's built-in fallback.
 
 Thinking level resolution:
@@ -257,9 +257,9 @@ Temperature resolution:
 3. Layered agent definition frontmatter `temperature` (`./.wld` > `~/.wld` > bundled).
 4. Unset, letting the provider/model default apply.
 
-## RunWeild Custom Keys
+## RunWield Custom Keys
 
-These keys are read by RunWeild outside the upstream Pi `SettingsManager` schema.
+These keys are read by RunWield outside the upstream Pi `SettingsManager` schema.
 
 | Key                               | Type    | Values / default                        | Scope            | Description                                                                                                                                                                        |
 | --------------------------------- | ------- | --------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -268,10 +268,10 @@ These keys are read by RunWeild outside the upstream Pi `SettingsManager` schema
 | `modelPresets`                    | object  | preset-name map                         | global + project | Named per-agent override sets.                                                                                                                                                     |
 | `visionFallback`                  | object  | unset                                   | global + project | Vision-capable fallback model used by `see_image` when the active model is text-only.                                                                                              |
 | `compactOnResumeThresholdPercent` | integer | `1`-`100`, default `50`                 | global + project | `/resume` offers compaction when estimated context reaches this percentage of the selected model context window.                                                                   |
-| `verification_command`            | string  | no default                              | project          | Command used by workflow validation. Saved when RunWeild asks for a validation command.                                                                                            |
+| `verification_command`            | string  | no default                              | project          | Command used by workflow validation. Saved when RunWield asks for a validation command.                                                                                            |
 | `codereview`                      | string  | `none`, `ask`, `always`; default `none` | global + project | Optional Plannotator human code review gate after local validation and semantic review pass, before merge-back. Invalid values fall back to `none`.                                |
 | `cleanupMergedWorktrees`          | boolean | default `true`                          | global + project | When true, successful merge-back removes the execution checkout, deletes its registry entry, and clears plan worktree metadata. Set false to keep merged worktrees for inspection. |
-| `enableExternalSkills`            | boolean | default `true`                          | global           | When true, RunWeild includes skills from `~/.agents/skills` after local, home, and bundled RunWeild skills.                                                                        |
+| `enableExternalSkills`            | boolean | default `true`                          | global           | When true, RunWield includes skills from `~/.agents/skills` after local, home, and bundled RunWield skills.                                                                        |
 | `enableExternalGlobalAgentsMd`    | boolean | default `true`                          | global           | When true, global prompt loading includes `~/.agents/AGENTS.md` after `~/.wld/RUNWEILD.md` and `~/.wld/AGENTS.md`.                                                                 |
 
 ### `codereview`
@@ -286,7 +286,7 @@ Values:
   review.
 - `always`: open the Plannotator code review UI automatically after semantic review passes.
 
-RunWeild trims and normalizes this value case-insensitively; invalid or missing values behave as `none`.
+RunWield trims and normalizes this value case-insensitively; invalid or missing values behave as `none`.
 
 Example:
 
@@ -298,7 +298,7 @@ Example:
 
 ## Pi-Backed Keys
 
-These keys come from the upstream `@earendil-works/pi-coding-agent` settings schema used by RunWeild.
+These keys come from the upstream `@earendil-works/pi-coding-agent` settings schema used by RunWield.
 
 | Key                      | Type         | Values / default                                                             | Description                                                                                                                   |
 | ------------------------ | ------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -317,7 +317,7 @@ These keys come from the upstream `@earendil-works/pi-coding-agent` settings sch
 | `npmCommand`             | string array | unset                                                                        | Command argv used for npm package lookup and install operations.                                                              |
 | `collapseChangelog`      | boolean      | default `false`                                                              | Show condensed changelog after updates.                                                                                       |
 | `enableInstallTelemetry` | boolean      | default `true`                                                               | Send anonymous version/update ping after changelog-detected updates.                                                          |
-| `packages`               | array        | default `[]`                                                                 | Installed npm/git/local package sources. RunWeild registers theme resources and package prompt templates from these packages. |
+| `packages`               | array        | default `[]`                                                                 | Installed npm/git/local package sources. RunWield registers theme resources and package prompt templates from these packages. |
 | `extensions`             | string array | default `[]`                                                                 | Local extension file paths or directories.                                                                                    |
 | `skills`                 | string array | default `[]`                                                                 | Local skill file paths or directories.                                                                                        |
 | `prompts`                | string array | default `[]`                                                                 | Local prompt template file paths or directories.                                                                              |
@@ -423,16 +423,16 @@ Object fields:
 - `prompts`: prompt template files to load from the package.
 - `themes`: theme JSON files to load from the package.
 
-RunWeild loads passive package prompt templates from `pi.prompts` without requiring an executable-extension
-compatibility marker. Package prompts are appended after project, home, and bundled RunWeild prompts, so they cannot
+RunWield loads passive package prompt templates from `pi.prompts` without requiring an executable-extension
+compatibility marker. Package prompts are appended after project, home, and bundled RunWield prompts, so they cannot
 silently replace those templates. If a package prompt name collides with a built-in slash command such as `/help`,
-`/agent`, or `/theme`, the built-in command wins and RunWeild shows a startup warning for the blocked package prompt.
+`/agent`, or `/theme`, the built-in command wins and RunWield shows a startup warning for the blocked package prompt.
 
-RunWeild still ignores Pi package skills. When `wld install <source>` finds package skills, it reports them as ignored
+RunWield still ignores Pi package skills. When `wld install <source>` finds package skills, it reports them as ignored
 and prints `npx skills add <source>` guidance so users can install them through the external skills CLI instead.
-RunWeild does not shell out to `npx`, copy package skills, or mutate skill directories.
+RunWield does not shell out to `npx`, copy package skills, or mutate skill directories.
 
-Pi code extensions are not loaded from packages by default because they can execute arbitrary extension logic. RunWeild
+Pi code extensions are not loaded from packages by default because they can execute arbitrary extension logic. RunWield
 only loads package code extensions when both conditions are met:
 
 1. The package declares WLD compatibility in package metadata:
@@ -450,16 +450,16 @@ only loads package code extensions when both conditions are met:
 }
 ```
 
-2. The user approves the install-time warning. Extension packages are not vetted by RunWeild. They can register tools,
+2. The user approves the install-time warning. Extension packages are not vetted by RunWield. They can register tools,
    alter prompts, intercept tool calls, read project/session data, call external services, leak data, run unwanted
    commands, or cause other issues.
 
-If the user declines extension loading, RunWeild keeps passive resources from the package but persists the package with
+If the user declines extension loading, RunWield keeps passive resources from the package but persists the package with
 `extensions: []` so code extension paths are skipped. Theme package behavior is covered in [themes.md](themes.md).
 
 ## Legacy Migrations
 
-RunWeild and Pi migrate a few older key shapes while loading settings:
+RunWield and Pi migrate a few older key shapes while loading settings:
 
 - `queueMode` becomes `steeringMode` when `steeringMode` is not already set.
 - `websockets: true` becomes `transport: "websocket"`; `websockets: false` becomes `transport: "sse"`.

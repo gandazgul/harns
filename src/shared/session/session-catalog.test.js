@@ -60,8 +60,8 @@ Deno.test("listPromptTemplates gives local templates precedence and parses metad
     }
 });
 
-Deno.test("listPromptTemplates includes installed package prompts after RunWeild prompts", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-package-prompts-" });
+Deno.test("listPromptTemplates includes installed package prompts after RunWield prompts", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-package-prompts-" });
     const promptPath = join(tempDir, "explain.md");
     try {
         await Deno.writeTextFile(
@@ -102,7 +102,7 @@ Deno.test("listPromptTemplates includes installed package prompts after RunWeild
 });
 
 Deno.test("expandPromptTemplate strips front matter and appends user instructions", async () => {
-    const path = await Deno.makeTempFile({ prefix: "runweild-template-", suffix: ".md" });
+    const path = await Deno.makeTempFile({ prefix: "runwield-template-", suffix: ".md" });
     try {
         await Deno.writeTextFile(
             path,
@@ -204,7 +204,7 @@ Deno.test("bundled agent defs path and loaded instruction files are reported", a
 });
 
 Deno.test("readGlobalAgentMd falls through configured global instruction paths", async () => {
-    const home = await Deno.makeTempDir({ prefix: "runweild-global-agent-md-" });
+    const home = await Deno.makeTempDir({ prefix: "runwield-global-agent-md-" });
     const wldDir = join(home, ".wld");
     const externalDir = join(home, ".agents");
     await Deno.mkdir(wldDir, { recursive: true });
@@ -213,12 +213,12 @@ Deno.test("readGlobalAgentMd falls through configured global instruction paths",
         await Deno.writeTextFile(join(externalDir, "AGENTS.md"), "External instructions");
         assertEquals(await readGlobalAgentMd(home), "External instructions");
 
-        await Deno.writeTextFile(join(wldDir, "AGENTS.md"), "Legacy RunWeild instructions");
-        assertEquals(await readGlobalAgentMd(home), "Legacy RunWeild instructions");
+        await Deno.writeTextFile(join(wldDir, "AGENTS.md"), "Legacy RunWield instructions");
+        assertEquals(await readGlobalAgentMd(home), "Legacy RunWield instructions");
 
-        await Deno.writeTextFile(join(wldDir, "RUNWEILD.md"), "RunWeild instructions");
-        assertEquals(await readGlobalAgentMd(home), "RunWeild instructions");
-        assertEquals(await readGlobalAgentMd(home, { includeExternal: false }), "RunWeild instructions");
+        await Deno.writeTextFile(join(wldDir, "RUNWEILD.md"), "RunWield instructions");
+        assertEquals(await readGlobalAgentMd(home), "RunWield instructions");
+        assertEquals(await readGlobalAgentMd(home, { includeExternal: false }), "RunWield instructions");
     } finally {
         await Deno.remove(home, { recursive: true }).catch(() => {});
     }
@@ -227,7 +227,7 @@ Deno.test("readGlobalAgentMd falls through configured global instruction paths",
 Deno.test("assembleFinalSystemPrompt fills tools, instruction files, skills, and bundled paths", async () => {
     await cleanupLocalCatalogFixtures();
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-assemble-prompt-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-assemble-prompt-" });
     const projectHarnessPath = join(Deno.cwd(), "RUNWEILD.md");
     const originalProjectHarness = await Deno.readTextFile(projectHarnessPath).catch(() => null);
     const skillDir = join(localSkillsDir, "coverage-skill");

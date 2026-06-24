@@ -40,7 +40,7 @@ Epic "done enough for now"; remaining child FEATURE Plans stay visible and loada
 
 ## Worktree Statuses
 
-Worktree status is stored separately from Plan Status so RunWeild can describe recoverable execution state without
+Worktree status is stored separately from Plan Status so RunWield can describe recoverable execution state without
 changing the Plan state machine.
 
 | Worktree status     | Meaning                                                                                       |
@@ -92,9 +92,9 @@ PROJECT behavior.
 
 ## Execution Worktrees
 
-Before executable implementation starts, RunWeild creates or reuses a git worktree for the plan and records its metadata
+Before executable implementation starts, RunWield creates or reuses a git worktree for the plan and records its metadata
 in the primary plan file and `.wld/worktrees.json`. Agent sessions, built-in file tools, custom edit tools, local CI,
-workflow diffs, reviewer sessions, and repair sessions receive the execution worktree as their cwd. RunWeild does not
+workflow diffs, reviewer sessions, and repair sessions receive the execution worktree as their cwd. RunWield does not
 use `Deno.chdir()` for this because concurrent execution may still exist in future task-based workflows.
 
 The primary checkout remains the metadata root for saved plans, settings, `.wld/worktrees.json`, and
@@ -114,23 +114,23 @@ For worktree-backed plans:
    the primary checkout.
 3. Workflow Validation runs local CI, computes the workflow diff, starts semantic reviewer sessions, and starts repair
    sessions in the execution worktree.
-4. If `codereview` is `ask` or `always`, RunWeild opens or offers Plannotator human code review after semantic review
+4. If `codereview` is `ask` or `always`, RunWield opens or offers Plannotator human code review after semantic review
    passes and before merge-back. Human feedback is sent back to the Engineer in the execution worktree, then validation
    reruns.
-5. If validation fails, RunWeild keeps Plan Status `implemented`, records `worktreeStatus: "validation_failed"`, and
+5. If validation fails, RunWield keeps Plan Status `implemented`, records `worktreeStatus: "validation_failed"`, and
    leaves the worktree for recovery.
-6. If validation passes, RunWeild attempts to merge the execution branch into the primary checkout.
-7. Only after that merge succeeds does RunWeild record `validation_passed` and set Plan Status `verified`. By default,
-   RunWeild removes the execution checkout, deletes its `.wld/worktrees.json` entry, and clears `executionBaselineTree`,
+6. If validation passes, RunWield attempts to merge the execution branch into the primary checkout.
+7. Only after that merge succeeds does RunWield record `validation_passed` and set Plan Status `verified`. By default,
+   RunWield removes the execution checkout, deletes its `.wld/worktrees.json` entry, and clears `executionBaselineTree`,
    `worktreeId`, `worktreePath`, `worktreeBranch`, and `worktreeStatus` from the plan file. If `cleanupMergedWorktrees`
-   is `false`, RunWeild keeps the merged checkout, registry entry, and plan pointers for inspection.
-8. If merge-back fails or is refused because the primary checkout has blocking uncommitted changes, RunWeild records
+   is `false`, RunWield keeps the merged checkout, registry entry, and plan pointers for inspection.
+8. If merge-back fails or is refused because the primary checkout has blocking uncommitted changes, RunWield records
    `worktree_merge_failed`, keeps Plan Status `implemented`, sets `worktreeStatus: "merge_conflict"`, and leaves the
    worktree intact.
 
 Human code review does not add a new primary Plan Status. While human review is pending, returning feedback, or
 canceled, the Plan remains `implemented`. Final `validation_passed` metadata records whether human review was not
-required, skipped, or approved. RunWeild clears stale human-review metadata when execution starts again, when recovery
+required, skipped, or approved. RunWield clears stale human-review metadata when execution starts again, when recovery
 resets a plan, or when a plan is re-opened for review.
 
 For PROJECT Epics, child FEATURE Plans run their own Workflow Validation. The Epic can be marked done enough for now,
@@ -178,14 +178,14 @@ enough for now.
 
 `worktreePath`: Filesystem path to the linked execution worktree.
 
-`worktreeBranch`: Git branch checked out in the execution worktree, usually under `runweild/worktree/`.
+`worktreeBranch`: Git branch checked out in the execution worktree, usually under `runwield/worktree/`.
 
 `worktreeStatus`: Worktree lifecycle state. See [Worktree Statuses](#worktree-statuses).
 
 ## Recovery
 
 Loading an `in_progress`, `failed`, or `implemented` executable Plan starts Plan Recovery. For worktree-backed plans,
-RunWeild resolves worktree context from the plan front matter first and the registry second. Inspect/report shows plan
+RunWield resolves worktree context from the plan front matter first and the registry second. Inspect/report shows plan
 status, worktree status, path, branch, base commit/ref when available, git status, and changes since the execution
 baseline.
 
@@ -217,7 +217,7 @@ Epic using `parentPlan`, and Epics show verified/active/remaining/failed progres
 `wld plans` also shows concise worktree state for plans with worktree metadata:
 
 ```text
-Worktree: validation_failed (runweild/worktree/example-plan-1234abcd)
+Worktree: validation_failed (runwield/worktree/example-plan-1234abcd)
 ```
 
 The parenthesized value is the recorded worktree branch when available, otherwise the path.

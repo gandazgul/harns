@@ -4,7 +4,7 @@ import { AGENTS } from "../../constants.js";
 import { applyAttentionNudge, getGlobalAgentMdPaths, readGlobalAgentMd, runPrompt } from "./session.js";
 
 Deno.test("readGlobalAgentMd falls back from ~/.wld/RUNWEILD.md to ~/.wld/AGENTS.md", async () => {
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-agents-md-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-agents-md-" });
 
     try {
         await Deno.mkdir(join(tempHome, ".wld"), { recursive: true });
@@ -19,7 +19,7 @@ Deno.test("readGlobalAgentMd falls back from ~/.wld/RUNWEILD.md to ~/.wld/AGENTS
 });
 
 Deno.test("readGlobalAgentMd falls back to ~/.agents/AGENTS.md by default", async () => {
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-agents-md-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-agents-md-" });
 
     try {
         await Deno.mkdir(join(tempHome, ".agents"), { recursive: true });
@@ -34,7 +34,7 @@ Deno.test("readGlobalAgentMd falls back to ~/.agents/AGENTS.md by default", asyn
 });
 
 Deno.test("readGlobalAgentMd can disable ~/.agents/AGENTS.md fallback", async () => {
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-agents-md-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-agents-md-" });
 
     try {
         await Deno.mkdir(join(tempHome, ".agents"), { recursive: true });
@@ -93,8 +93,8 @@ Deno.test("applyAttentionNudge only injects scheduled long-lived agent nudges", 
 Deno.test("runPrompt sends fallback image markers without raw image content to text-only model", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-runprompt-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "runweild-runprompt-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-runprompt-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-runprompt-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);

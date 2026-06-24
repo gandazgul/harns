@@ -1,11 +1,11 @@
 # Contributing
 
-Thanks for helping improve RunWeild. RunWeild is source-available and accepts issues and pull requests, but it is not
+Thanks for helping improve RunWield. RunWield is source-available and accepts issues and pull requests, but it is not
 open source yet. Before contributing, read the [license](../LICENSE).
 
 ## Start with the design docs
 
-RunWeild has strong workflow opinions. Before changing behavior, read the docs that explain the current model:
+RunWield has strong workflow opinions. Before changing behavior, read the docs that explain the current model:
 
 ### Architecture Decision Records
 
@@ -46,38 +46,38 @@ Development and interactive workflow testing use these binaries in `PATH`:
 
 - [`mnemosyne`](https://github.com/gandazgul/mnemosyne) for memory-backed agent behavior.
 - [`cymbal`](https://github.com/1broseidon/cymbal) for code intelligence.
-- [`snip`](https://github.com/edouard-claude/snip) for compact command-output rewriting. RunWeild runtime treats Snip as
+- [`snip`](https://github.com/edouard-claude/snip) for compact command-output rewriting. RunWield runtime treats Snip as
   optional and ships bundled filters for compact `deno check`, `deno fmt`, `deno lint`, and `deno test` output.
 
-  **How RunWeild integrates Snip at runtime:**
+  **How RunWield integrates Snip at runtime:**
 
-  During session setup (`src/shared/session/session.js`), RunWeild checks whether `snip` is on `PATH`. If found, it
+  During session setup (`src/shared/session/session.js`), RunWield checks whether `snip` is on `PATH`. If found, it
   registers the `snipExtension` from `src/extensions/snip/index.js` as a `tool_call` event handler.
 
   The extension listens for agent-initiated `bash` tool calls and prefixes simple eligible commands with `snip run --`.
   The bundled Deno filters are installed into Snip's default user filter directory by the installer or by
-  `wld snip-filters install`, so RunWeild does not maintain a separate Snip config. The extension skips non-`bash`
+  `wld snip-filters install`, so RunWield does not maintain a separate Snip config. The extension skips non-`bash`
   tools, empty commands, commands already prefixed with `snip`, and shell builtins such as `cd`. If Snip is missing or
   setup fails for any reason, the original command runs unchanged (fail-open). Manual `!`/`!!` shell shortcuts are never
   rewritten — the hook only intercepts programmatic agent bash tool calls.
 
   To make the bundled Deno filters available to plain Snip commands, run `wld snip-filters install`. This copies
-  RunWeild-managed filters into `~/.config/snip/filters/` without overwriting non-RunWeild files. Remove those
+  RunWield-managed filters into `~/.config/snip/filters/` without overwriting non-RunWield files. Remove those
   user-level copies with `wld snip-filters cleanup`.
 
-  **Why RunWeild uses Snip instead of RTK:**
+  **Why RunWield uses Snip instead of RTK:**
 
-  RunWeild switched from RTK to Snip because runtime command optimization must preserve agent trust in command output.
+  RunWield switched from RTK to Snip because runtime command optimization must preserve agent trust in command output.
   RTK's caching and aggressive truncation made some workflows worse: cached `git` output can hide fresh repository
   state, and truncated test or CI output can make the model rerun commands or search for alternate evidence, spending
   more tokens than the compression saved.
 
-  RunWeild-owned Snip filters should optimize for decision-quality output, not maximum compression. For stateful
+  RunWield-owned Snip filters should optimize for decision-quality output, not maximum compression. For stateful
   commands like `git status`, `git diff`, and `git log`, freshness is more important than savings. For validation
   commands, success output should collapse to a clear pass summary; failure output should keep the actionable diagnostic
   detail rather than leaving the agent to guess what failed. Snip is a better fit because it is an extensible filter
   engine: command behavior lives in declarative YAML filters that can be added, tested, overridden, and reviewed without
-  growing special cases in RunWeild core.
+  growing special cases in RunWield core.
 
 ## Bundled runtime extensions
 
@@ -116,7 +116,7 @@ src/
     ui/                TUI components and theme glue
     workflow/          triage dispatch, plan execution, validation
   skills/              bundled skill definitions
-  tools/               RunWeild-specific agent tools
+  tools/               RunWield-specific agent tools
 plans/                 persisted plans
 docs/                  ADRs, PRDs, and feature docs
 ```
@@ -136,7 +136,7 @@ docs/                  ADRs, PRDs, and feature docs
 
 ## Workflow expectations
 
-RunWeild itself is plan-by-default for non-trivial work. Contributions should preserve that product shape:
+RunWield itself is plan-by-default for non-trivial work. Contributions should preserve that product shape:
 
 - `INQUIRY` handling should stay answer-focused through Guide.
 - `IDEATION` handling should clarify ideas through Ideator before routing implementation work.
@@ -148,8 +148,8 @@ RunWeild itself is plan-by-default for non-trivial work. Contributions should pr
 
 ## License note
 
-RunWeild is source-available and free to use, inspect, and run for personal, internal, or commercial work. You may
+RunWield is source-available and free to use, inspect, and run for personal, internal, or commercial work. You may
 submit issues and pull requests.
 
-You may not distribute modified versions, publish derivative works, rebrand RunWeild, or offer it as a competing product
+You may not distribute modified versions, publish derivative works, rebrand RunWield, or offer it as a competing product
 or service without prior written permission.

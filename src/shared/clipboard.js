@@ -47,7 +47,7 @@ export async function readClipboardImage() {
 
     // 2. Extract the image to a temporary file
     const tempFile = await clipboardDeps.makeTempFile({
-        prefix: "runweild-clipboard-",
+        prefix: "runwield-clipboard-",
         suffix: ".png",
     });
 

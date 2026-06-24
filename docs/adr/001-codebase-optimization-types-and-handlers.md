@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The RunWeild codebase has grown organically. Several modules use `any` and `unknown` JSDoc types, command handler
+The RunWield codebase has grown organically. Several modules use `any` and `unknown` JSDoc types, command handler
 patterns are duplicated across `cmd/` modules, and `chat-session.js::editor.onSubmit` has ballooned to 350+ lines. The
 triage report flagged these for systematic cleanup to reach production-grade quality.
 

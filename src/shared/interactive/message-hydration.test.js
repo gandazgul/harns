@@ -1,9 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { ToolExecutionBlock } from "../ui/blocks.js";
-import { initRunWeildTheme } from "../ui/theme.js";
+import { initRunWieldTheme } from "../ui/theme.js";
 import { restorePersistedMessagesToUi } from "./message-hydration.js";
 
-initRunWeildTheme();
+initRunWieldTheme();
 
 /**
  * @param {Array<Record<string, unknown>>} messages

@@ -9,13 +9,13 @@ import {
     getCodeReviewMode,
     getResolvedVisionFallbackModelSetting,
     migratePiSettingsOnce,
-    preserveRunWeildCustomSettingsForWrite,
+    preserveRunWieldCustomSettingsForWrite,
     setCustomSetting,
     shouldCleanupMergedWorktrees,
 } from "./settings.js";
 
 // Use a temp dir for isolated file-based tests
-const TEMP_DIR = await Deno.makeTempDir({ prefix: "runweild-settings-test-" });
+const TEMP_DIR = await Deno.makeTempDir({ prefix: "runwield-settings-test-" });
 const TEMP_GLOBAL_SETTINGS = join(TEMP_DIR, "global-settings.json");
 const TEMP_PROJECT_SETTINGS = join(TEMP_DIR, "project-settings.json");
 
@@ -130,7 +130,7 @@ Deno.test({
     },
 });
 
-Deno.test("preserveRunWeildCustomSettingsForWrite keeps RunWeild custom keys across SettingsManager writes", () => {
+Deno.test("preserveRunWieldCustomSettingsForWrite keeps RunWield custom keys across SettingsManager writes", () => {
     const previous = JSON.stringify({
         theme: "old-theme",
         agents: {},
@@ -147,7 +147,7 @@ Deno.test("preserveRunWeildCustomSettingsForWrite keeps RunWeild custom keys acr
         theme: "new-theme",
     });
 
-    const preserved = JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next));
+    const preserved = JSON.parse(preserveRunWieldCustomSettingsForWrite(previous, next));
 
     assertEquals(preserved, {
         theme: "new-theme",
@@ -163,7 +163,7 @@ Deno.test("preserveRunWeildCustomSettingsForWrite keeps RunWeild custom keys acr
     });
 });
 
-Deno.test("preserveRunWeildCustomSettingsForWrite lets explicit new custom values win", () => {
+Deno.test("preserveRunWieldCustomSettingsForWrite lets explicit new custom values win", () => {
     const previous = JSON.stringify({
         activeModelPreset: "codex",
     });
@@ -171,32 +171,32 @@ Deno.test("preserveRunWeildCustomSettingsForWrite lets explicit new custom value
         activeModelPreset: "crof.ai",
     });
 
-    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
+    assertEquals(JSON.parse(preserveRunWieldCustomSettingsForWrite(previous, next)), {
         activeModelPreset: "crof.ai",
     });
 });
 
-Deno.test("preserveRunWeildCustomSettingsForWrite keeps visionFallback", () => {
+Deno.test("preserveRunWieldCustomSettingsForWrite keeps visionFallback", () => {
     const previous = JSON.stringify({ visionFallback: { model: "lmstudio/gemma" } });
     const next = JSON.stringify({ theme: "new-theme" });
 
-    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
+    assertEquals(JSON.parse(preserveRunWieldCustomSettingsForWrite(previous, next)), {
         theme: "new-theme",
         visionFallback: { model: "lmstudio/gemma" },
     });
 });
 
-Deno.test("preserveRunWeildCustomSettingsForWrite keeps codereview", () => {
+Deno.test("preserveRunWieldCustomSettingsForWrite keeps codereview", () => {
     const previous = JSON.stringify({ codereview: "always" });
     const next = JSON.stringify({ theme: "new-theme" });
 
-    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
+    assertEquals(JSON.parse(preserveRunWieldCustomSettingsForWrite(previous, next)), {
         theme: "new-theme",
         codereview: "always",
     });
 });
 
-Deno.test("preserveRunWeildCustomSettingsForWrite preserves codereview across SettingsManager-shaped writes", () => {
+Deno.test("preserveRunWieldCustomSettingsForWrite preserves codereview across SettingsManager-shaped writes", () => {
     const previous = JSON.stringify({
         theme: "dark",
         codereview: "ask",
@@ -207,7 +207,7 @@ Deno.test("preserveRunWeildCustomSettingsForWrite preserves codereview across Se
         defaultModel: "model-a",
     });
 
-    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
+    assertEquals(JSON.parse(preserveRunWieldCustomSettingsForWrite(previous, next)), {
         theme: "light",
         defaultModel: "model-a",
         codereview: "ask",
@@ -218,8 +218,8 @@ Deno.test("preserveRunWeildCustomSettingsForWrite preserves codereview across Se
 Deno.test("getResolvedVisionFallbackModelSetting prefers active preset over top-level", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-vision-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "runweild-vision-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-vision-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-vision-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);
@@ -245,37 +245,37 @@ Deno.test("getResolvedVisionFallbackModelSetting prefers active preset over top-
     }
 });
 
-Deno.test("migratePiSettingsOnce copies legacy Pi settings when RunWeild settings are missing", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-settings-migration-" });
+Deno.test("migratePiSettingsOnce copies legacy Pi settings when RunWield settings are missing", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-settings-migration-" });
     try {
         const piPath = join(tempDir, ".pi", "agent", "settings.json");
-        const runweildPath = join(tempDir, ".wld", "settings.json");
+        const runwieldPath = join(tempDir, ".wld", "settings.json");
         await Deno.mkdir(join(tempDir, ".pi", "agent"), { recursive: true });
         await Deno.writeTextFile(piPath, '{"theme":"legacy-pi"}');
 
-        const result = migratePiSettingsOnce({ runweildPath, piPath });
+        const result = migratePiSettingsOnce({ runwieldPath, piPath });
 
         assertEquals(result, { copied: true, skipped: false });
-        assertEquals(await Deno.readTextFile(runweildPath), '{"theme":"legacy-pi"}');
+        assertEquals(await Deno.readTextFile(runwieldPath), '{"theme":"legacy-pi"}');
     } finally {
         await Deno.remove(tempDir, { recursive: true });
     }
 });
 
-Deno.test("migratePiSettingsOnce leaves existing RunWeild settings untouched", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-settings-migration-" });
+Deno.test("migratePiSettingsOnce leaves existing RunWield settings untouched", async () => {
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-settings-migration-" });
     try {
         const piPath = join(tempDir, ".pi", "agent", "settings.json");
-        const runweildPath = join(tempDir, ".wld", "settings.json");
+        const runwieldPath = join(tempDir, ".wld", "settings.json");
         await Deno.mkdir(join(tempDir, ".pi", "agent"), { recursive: true });
         await Deno.mkdir(join(tempDir, ".wld"), { recursive: true });
         await Deno.writeTextFile(piPath, '{"theme":"legacy-pi"}');
-        await Deno.writeTextFile(runweildPath, '{"theme":"runweild"}');
+        await Deno.writeTextFile(runwieldPath, '{"theme":"runwield"}');
 
-        const result = migratePiSettingsOnce({ runweildPath, piPath });
+        const result = migratePiSettingsOnce({ runwieldPath, piPath });
 
         assertEquals(result, { copied: false, skipped: true });
-        assertEquals(await Deno.readTextFile(runweildPath), '{"theme":"runweild"}');
+        assertEquals(await Deno.readTextFile(runwieldPath), '{"theme":"runwield"}');
     } finally {
         await Deno.remove(tempDir, { recursive: true });
     }
@@ -284,8 +284,8 @@ Deno.test("migratePiSettingsOnce leaves existing RunWeild settings untouched", a
 Deno.test("shouldCleanupMergedWorktrees defaults true and honors false setting", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-cleanup-setting-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "runweild-cleanup-setting-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-cleanup-setting-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-cleanup-setting-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);
@@ -308,8 +308,8 @@ Deno.test("shouldCleanupMergedWorktrees defaults true and honors false setting",
 Deno.test("getCodeReviewMode defaults none, honors overrides, and rejects invalid values", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-codereview-setting-home-" });
-    const tempProject = await Deno.makeTempDir({ prefix: "runweild-codereview-setting-project-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-codereview-setting-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-codereview-setting-project-" });
     try {
         Deno.env.set("HOME", tempHome);
         Deno.chdir(tempProject);

@@ -1,8 +1,8 @@
-# Product Requirements Document (PRD): Project "RunWeild"
+# Product Requirements Document (PRD): Project "RunWield"
 
 ## 1. Vision & Strategy
 
-**RunWeild** is an opinionated, developer-first coding harness designed for deep architectural alignment and token
+**RunWield** is an opinionated, developer-first coding harness designed for deep architectural alignment and token
 efficiency. It moves beyond "chat-and-hope" AI by enforcing a "Plan-by-Default" philosophy, utilizing persistent project
 memory, and treating the SDLC as a series of intentional gates.
 
@@ -20,7 +20,7 @@ memory, and treating the SDLC as a series of intentional gates.
 
 ### 3.1 The TUI Shell & Agent Workflows
 
-The primary interface for RunWeild is the TUI Shell. It acts as a universal host for interacting with different agents.
+The primary interface for RunWield is the TUI Shell. It acts as a universal host for interacting with different agents.
 By default, when the TUI opens, the user talks to the **Router** agent. The Router is not a special system wrapper; it
 is a peer agent (like the Architect, Planner, or Coder) that simply acts as the default triage point.
 
@@ -44,7 +44,7 @@ started via `wld resume <plan>`.
 Routing and the planning lifecycle are driven by a small set of **declaration tools** plus a session-level orchestrator.
 Factory tools are auto-wired by the session runner and capture TUI/session context (`uiAPI`, `sessionManager`,
 `triageMeta`) at session-start time, so the same tool name is implemented by a different concrete instance per session.
-The agent declares intent by calling the tool; RunWeild orchestration code decides what happens next.
+The agent declares intent by calling the tool; RunWield orchestration code decides what happens next.
 
 **`triage_report` (router-only)**
 

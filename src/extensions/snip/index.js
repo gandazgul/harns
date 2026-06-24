@@ -1,6 +1,6 @@
 /**
  * @module extensions/snip
- * Optional Snip command prefix extension for RunWeild agent invocations.
+ * Optional Snip command prefix extension for RunWield agent invocations.
  */
 
 const SHELL_BUILTINS = new Set([

@@ -161,7 +161,7 @@ export async function executeProjectTasks(
             const taskDebugLogPath = debugRoot ? getTaskDebugLogPath(debugRoot, task, agentName) : undefined;
 
             const taskHeader = `--- Task ${task.task}: ${task.description} (→ ${getAgentDisplayName(agentName)}) ---`;
-            uiAPI.appendSystemMessage(taskHeader, false, "RunWeild");
+            uiAPI.appendSystemMessage(taskHeader, false, "RunWield");
 
             try {
                 if (taskDebugLogPath) {
@@ -245,7 +245,7 @@ export async function executeProjectTasks(
                     uiAPI.appendSystemMessage(
                         `Task ${task.task} incomplete (${getAgentDisplayName(agentName)}): ${error}`,
                         false,
-                        "RunWeild",
+                        "RunWield",
                     );
                     results.set(task.task, { status: "failed", error, messages: sessionMessages });
 
@@ -296,7 +296,7 @@ export async function executeProjectTasks(
                 uiAPI.appendSystemMessage(
                     `❌ Task ${task.task} failed (${getAgentDisplayName(agentName)}): ${error.message}`,
                     false,
-                    "RunWeild",
+                    "RunWield",
                 );
                 results.set(task.task, { status: "failed", error: error.message });
 

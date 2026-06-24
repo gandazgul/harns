@@ -166,7 +166,7 @@ Deno.test("attachUiSubscribers renders assistant text, thinking, retries, compac
 Deno.test("attachUiSubscribers streams assistant deltas to debug log path immediately", async () => {
     const { session, emit } = makeSubscribableSession();
     const ui = makeUi();
-    const debugLogPath = await Deno.makeTempFile({ prefix: "runweild-subscriber-log-test-", suffix: ".log" });
+    const debugLogPath = await Deno.makeTempFile({ prefix: "runwield-subscriber-log-test-", suffix: ".log" });
     try {
         attachUiSubscribers(session, agentDef, ui, debugLogPath);
 

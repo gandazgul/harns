@@ -109,11 +109,11 @@ export function installKeybindings(ctx) {
             const { opCanceled, sessionAborted, planCanceled } = cancelEverything();
 
             if (opCanceled) {
-                uiAPI.appendSystemMessage("Operation canceled.", false, "RunWeild");
+                uiAPI.appendSystemMessage("Operation canceled.", false, "RunWield");
             } else if (sessionAborted) {
-                uiAPI.appendSystemMessage("Agent run canceled.", false, "RunWeild");
+                uiAPI.appendSystemMessage("Agent run canceled.", false, "RunWield");
             } else if (planCanceled) {
-                uiAPI.appendSystemMessage("Plan review canceled.", false, "RunWeild");
+                uiAPI.appendSystemMessage("Plan review canceled.", false, "RunWield");
             }
             tui.requestRender();
             return;
