@@ -286,6 +286,8 @@ Values:
   review.
 - `always`: open the Plannotator code review UI automatically after semantic review passes.
 
+RunWeild trims and normalizes this value case-insensitively; invalid or missing values behave as `none`.
+
 Example:
 
 ```jsonc

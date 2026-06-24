@@ -34,6 +34,40 @@ Deno.test("formatCodeReviewAnnotations renders file, line, and text", () => {
     );
 });
 
+Deno.test("runPlannotatorCodeReview reports browser fallback and still waits for decision", async () => {
+    /** @type {string[]} */
+    const messages = [];
+    let stopped = false;
+
+    const result = await runPlannotatorCodeReview({
+        planName: "browser-fallback-plan",
+        diffText: "diff --git a/src/a.js b/src/a.js\n+change",
+        executionCwd: "/tmp/worktree",
+        uiAPI: /** @type {any} */ ({
+            appendSystemMessage: (/** @type {string} */ message) => messages.push(message),
+        }),
+        __deps: {
+            loadReviewEditorHtml: () => Promise.resolve("<html>review</html>"),
+            openInDefaultBrowser: () => Promise.resolve(false),
+            startReviewServer: /** @type {any} */ (() =>
+                Promise.resolve({
+                    url: "http://localhost:5678",
+                    waitForDecision: () => Promise.resolve({ approved: true }),
+                    stop: () => {
+                        stopped = true;
+                    },
+                })),
+        },
+    });
+
+    assertEquals(result.approved, true);
+    assertEquals(stopped, true);
+    assertEquals(messages, [
+        "Code review UI available at: http://localhost:5678",
+        "Could not auto-open browser. Open manually: http://localhost:5678",
+    ]);
+});
+
 Deno.test("runPlannotatorCodeReview starts server with diff payload and always stops it", async () => {
     /** @type {any[]} */
     const serverOptions = [];

@@ -126,6 +126,10 @@ approval screen
 Status and lets the user inspect or edit Plan files while preserving the local Plan files as the canonical source of
 truth. _Avoid_: Remote plan database, hosted board, task board
 
+**Workspace**: A future browser-based RunWeild space that can contain Plans alongside project documentation, notes,
+wiki-style pages, and other project knowledge while preserving Plans as markdown files that workflow agents can read.
+_Avoid_: Database-only knowledge base, replacement for Plans
+
 **Plan Card**: A Plan Board representation of a top-level Plan. Epic Plan Cards summarize child FEATURE Plan progress
 and open an Epic detail view rather than flattening every child FEATURE Plan onto the main board by default. _Avoid_:
 Task card, ticket

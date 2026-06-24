@@ -44,9 +44,11 @@ Deno.test("injectFrontMatter preserves human review metadata", () => {
         affectedPaths: [],
         createdAt: "2026-06-23T00:00:00.000Z",
         status: "verified",
+        verifiedAt: "2026-06-23T01:30:00.000Z",
         humanReviewMode: "ask",
         humanReviewDecision: "approved",
         humanReviewedAt: "2026-06-23T01:00:00.000Z",
+        executionBaselineTree: "tree123",
     });
 
     const { attrs } = parsePlanFrontMatter(withFm);
@@ -54,6 +56,11 @@ Deno.test("injectFrontMatter preserves human review metadata", () => {
     assertEquals(attrs.humanReviewMode, "ask");
     assertEquals(attrs.humanReviewDecision, "approved");
     assertEquals(attrs.humanReviewedAt, "2026-06-23T01:00:00.000Z");
+    assertEquals(
+        withFm.indexOf("verifiedAt:") < withFm.indexOf("humanReviewMode:") &&
+            withFm.indexOf("humanReviewedAt:") < withFm.indexOf("executionBaselineTree:"),
+        true,
+    );
 });
 
 testWithFs("updatePlanStatus self-heals malformed front matter using recovery attrs", async () => {

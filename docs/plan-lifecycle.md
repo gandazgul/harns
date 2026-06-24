@@ -130,7 +130,8 @@ For worktree-backed plans:
 
 Human code review does not add a new primary Plan Status. While human review is pending, returning feedback, or
 canceled, the Plan remains `implemented`. Final `validation_passed` metadata records whether human review was not
-required, skipped, or approved.
+required, skipped, or approved. RunWeild clears stale human-review metadata when execution starts again, when recovery
+resets a plan, or when a plan is re-opened for review.
 
 For PROJECT Epics, child FEATURE Plans run their own Workflow Validation. The Epic can be marked done enough for now,
 but it does not run a validation loop as if it were an implementation diff. For legacy non-Epic PROJECT Plans, the final

@@ -28,7 +28,8 @@
         "lint": "snip run -- deno lint",
         "fmt:check": "snip run -- deno fmt --check",
         "check": "snip run -- deno check --doc src/**/*.js",
-        "compile": "deno run -A ./scripts/compile.js"
+        "compile": "deno run -A ./scripts/compile.js",
+        "prototype:plan-ui": "deno task -c prototypes/fresh-plan-ui/deno.json dev"
     },
     "fmt": {
         "lineWidth": 120,

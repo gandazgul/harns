@@ -85,12 +85,17 @@ export function normalizeCodeReviewDecision(decision) {
     }
 
     const record = /** @type {Record<string, unknown>} */ (decision);
+    const approved = record.approved === true;
     const feedback = typeof record.feedback === "string" ? record.feedback : "";
+    const annotations = normalizeAnnotations(record.annotations);
+    const explicitlyExited = record.exit === true || record.canceled === true || record.cancelled === true;
+    const noDecision = !approved && !feedback.trim() && annotations.length === 0;
+
     return {
-        approved: record.approved === true,
+        approved,
         feedback,
-        annotations: normalizeAnnotations(record.annotations),
-        exit: record.exit === true || record.canceled === true || record.cancelled === true,
+        annotations,
+        exit: explicitlyExited || noDecision,
     };
 }
 
@@ -154,6 +159,6 @@ export async function runPlannotatorCodeReview({
     try {
         return normalizeCodeReviewDecision(await server.waitForDecision());
     } finally {
-        server.stop();
+        await server.stop();
     }
 }
