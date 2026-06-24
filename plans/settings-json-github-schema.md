@@ -6,15 +6,12 @@ affectedPaths:
   - "config.schema.json"
   - "README.md"
 createdAt: "2026-06-23T21:07:43-04:00"
-updatedAt: "2026-06-24T17:32:39.948Z"
-status: "implemented"
+updatedAt: "2026-06-24T17:35:15.322Z"
+status: "verified"
 origin: "internal"
-failureReason: "git merge --no-ff runweild/worktree/settings-json-github-schema-b1ddff94 failed: Auto-merging README.md
-Auto-merging docs/settings.md
-CONFLICT (content): Merge conflict in docs/settings.md
-Auto-merging plans/archived/plannotator-human-code-review-setting.md
-Automatic merge failed; fix conflicts and then commit the result."
-worktreeStatus: "merge_conflict"
+verifiedAt: "2026-06-24T17:35:15.322Z"
+humanReviewMode: "ask"
+humanReviewDecision: "skipped"
 ---
 # Settings JSON Schema Release Asset
 
