@@ -63,14 +63,14 @@ Deno.test("runInstallCommand installs source and reports resource counts", async
         "  Themes registered: 1",
         "  Prompt templates available: 1",
         "  Code extensions ignored: 1 (missing pi.wld compatibility marker)",
-        "  Skills ignored: 1 (RunWeild does not load Pi package skills)",
+        "  Skills ignored: 1 (RunWield does not load Pi package skills)",
         "  Install skills separately with: npx skills add npm:theme",
         "  Use -a/--agent to choose the target agent when needed.",
     ]);
 });
 
 Deno.test("runInstallCommand enables compatible extensions after consent", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-install-extension-yes-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-install-extension-yes-" });
     const extensionPath = join(tempDir, "index.js");
     /** @type {string[]} */
     const logs = [];
@@ -154,7 +154,7 @@ Deno.test("runInstallCommand enables compatible extensions after consent", async
 });
 
 Deno.test("runInstallCommand skips compatible extensions when consent is declined", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "runweild-install-extension-no-" });
+    const tempDir = await Deno.makeTempDir({ prefix: "runwield-install-extension-no-" });
     const extensionPath = join(tempDir, "index.js");
     /** @type {string[]} */
     const logs = [];

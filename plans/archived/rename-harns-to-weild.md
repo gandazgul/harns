@@ -1,7 +1,7 @@
 ---
 classification: "FEATURE"
 complexity: "HIGH"
-summary: "Rename Harns to RunWeild with a clean break from hns/.hns/HARNS-era state, while preserving only the Router display name Harns and keeping the CLI binary as wld."
+summary: "Rename Harns to RunWield with a clean break from hns/.hns/HARNS-era state, while preserving only the Router display name Harns and keeping the CLI binary as wld."
 affectedPaths:
     - "src/cli.js"
     - "src/constants.js"
@@ -19,13 +19,13 @@ verifiedAt: "2026-06-23T04:55:50.556Z"
 routingIntent: "FEATURE"
 ---
 
-# Rename Harns to RunWeild
+# Rename Harns to RunWield
 
 ## Context
 
-The product must be rebranded from Harns to RunWeild for copyright reasons. The user specifically requested:
+The product must be rebranded from Harns to RunWield for copyright reasons. The user specifically requested:
 
-- Rename `harns`/`Harns`/`HARNS` occurrences to `runweild`/`RunWeild`/`RUNWEILD`, respecting capitalization.
+- Rename `harns`/`Harns`/`HARNS` occurrences to `runwield`/`RunWield`/`RUNWEILD`, respecting capitalization.
 - Rename the installed CLI binary from `hns` to `wld`.
 - Rename the global settings directory from `~/.hns` to `~/.wld`.
 - Preserve the Router's display name as `Harns` as a nod to the project's origin.
@@ -41,7 +41,7 @@ prompts.
 
 ## Objective
 
-Implement a behavior-preserving rename so users invoke the tool as `wld`, see RunWeild branding and docs, store new
+Implement a behavior-preserving rename so users invoke the tool as `wld`, see RunWield branding and docs, store new
 global state under `~/.wld`, and still get the same routing/workflow/session behavior. The only intentional visible
 legacy name is the Router agent's display name `Harns` in `src/agent-definitions/router.md`.
 
@@ -50,9 +50,9 @@ legacy name is the Router agent's display name `Harns` in `src/agent-definitions
 Perform the rebrand in layers rather than a blind replace:
 
 1. Centralize/rename constants first (`CLI_BIN`, directory names, worktree prefixes, version symbol) so runtime surfaces
-   and generated strings become `wld`/`runweild` from shared values.
+   and generated strings become `wld`/`runwield` from shared values.
 2. Rename persisted-path logic from `.hns` to `.wld` with no Harns compatibility migration/fallbacks. Existing one-time
-   Pi migrations may continue only from Pi-owned `~/.pi/agent` into RunWeild-owned paths; do not read or copy from
+   Pi migrations may continue only from Pi-owned `~/.pi/agent` into RunWield-owned paths; do not read or copy from
    `~/.hns`.
 3. Rename user-facing strings, docs, comments, JSDoc symbols, test fixture values, and generated release asset names
    with capitalization preserved.
@@ -69,29 +69,29 @@ entry directly encodes the old project binary/package name.
 
 ## Files to Modify
 
-- `src/constants.js` — change CLI binary to `wld`; rename product comments/constants to RunWeild; update metadata
-  directory name to `.wld`; update worktree branch/path prefixes from `harns` to `runweild` for new worktrees.
-- `src/cli.js` — update usage examples and error prefixes from `Harns`/`hns` to `RunWeild`/`wld`.
+- `src/constants.js` — change CLI binary to `wld`; rename product comments/constants to RunWield; update metadata
+  directory name to `.wld`; update worktree branch/path prefixes from `harns` to `runwield` for new worktrees.
+- `src/cli.js` — update usage examples and error prefixes from `Harns`/`hns` to `RunWield`/`wld`.
 - `src/cmd/**` — update command help/usage/messages, install/remove package wrapper messaging, init text, snip-filter
   command text, tests, and any hardcoded `hns` usage.
 - `src/shared/settings.js` and `src/shared/settings.test.js` — rename `HarnsSettingsStorage`, custom-setting
   terminology, `~/.hns` target paths, and tests; preserve Pi settings import behavior but target `~/.wld/settings.json`.
 - `src/shared/models/model-registry.js` and tests — rename model config helpers and options from Harns terminology to
-  RunWeild, target `~/.wld/models.json`/`auth.json`, and update migration tests.
+  RunWield, target `~/.wld/models.json`/`auth.json`, and update migration tests.
 - `src/shared/session/session.js`, `src/shared/session/root-session.js`, `src/shared/session/active-agent-session.js`,
-  and related tests — update session directories, custom session marker type (`runweild.active_agent`), cache
+  and related tests — update session directories, custom session marker type (`runwield.active_agent`), cache
   directories, global/project context file lookup, debug text, and tests.
 - `src/shared/interactive/**` and `src/shared/ui/**` — update boot/header/banner branding and tests; redraw
   `src/shared/ui/boot-logo.js` as `W.`.
 - `src/shared/worktree.js`, `src/shared/worktree-registry.js`, and tests — update registry paths and generated worktree
-  branch/path prefixes for `runweild`; remove any old `.hns`/`harns/worktree` registry migration, fallback, or rescue
+  branch/path prefixes for `runwield`; remove any old `.hns`/`harns/worktree` registry migration, fallback, or rescue
   expectations.
 - `src/shared/snip-filters.js`, `src/cmd/snip-filters/**`, and tests — rename managed marker/messages and
   `hns snip-filters` examples to `wld snip-filters`.
 - `src/tools/**` — update user-visible system messages, tool names/comments such as `createHarnsGrepToolDefinition` if
   not externally referenced, and tests.
 - `src/extensions/**` — update module comments and compatibility wording.
-- `src/agent-definitions/**` — rename system prompt language from Harns system to RunWeild system, except keep
+- `src/agent-definitions/**` — rename system prompt language from Harns system to RunWield system, except keep
   `src/agent-definitions/router.md` front matter `name: Harns` unchanged.
 - `src/prompt-templates/sleep.md` — update sleep-mode branding.
 - `scripts/compile.js` — compile to `./bin/wld` instead of `./bin/hns`.
@@ -101,8 +101,8 @@ entry directly encodes the old project binary/package name.
   patterns from `hns` to `wld`; ensure Windows binary becomes `wld.exe`.
 - `install.sh` — rename environment variables (`WLD_REPO`, `WLD_INSTALL_DIR`), installer log prefix (`[wld installer]`),
   asset names, binary extraction/install checks, PATH advice, Snip filter examples, and default repo to
-  `gandazgul/runweild`.
-- `README.md`, `docs/**`, and `TODO.md` — update user-facing docs and examples to RunWeild/`wld`/`~/.wld`/`RUNWEILD.md`.
+  `gandazgul/runwield`.
+- `README.md`, `docs/**`, and `TODO.md` — update user-facing docs and examples to RunWield/`wld`/`~/.wld`/`RUNWEILD.md`.
 - `HARNS.md` — rename to `RUNWEILD.md`; update references/tests accordingly; no legacy `HARNS.md` read fallback is
   required.
 - `.hns/settings.json` and `.gitignore` — rename tracked project settings directory to `.wld`; update ignored
@@ -135,24 +135,24 @@ Existing functions, modules, or patterns to reuse:
     fixtures, and tests.
   - Intentionally do not migrate/copy old `~/.hns` data into `~/.wld`, read old Harns markers/paths as fallbacks, or
     rescue old Harns worktrees.
-  - Use `gandazgul/runweild` as the default release repository in `install.sh`.
+  - Use `gandazgul/runwield` as the default release repository in `install.sh`.
 - [ ] Step 2: Rename central constants and generated version symbol:
   - `CLI_BIN: "wld"`.
   - Product comments/docs in `src/constants.js`.
-  - Directory constants from Harns names to RunWeild names where applicable.
+  - Directory constants from Harns names to RunWield names where applicable.
   - `HNS_VERSION` -> `VERSION` in `scripts/write-version.js`, generated `src/shared/version.js`,
     `src/shared/interactive/chat-session.js`, and `src/cmd/version/index.js`.
 - [ ] Step 3: Update CLI/runtime user-facing strings:
   - Usage examples in `src/cli.js` and `src/cmd/registry.js` should use `wld`.
-  - Error/log prefixes should use `[RunWeild]` except Router display-name contexts that intentionally show `Harns`.
-  - `/version` should output `runweild <version> (<target-triple>)` unless product capitalization is desired as
-    `RunWeild` in version output.
+  - Error/log prefixes should use `[RunWield]` except Router display-name contexts that intentionally show `Harns`.
+  - `/version` should output `runwield <version> (<target-triple>)` unless product capitalization is desired as
+    `RunWield` in version output.
 - [ ] Step 4: Rename global settings/model/auth storage to `~/.wld`:
   - Update `getSettingsDir("global")`, session base dir, bundled cache dirs, init-state path, model registry dir,
     worktree home parent, and package manager `agentDir` consumers.
   - Do not add or keep one-time legacy copy helpers for existing `~/.hns` files/directories; write/read new data only
     under `~/.wld`.
-  - Keep Pi import behavior from `~/.pi/agent` but copy into `~/.wld` when the RunWeild file is missing.
+  - Keep Pi import behavior from `~/.pi/agent` but copy into `~/.wld` when the RunWield file is missing.
 - [ ] Step 5: Rename project-local metadata/context paths:
   - Change project metadata directory from `.hns` to `.wld` in constants and direct string literals.
   - Rename tracked `.hns/settings.json` to `.wld/settings.json`.
@@ -160,19 +160,19 @@ Existing functions, modules, or patterns to reuse:
     and no legacy `HARNS.md` read fallback.
   - Rename root `HARNS.md` to `RUNWEILD.md` and update tests/fixtures.
 - [ ] Step 6: Update session custom marker naming:
-  - Change `ACTIVE_AGENT_CUSTOM_TYPE` from `harns.active_agent` to `runweild.active_agent` for newly written markers.
-  - Read and write only the new `runweild.active_agent` marker; old `harns.active_agent` markers may be ignored.
+  - Change `ACTIVE_AGENT_CUSTOM_TYPE` from `harns.active_agent` to `runwield.active_agent` for newly written markers.
+  - Read and write only the new `runwield.active_agent` marker; old `harns.active_agent` markers may be ignored.
   - Update extractor scripts/tests that inspect active-agent markers.
 - [ ] Step 7: Update worktree identifiers:
-  - Change branch prefix from `harns/worktree/` to `runweild/worktree/` and path prefix from `harns-` to `runweild-` for
+  - Change branch prefix from `harns/worktree/` to `runwield/worktree/` and path prefix from `harns-` to `runwield-` for
     newly created worktrees.
   - Ensure tests and plan front-matter fixtures expect new names.
   - Do not add old `.hns` worktree registry fallbacks, branch detection, or rescue logic. `wld` should create and manage
-    only new `.wld`/`runweild/worktree/*` worktrees.
+    only new `.wld`/`runwield/worktree/*` worktrees.
 - [ ] Step 8: Redraw `src/shared/ui/boot-logo.js`:
   - Replace the block `H` arrays with a block `W` in comparable dimensions/style.
   - Keep `dotOn` adding a block dot to the right and `dotOff` removing it.
-  - Update module comment from Harns to RunWeild.
+  - Update module comment from Harns to RunWield.
 - [ ] Step 9: Update packaging/install/release:
   - `scripts/compile.js` output becomes `./bin/wld`.
   - `.github/workflows/release.yml` workflow/artifact/tarball/binary names become `wld`/`wld.exe`.
@@ -180,11 +180,11 @@ Existing functions, modules, or patterns to reuse:
     `wld --help` instructions.
   - Rename installer env vars to `WLD_REPO` and `WLD_INSTALL_DIR`; do not support old `HNS_*` vars as deprecated
     fallbacks.
-  - Set the default repo slug to `gandazgul/runweild`.
+  - Set the default repo slug to `gandazgul/runwield`.
 - [ ] Step 10: Update all source tests and docs:
-  - `src/**/*.test.js`, docs, README, TODO, and agent definitions should use RunWeild/`wld`/`.wld`/`RUNWEILD.md`.
+  - `src/**/*.test.js`, docs, README, TODO, and agent definitions should use RunWield/`wld`/`.wld`/`RUNWEILD.md`.
   - Keep only `src/agent-definitions/router.md` front matter `name: Harns` as the in-repo product-name exception;
-    otherwise source/docs/tests should use RunWeild naming.
+    otherwise source/docs/tests should use RunWield naming.
 - [ ] Step 11: Sweep and clean up:
   - Run `rg -n --hidden --glob '!.git/**' --glob '!.history/**' --glob '!plans/**' -i 'harns|hns|\.hns|HARNS'`.
   - Classify remaining matches as allowed exceptions only if they are the Router display name or excluded
@@ -211,12 +211,12 @@ Existing functions, modules, or patterns to reuse:
   - `rg -n 'hns-|/hns| hns|HNS_|\.hns' install.sh .github src README.md docs TODO.md` should return no active
     compatibility or installer-env references.
 - Manual:
-  - Run `deno run -A src/cli.js --version`; expect RunWeild/wld version output with unchanged target triple.
+  - Run `deno run -A src/cli.js --version`; expect RunWield/wld version output with unchanged target triple.
   - Run `deno run -A src/cli.js --help`; expect `wld` usage examples and no old product branding except Router `Harns`
     if listed.
-  - Start a TUI session; expect the title/header to say RunWeild and boot logo to render `W.` with the dot blinking.
+  - Start a TUI session; expect the title/header to say RunWield and boot logo to render `W.` with the dot blinking.
   - Confirm global settings/auth/models/session/init-state files are read/written under `~/.wld`.
-  - Confirm old `~/.hns` settings/models/auth/sessions/context files are not required for RunWeild startup or resume; no
+  - Confirm old `~/.hns` settings/models/auth/sessions/context files are not required for RunWield startup or resume; no
     migration/read fallback is expected.
   - Run `deno task compile`; expect `bin/wld` to be produced.
 
@@ -228,13 +228,13 @@ Existing functions, modules, or patterns to reuse:
   migrate/copy old `~/.hns` settings, auth, models, sessions, bundled caches, init-state, or worktree registry data into
   `~/.wld`; do not read old Harns paths or markers as fallbacks. Do not delete old data automatically.
 - Router exception: Keep `src/agent-definitions/router.md` front matter `name: Harns`. The rest of the Router prompt can
-  say RunWeild unless the user wants the entire Router persona to remain Harns-branded.
-- Custom session marker: Renaming `harns.active_agent` to `runweild.active_agent` can make old sessions lose
+  say RunWield unless the user wants the entire Router persona to remain Harns-branded.
+- Custom session marker: Renaming `harns.active_agent` to `runwield.active_agent` can make old sessions lose
   active-agent continuity; that break is accepted by user override.
-- Worktree branch prefixes: new worktrees use `runweild/worktree/*`. Do not delete or rename existing `harns/worktree/*`
+- Worktree branch prefixes: new worktrees use `runwield/worktree/*`. Do not delete or rename existing `harns/worktree/*`
   branches, but also do not add code that discovers, resumes, migrates, or rescues them.
 - Release/install compatibility: If old release assets remain named `hns-*`, the new installer will not install older
   versions. That is acceptable; no legacy fallback is required.
-- Repository slug is resolved: `install.sh` should default to `gandazgul/runweild`, while still allowing `WLD_REPO`
+- Repository slug is resolved: `install.sh` should default to `gandazgul/runwield`, while still allowing `WLD_REPO`
   override.
 - Pure JavaScript only: Any new helper types should be JSDoc, not TypeScript syntax.

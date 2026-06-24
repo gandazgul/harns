@@ -286,7 +286,7 @@ export function restorePersistedMessagesToUi(sessionManager, uiAPI) {
                         if (toolName === "task_completed") {
                             appendTaskCompletedMessage(
                                 uiAPI,
-                                getActiveAgentName() || "RunWeild",
+                                getActiveAgentName() || "RunWield",
                                 extractTaskCompletedMessage(args),
                             );
                             continue;

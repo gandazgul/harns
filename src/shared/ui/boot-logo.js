@@ -1,7 +1,7 @@
 /**
  * @module shared/ui/boot-logo
  *
- * Renders the RunWeild boot banner with a block W logo centered on screen.
+ * Renders the RunWield boot banner with a block W logo centered on screen.
  * The logo is tinted with the theme's "teal" color. The square on the
  * bottom right blinks like a cursor.
  * Title line keeps its current accent/dim colors.

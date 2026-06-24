@@ -1,6 +1,6 @@
 /**
  * @module extensions/mnemosyne
- * Mnemosyne memory extension for RunWeild agent invocations.
+ * Mnemosyne memory extension for RunWield agent invocations.
  */
 
 import { basename } from "@std/path";

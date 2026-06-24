@@ -34,7 +34,7 @@ Deno.test("runThemeCommand without args outside TUI prints CLI guidance", async 
 
 Deno.test("runThemeCommand interactive cancel restores original persisted theme", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-theme-test-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-theme-test-" });
 
     try {
         Deno.env.set("HOME", tempHome);

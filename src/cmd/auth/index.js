@@ -1,6 +1,6 @@
 /**
  * @module cmd/auth
- * Login/logout/status commands for RunWeild-owned model authentication.
+ * Login/logout/status commands for RunWield-owned model authentication.
  */
 
 import { getModelRegistry as getModelRegistryFn } from "../../shared/models/model-registry.js";

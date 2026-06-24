@@ -1,4 +1,4 @@
-# Session Compaction — Pi's Architecture & RunWeild Integration Plan
+# Session Compaction — Pi's Architecture & RunWield Integration Plan
 
 ## Overview
 
@@ -309,9 +309,9 @@ The slash command is registered in `BUILTIN_SLASH_COMMANDS`:
 
 ---
 
-## How This Fits RunWeild Right Now
+## How This Fits RunWield Right Now
 
-### What RunWeild Already Has
+### What RunWield Already Has
 
 | Piece                                                       | Status | Details                                                       |
 | ----------------------------------------------------------- | ------ | ------------------------------------------------------------- |
@@ -334,7 +334,7 @@ The slash command is registered in `BUILTIN_SLASH_COMMANDS`:
 
 ---
 
-## RunWeild Implementation Details
+## RunWield Implementation Details
 
 ### File: `src/cmd/compact/index.js`
 
@@ -378,7 +378,7 @@ export async function runCompactCommand(argv, options = {}) {
 
 ### Auto-Compaction (Already Working)
 
-Auto-compaction is **already running** in RunWeild — it's baked into pi's `AgentSession._checkCompaction()` which fires
+Auto-compaction is **already running** in RunWield — it's baked into pi's `AgentSession._checkCompaction()` which fires
 after every `turn_end`. No extra wiring needed. The default threshold triggers when:
 
 ```
@@ -392,7 +392,7 @@ Two auto-triggers:
 
 ### Settings Exposure (Future)
 
-To let users toggle auto-compaction on/off, RunWeild could expose a `/compaction-settings` or `/compact-settings`
+To let users toggle auto-compaction on/off, RunWield could expose a `/compaction-settings` or `/compact-settings`
 command that calls:
 
 ```js
@@ -408,13 +408,13 @@ The default values (enabled: true, reserveTokens: 16384, keepRecentTokens: 20000
 
 Pi's compaction is a well-designed system with:
 
-1. **Automatic triggers** (overflow + threshold) — already running in RunWeild
-2. **Manual trigger** (`/compact`) — already wired in RunWeild
+1. **Automatic triggers** (overflow + threshold) — already running in RunWield
+2. **Manual trigger** (`/compact`) — already wired in RunWield
 3. **Structured summaries** — LLM-generated, preserved across sessions
 4. **Extension hooks** — for custom compaction strategies
 5. **Safe cut points** — never splits tool calls
 6. **File tracking** — preserves which files were read/modified
 7. **Iterative summaries** — merges new info into old summaries on re-compaction
 
-RunWeild benefits from all of this out of the box. The `/compact` slash command delegates directly to pi's
+RunWield benefits from all of this out of the box. The `/compact` slash command delegates directly to pi's
 `AgentSession.compact()`, and auto-compaction fires automatically after every turn.

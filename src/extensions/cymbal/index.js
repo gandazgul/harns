@@ -1,6 +1,6 @@
 /**
  * @module extensions/cymbal
- * Cymbal code search extension for RunWeild agent invocations.
+ * Cymbal code search extension for RunWield agent invocations.
  */
 
 import { Type } from "@sinclair/typebox";

@@ -7,7 +7,7 @@
  */
 
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
-import { getRunWeildSessionDir } from "../../shared/session/root-session.js";
+import { getRunWieldSessionDir } from "../../shared/session/root-session.js";
 import { getRootAgentSession, setRootSessionManager } from "../../shared/session/session-state.js";
 import { ensureRootAgentSession } from "../../shared/session/session.js";
 import { restorePersistedMessagesToUi } from "../../shared/interactive/message-hydration.js";
@@ -87,7 +87,7 @@ function getCurrentModelContextWindow() {
 /**
  * Decide which model `/resume` should use when the session records a previous
  * model. If the previous model is still configured, use it and judge against
- * its context window. Otherwise fall back to the model RunWeild would normally
+ * its context window. Otherwise fall back to the model RunWield would normally
  * choose today.
  *
  * @param {{ provider: string, modelId: string } | null} sessionModel
@@ -272,7 +272,7 @@ export async function runResumeCommand(_argv, options = {}) {
         ? { SessionManager: deps.SessionManager }
         : await import("@earendil-works/pi-coding-agent");
     const cwd = Deno.cwd();
-    const sessionDir = getRunWeildSessionDir(cwd);
+    const sessionDir = getRunWieldSessionDir(cwd);
 
     // List recent sessions
     const sessions =

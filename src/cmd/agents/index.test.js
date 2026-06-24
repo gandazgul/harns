@@ -36,7 +36,7 @@ Deno.test("runAgentsCommand chooses TUI handler when ui deps present", async () 
             __testDeps: /** @type {any} */ ({
                 listAvailableAgents: () =>
                     Promise.resolve([
-                        { name: "router", displayName: "RunWeild", description: "", model: "" },
+                        { name: "router", displayName: "RunWield", description: "", model: "" },
                     ]),
                 setActiveAgent: (
                     /** @type {string} */ _name,
@@ -65,7 +65,7 @@ Deno.test("runAgentsCommand CLI unknown agent exits", async () => {
             __testDeps: /** @type {any} */ ({
                 listAvailableAgents: () =>
                     Promise.resolve([
-                        { name: "router", displayName: "RunWeild", description: "", model: "" },
+                        { name: "router", displayName: "RunWield", description: "", model: "" },
                     ]),
                 exit: (/** @type {number} */ code) => {
                     exitCode = code;

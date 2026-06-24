@@ -14,7 +14,7 @@ Deno.test("extractAssistantText joins text blocks", () => {
 });
 
 Deno.test("see_image invokes fallback model with local image and default prompt", async () => {
-    const cwd = await Deno.makeTempDir({ prefix: "runweild-see-image-" });
+    const cwd = await Deno.makeTempDir({ prefix: "runwield-see-image-" });
     try {
         await Deno.writeFile(join(cwd, "shot.png"), new Uint8Array([1, 2, 3]));
         /** @type {any[]} */
@@ -55,7 +55,7 @@ Deno.test("see_image invokes fallback model with local image and default prompt"
 });
 
 Deno.test("see_image returns tool error on auth failure", async () => {
-    const cwd = await Deno.makeTempDir({ prefix: "runweild-see-image-" });
+    const cwd = await Deno.makeTempDir({ prefix: "runwield-see-image-" });
     try {
         await Deno.writeFile(join(cwd, "shot.png"), new Uint8Array([1]));
         const tool = /** @type {any} */ (createSeeImageTool({
@@ -74,8 +74,8 @@ Deno.test("see_image returns tool error on auth failure", async () => {
 
 Deno.test("see_image resolves attachment refs from the session image directory", async () => {
     const originalHome = Deno.env.get("HOME");
-    const tempHome = await Deno.makeTempDir({ prefix: "runweild-see-image-home-" });
-    const cwd = await Deno.makeTempDir({ prefix: "runweild-see-image-attachment-" });
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-see-image-home-" });
+    const cwd = await Deno.makeTempDir({ prefix: "runwield-see-image-attachment-" });
     try {
         Deno.env.set("HOME", tempHome);
         const sessionManager = /** @type {any} */ ({ getSessionId: () => "session-abc" });

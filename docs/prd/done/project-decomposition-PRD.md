@@ -13,7 +13,7 @@ Epic into executable units. Each FEATURE plan follows the existing FEATURE lifec
 
 ## 2. Problem Statement
 
-Before this decomposition work, RunWeild had two execution paths for non-trivial work:
+Before this decomposition work, RunWield had two execution paths for non-trivial work:
 
 - **FEATURE**: One plan, one engineer, one worktree, validate, merge. Clean feedback loop.
 - **PROJECT**: One massive design plan → Slicer silently appends a task table → all tasks execute in parallel in one

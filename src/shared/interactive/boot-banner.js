@@ -119,7 +119,7 @@ export async function renderBootBanner({
         if (blocked.source === "bundled") continue;
         const userPath = toUserFacingPromptPath(blocked);
         uiAPI.appendSystemMessage(
-            `Warning: ${userPath} command can't be invoked because it would override RunWeild built-in commands. Please rename it.`,
+            `Warning: ${userPath} command can't be invoked because it would override RunWield built-in commands. Please rename it.`,
             true,
         );
     }
@@ -127,7 +127,7 @@ export async function renderBootBanner({
     if (!snipAvailable && await shouldShowSnipMissingWarningImpl()) {
         uiAPI.appendSystemMessage(
             [
-                "[RunWeild] Snip is not installed. RunWeild will still work, but agent shell command output will be noisier.",
+                "[RunWield] Snip is not installed. RunWield will still work, but agent shell command output will be noisier.",
                 "Install Snip with `brew install edouard-claude/tap/snip` or see https://github.com/edouard-claude/snip#installation.",
             ].join("\n"),
             true,

@@ -1,15 +1,15 @@
 /**
  * @module shared/session/active-agent-session
  *
- * Persists RunWeild-specific root-agent state in Pi's append-only session stream.
- * Pi records model changes, but RunWeild owns root-agent switching, so we store a
+ * Persists RunWield-specific root-agent state in Pi's append-only session stream.
+ * Pi records model changes, but RunWield owns root-agent switching, so we store a
  * small custom marker that `/resume` can use for newer sessions.
  */
 
 import { AGENTS } from "../../constants.js";
 import { loadAgentDef } from "./agents.js";
 
-export const ACTIVE_AGENT_CUSTOM_TYPE = "runweild.active_agent";
+export const ACTIVE_AGENT_CUSTOM_TYPE = "runwield.active_agent";
 
 /**
  * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager

@@ -7,7 +7,7 @@ import { basename, extname, isAbsolute, join, normalize, relative, resolve } fro
 import { discoverProviderModel, getModelRegistry } from "../models/model-registry.js";
 import { parseProviderModel } from "../models/model-validation.js";
 import { getResolvedVisionFallbackModelSetting } from "../settings.js";
-import { getRunWeildSessionDir } from "./root-session.js";
+import { getRunWieldSessionDir } from "./root-session.js";
 
 export const IMAGE_FALLBACK_BLOCK_MESSAGE =
     "Cannot attach image: current model does not support vision and no visionFallback.model is configured.\nSee docs/settings.md#visionfallback to configure an image fallback model.";
@@ -63,7 +63,7 @@ export function getSessionImageDir(sessionManager, cwd) {
     if (!sessionManager || typeof sessionManager.getSessionId !== "function") {
         throw new Error("Cannot persist image attachment: no active session is available.");
     }
-    return join(getRunWeildSessionDir(cwd), `${sessionManager.getSessionId()}_images`);
+    return join(getRunWieldSessionDir(cwd), `${sessionManager.getSessionId()}_images`);
 }
 
 /**

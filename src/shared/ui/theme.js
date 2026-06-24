@@ -1,6 +1,6 @@
 /**
  * @module shared/theme
- * Theme integration — wraps Pi's Theme class with RunWeild-local registration,
+ * Theme integration — wraps Pi's Theme class with RunWield-local registration,
  * lookup, and a live-swap setter. We re-implement the registration/swap
  * machinery locally because @earendil-works/pi-coding-agent only exports
  * the Theme constructor and initTheme, not the runtime setters.
@@ -31,7 +31,7 @@ const DEFAULT_THEME_NAME = "catppuccin-mocha";
 export const theme = new Proxy(/** @type {any} */ ({}), {
     get(_target, prop) {
         const t = /** @type {any} */ (globalThis)[THEME_KEY];
-        if (!t) throw new Error("Theme not initialized. Call initRunWeildTheme() first.");
+        if (!t) throw new Error("Theme not initialized. Call initRunWieldTheme() first.");
         return t[prop];
     },
 });
@@ -100,7 +100,7 @@ const themeRegistry = createThemeRegistry({
 /**
  * Subscribe to theme changes. Returns an unsubscribe function.
  * Fires on every successful theme swap (setTheme / setThemeInstance) and
- * on the initial install via initRunWeildTheme.
+ * on the initial install via initRunWieldTheme.
  * @param {() => void} cb
  * @returns {() => void}
  */
@@ -142,7 +142,7 @@ export function getAvailableThemes() {
  * before first render. External themes are discovered later via
  * applyPersistedTheme().
  */
-export function initRunWeildTheme() {
+export function initRunWieldTheme() {
     themeRegistry.setRegisteredThemes([]);
     themeRegistry.setThemeInstance(EMBEDDED_THEME);
 }

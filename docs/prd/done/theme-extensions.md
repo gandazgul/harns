@@ -1,25 +1,25 @@
-# PRD: Theme Extension Support for RunWeild
+# PRD: Theme Extension Support for RunWield
 
 ## Objective
 
-Enable RunWeild to discover, install, list, and switch themes from external packages (ending in `.json`), while
+Enable RunWield to discover, install, list, and switch themes from external packages (ending in `.json`), while
 restricting the installation and loading of logic-based extensions. The system will transition from a hardcoded theme to
 a dynamic one, leveraging the `@earendil-works/pi-coding-agent` theme infrastructure.
 
 ## Problem Statement
 
-RunWeild currently inlines a single "catppuccin-mocha" theme, making it impossible to change the UI color scheme at
+RunWield currently inlines a single "catppuccin-mocha" theme, making it impossible to change the UI color scheme at
 runtime. While the upstream `pi-coding-agent` has a robust theme system (discovery, real-time previews, and
-registration), RunWeild does not currently utilize these features.
+registration), RunWield does not currently utilize these features.
 
 ## Resolved Assumptions
 
 1. **Permissive for Themes, Restrictive for Logic:** Packages containing at least one valid theme `.json` will be
    installed. However, any accompanying logic extensions (`.ts`/`.js` files) will be ignored—they will not be registered
-   or loaded into the RunWeild runtime.
-2. **Pi Infrastructure Integration:** RunWeild will delegate theme loading and management to
+   or loaded into the RunWield runtime.
+2. **Pi Infrastructure Integration:** RunWield will delegate theme loading and management to
    `@earendil-works/pi-coding-agent` (`loadThemeFromPath`, `setRegisteredThemes`, `getAvailableThemes`, etc.).
-3. **Built-in Reliability:** The default "catppuccin-mocha" theme will be embedded within the RunWeild binary. It serves
+3. **Built-in Reliability:** The default "catppuccin-mocha" theme will be embedded within the RunWield binary. It serves
    as the primary fallback and is discoverable alongside external themes, but it cannot be edited or deleted by the
    user.
 4. **TUI Experience:** The theme selector must support **real-time re-skinning**. As the user navigates the list, the
@@ -31,7 +31,7 @@ registration), RunWeild does not currently utilize these features.
 
 ### 1. Theme Lifecycle & Discovery
 
-- **Boot:** On startup, RunWeild reads the active theme from settings. If missing or invalid, it falls back to the
+- **Boot:** On startup, RunWield reads the active theme from settings. If missing or invalid, it falls back to the
   embedded `catppuccin-mocha.json`.
 - **Discovery:** Theme discovery is deferred until the `/theme` command is invoked to optimize startup time.
 - **Loading:** `src/shared/ui/theme.js` will be refactored into a thin proxy that delegates to Pi's `initTheme` and
@@ -40,7 +40,7 @@ registration), RunWeild does not currently utilize these features.
 ### 2. The `/theme` Slash Command
 
 - **Interactive Selector:** A slash command that opens a `SelectList` of all available themes (builtin + custom).
-- **Live Preview:** Using the `onSelectionChange` event, RunWeild will call `setTheme(name)` to update the global theme
+- **Live Preview:** Using the `onSelectionChange` event, RunWield will call `setTheme(name)` to update the global theme
   singleton and trigger a TUI re-render.
 - **Persistence:** Only when the user presses "Enter" (confirm selection) will the choice be persisted to
   `~/.wld/settings.json`.

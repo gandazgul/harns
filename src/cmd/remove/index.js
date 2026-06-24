@@ -1,6 +1,6 @@
 /**
  * @module cmd/remove
- * RunWeild remove command wrapping Pi's PackageManager.
+ * RunWield remove command wrapping Pi's PackageManager.
  */
 
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";

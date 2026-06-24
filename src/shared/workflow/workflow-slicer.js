@@ -288,7 +288,7 @@ export async function runSlicerAgent({ planName, triageMeta, uiAPI, sessionManag
         return { ok: true };
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        uiAPI.appendSystemMessage(`${slicerDisplay} failed: ${error}`, true, "RunWeild");
+        uiAPI.appendSystemMessage(`${slicerDisplay} failed: ${error}`, true, "RunWield");
         return { ok: false, error };
     }
 }
@@ -319,7 +319,7 @@ async function runLegacyTaskSlicer({ planName, triageMeta, uiAPI, sessionManager
         return { ok: true };
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        uiAPI.appendSystemMessage(`${slicerAgentDef.displayName} failed: ${error}`, true, "RunWeild");
+        uiAPI.appendSystemMessage(`${slicerAgentDef.displayName} failed: ${error}`, true, "RunWield");
         return { ok: false, error };
     }
 }

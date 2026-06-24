@@ -4,9 +4,9 @@ import chalk from "chalk";
 // Force chalk to produce ANSI codes in non-TTY test environment
 chalk.level = 3;
 
-// Initialize the runweild theme before importing blocks (theme must be ready)
-import { initRunWeildTheme } from "./theme.js";
-initRunWeildTheme();
+// Initialize the runwield theme before importing blocks (theme must be ready)
+import { initRunWieldTheme } from "./theme.js";
+initRunWieldTheme();
 
 import {
     AgentMessageBlock,
@@ -123,7 +123,7 @@ Deno.test("AgentMessageBlock renders without background (like Pi)", () => {
 
 Deno.test("SystemMessageBlock renders with consistent background", () => {
     const w = 100;
-    const block = new SystemMessageBlock("[RunWeild] System message");
+    const block = new SystemMessageBlock("[RunWield] System message");
     const lines = block.render(w);
     assertBlockBackground(lines, w, "SystemMessageBlock");
 });
@@ -201,7 +201,7 @@ Deno.test("ToolExecutionBlock keeps multi-line command headers inside the block"
     const w = 120;
     const block = new ToolExecutionBlock(
         "$",
-        'cd /Users/gandazgul/Documents/web/runweild && git commit -m "Consolidate formats\n- Move plan formats"',
+        'cd /Users/gandazgul/Documents/web/runwield && git commit -m "Consolidate formats\n- Move plan formats"',
     );
     block.appendOutput("[main abc123] Consolidate formats\n");
     block.endExecution(false, 100);

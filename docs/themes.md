@@ -1,14 +1,14 @@
 # Theme Customization
 
-RunWeild allows you to customize the visual appearance of the TUI using themes.
+RunWield allows you to customize the visual appearance of the TUI using themes.
 
 ## Themes
 
-A theme is a JSON file that defines the colors and variables used by the RunWeild interface.
+A theme is a JSON file that defines the colors and variables used by the RunWield interface.
 
 ### Built-in Theme
 
-RunWeild comes with an embedded `catppuccin-mocha` theme. This theme serves as the default and acts as a fallback; any
+RunWield comes with an embedded `catppuccin-mocha` theme. This theme serves as the default and acts as a fallback; any
 external theme missing specific color tokens will inherit them from the built-in default. In the event of a name
 collision, the embedded theme always takes precedence.
 
@@ -35,7 +35,7 @@ You can also manage themes directly from the shell:
 
 ## Installing Themes
 
-RunWeild supports installing theme packages from several sources using the `wld install` command.
+RunWield supports installing theme packages from several sources using the `wld install` command.
 
 ### Usage
 
@@ -50,9 +50,9 @@ wld install <source>
 - **local**: `wld install local:<path>` (e.g., `wld install local:./themes/my-theme-pack`)
 
 > [!IMPORTANT]
-> **Theme-only constraints**: RunWeild only registers `.json` theme files found within these packages. Any other
+> **Theme-only constraints**: RunWield only registers `.json` theme files found within these packages. Any other
 > resources (logic extensions, skills, prompts) are ignored; `wld install` reports the count so you know what was
-> skipped. Skills are intentionally handled by the wider skill ecosystem instead: RunWeild discovers compatible skills
+> skipped. Skills are intentionally handled by the wider skill ecosystem instead: RunWield discovers compatible skills
 > from `~/.agents/skills`, `~/.wld/skills`, local `.wld/skills`, and bundled `src/skills`.
 
 ### Removing Themes
@@ -63,7 +63,7 @@ To uninstall a theme package, use the `remove` command:
 wld remove <source>
 ```
 
-If the removed package contained the currently active theme, RunWeild will automatically reset the active theme to
+If the removed package contained the currently active theme, RunWield will automatically reset the active theme to
 `catppuccin-mocha`.
 
 ## Settings

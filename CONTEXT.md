@@ -1,13 +1,13 @@
-# RunWeild Context
+# RunWield Context
 
-RunWeild is an opinionated, plan-by-default coding harness that routes development requests through triage, planning,
+RunWield is an opinionated, plan-by-default coding harness that routes development requests through triage, planning,
 review, execution, and validation. This context defines the project language used by agents, docs, plans, and code.
 
 ## Language
 
 ### Harness
 
-**RunWeild**: The plan-by-default coding harness that routes user requests through triage and specialized agents.
+**RunWield**: The plan-by-default coding harness that routes user requests through triage and specialized agents.
 _Avoid_: Harness, tool, framework
 
 **TUI**: The terminal-based interactive user interface that hosts agent conversations and renders workflow output.
@@ -113,7 +113,7 @@ Completed plan, done plan
 done plan
 
 **Closed Without Verification Plan**: A terminal Plan whose work is no longer active because the user manually accepted,
-verified outside RunWeild, or chose not to require Workflow Validation. _Avoid_: Verified plan, archived plan, on-hold
+verified outside RunWield, or chose not to require Workflow Validation. _Avoid_: Verified plan, archived plan, on-hold
 plan
 
 **Review Loop**: The cycle where a planning agent writes or revises a Plan and the user approves or returns it through
@@ -126,7 +126,7 @@ approval screen
 Status and lets the user inspect or edit Plan files while preserving the local Plan files as the canonical source of
 truth. _Avoid_: Remote plan database, hosted board, task board
 
-**Workspace**: A future browser-based RunWeild space that can contain Plans alongside project documentation, notes,
+**Workspace**: A future browser-based RunWield space that can contain Plans alongside project documentation, notes,
 wiki-style pages, and other project knowledge while preserving Plans as markdown files that workflow agents can read.
 _Avoid_: Database-only knowledge base, replacement for Plans
 
@@ -138,7 +138,7 @@ Task card, ticket
 made through structured controls or Plan Lifecycle actions, not by default raw YAML editing. _Avoid_: Raw Plan file
 editor, Front Matter editor
 
-**Plan UI Server**: An ephemeral local web server started by RunWeild, for example through `wld plans ui`, that serves
+**Plan UI Server**: An ephemeral local web server started by RunWield, for example through `wld plans ui`, that serves
 the Plan Board and reads or writes Plan files in the current checkout. _Avoid_: Hosted collaboration service, daemon
 
 **Feedback**: Structured user annotations returned when a Plan is denied or re-opened in Plannotator. _Avoid_: Comments,
@@ -149,7 +149,7 @@ notes
 **Resume**: Re-entering workflow for an existing Plan or session instead of starting from a fresh User Request. _Avoid_:
 Continue, reopen, pick up
 
-**Origin**: A Plan Front Matter value of `internal` for RunWeild-created plans or `external` for imported markdown.
+**Origin**: A Plan Front Matter value of `internal` for RunWield-created plans or `external` for imported markdown.
 _Avoid_: Source, provenance
 
 ### Agents
@@ -236,12 +236,12 @@ continuing. _Avoid_: Surprise return, silent reroute
 Task and checks cross-slice integration before Workflow Validation. _Avoid_: Final verification task, cross-slice
 verification task, acceptance gate
 
-**Workflow Validation**: RunWeild' independent validation pass after a completed workflow loop. _Avoid_: Agent
+**Workflow Validation**: RunWield' independent validation pass after a completed workflow loop. _Avoid_: Agent
 self-check, final summary
 
 **Toolset**: A named bundle of tool names granted to an Agent Session. _Avoid_: Tool list, capabilities
 
-**Custom Tool**: A RunWeild-defined tool registered alongside built-in pi tools. _Avoid_: Internal tool, RunWeild tool
+**Custom Tool**: A RunWield-defined tool registered alongside built-in pi tools. _Avoid_: Internal tool, RunWield tool
 
 **Triage-Report Tool**: The `triage_report` Custom Tool that emits a Triage Report and ends the current Agent turn.
 _Avoid_: Classification tool, triage result tool
@@ -283,7 +283,7 @@ Collection, namespace
 **Cymbal**: The external code indexing and search system exposed to agents as codebase tools. _Avoid_: Search layer,
 indexer
 
-**Snip**: The external command-output compression proxy RunWeild uses as an optional, fail-open runtime optimization for
+**Snip**: The external command-output compression proxy RunWield uses as an optional, fail-open runtime optimization for
 eligible agent shell commands. _Avoid_: Required tool, agent tool, search tool
 
 **Prompt Template**: A layered markdown template that defines a slash command available in the TUI. _Avoid_: Slash
@@ -311,9 +311,9 @@ command definition, prompt command
   **Epic** container.
 - A **Failed Plan** must have reached **Ready For Work** before work failed.
 - An **In-Progress Plan** requires recovery because execution may have partially changed the worktree.
-- **Plan Recovery** resolves whether RunWeild continues the current worktree state, reports on it, re-opens the Plan, or
+- **Plan Recovery** resolves whether RunWield continues the current worktree state, reports on it, re-opens the Plan, or
   returns the worktree to a known pre-execution state.
-- A **Failed Plan** should include **Failure Detail** when RunWeild can identify the cause.
+- A **Failed Plan** should include **Failure Detail** when RunWield can identify the cause.
 - An **Implemented Plan** still requires **Workflow Validation**.
 - An **Implemented Plan** may include **Failure Detail** when Workflow Validation fails.
 - A **Verified Plan** must have passed **Workflow Validation**.

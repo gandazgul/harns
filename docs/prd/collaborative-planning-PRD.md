@@ -6,13 +6,13 @@
 
 ## 1. Objective
 
-Enable RunWeild users to share plans with their team (technical and non-technical), collect structured feedback in a
+Enable RunWield users to share plans with their team (technical and non-technical), collect structured feedback in a
 shared space, and iteratively refine plans through revision cycles — all with end-to-end encryption so the server
 (including any self-hosted instance) never sees plaintext plan content.
 
 ## 2. Problem Statement
 
-RunWeild is currently a single-user planning tool. Users generate plans locally but have no mechanism to:
+RunWield is currently a single-user planning tool. Users generate plans locally but have no mechanism to:
 
 - Share a plan with non-technical stakeholders (PMs, designers, clients) in a readable format.
 - Collect and organize feedback tied to specific parts of the plan.
@@ -323,7 +323,7 @@ CREATE INDEX idx_revisions_plan ON revisions(plan_id);
 ## 8. References
 
 - Plannotator codebase: `@/../plannotator/` — sharing pipeline, encryption utilities, `SharePayload` type
-- RunWeild project memory: `[139] Agent tool policy`, `[104] Agent definitions`, `[103] Monorepo structure`
+- RunWield project memory: `[139] Agent tool policy`, `[104] Agent definitions`, `[103] Monorepo structure`
 - Plannotator D1 + SQLite precedent: `@/../chores-app/` uses Deno + SQLite in production
-- Relevant RunWeild files: `packages/ui/utils/sharing.ts`, `packages/ui/utils/planDiffEngine.ts`,
+- Relevant RunWield files: `packages/ui/utils/sharing.ts`, `packages/ui/utils/planDiffEngine.ts`,
   `packages/shared/crypto.ts`

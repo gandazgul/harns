@@ -346,7 +346,7 @@ function completedTaskMessages(text) {
  * @returns {Promise<{ debugRoot: string, cleanup: () => Promise<void> }>}
  */
 async function setupTempDebugRoot() {
-    const debugRoot = await Deno.makeTempDir({ prefix: "runweild-workflow-debug-test-" });
+    const debugRoot = await Deno.makeTempDir({ prefix: "runwield-workflow-debug-test-" });
     return {
         debugRoot,
         cleanup: async () => {
@@ -641,7 +641,7 @@ Deno.test("executeProjectTasks records incomplete tasks and blocks dependents", 
 
 Deno.test("executeProjectTasks writes per-task logs under explicit temp execution cwd", async () => {
     const previousDebug = Deno.env.get("DEBUG");
-    const executionCwd = await Deno.makeTempDir({ prefix: "runweild-workflow-log-test-" });
+    const executionCwd = await Deno.makeTempDir({ prefix: "runwield-workflow-log-test-" });
     Deno.env.delete("DEBUG");
     try {
         const tasks = [
@@ -698,7 +698,7 @@ Deno.test("executeProjectTasks writes per-task logs under explicit temp executio
 
 Deno.test("executeProjectTasks writes DEBUG legacy task logs under explicit debug root", async () => {
     const previousDebug = Deno.env.get("DEBUG");
-    const debugRoot = await Deno.makeTempDir({ prefix: "runweild-debug-root-test-" });
+    const debugRoot = await Deno.makeTempDir({ prefix: "runwield-debug-root-test-" });
     Deno.env.set("DEBUG", "1");
     try {
         const tasks = [
@@ -842,13 +842,13 @@ Deno.test("buildSlicerRequest includes triage report fields when present", () =>
     const text = buildSlicerRequest("my-plan", {
         classification: "PROJECT",
         complexity: "HIGH",
-        summary: "Initialize RunWeild",
+        summary: "Initialize RunWield",
         affectedPaths: ["src/foo.js", "src/bar.js"],
     });
     assertStringIncludes(text, "Triage Report");
     assertStringIncludes(text, "Classification: PROJECT");
     assertStringIncludes(text, "Complexity: HIGH");
-    assertStringIncludes(text, "Summary: Initialize RunWeild");
+    assertStringIncludes(text, "Summary: Initialize RunWield");
     assertStringIncludes(text, "src/foo.js, src/bar.js");
 });
 

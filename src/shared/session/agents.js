@@ -242,7 +242,7 @@ export async function listAvailableAgents() {
         } catch (err) {
             // Surface malformed agent definitions instead of silently dropping them.
             console.error(
-                `[RunWeild] Skipping agent "${name}": ${err instanceof Error ? err.message : String(err)}`,
+                `[RunWield] Skipping agent "${name}": ${err instanceof Error ? err.message : String(err)}`,
             );
         }
     }
