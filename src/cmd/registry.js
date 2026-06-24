@@ -15,6 +15,7 @@ import { runQuitCommand } from "./quit/index.js";
 import { getLoadPlanCompletions, runLoadPlanCommand } from "./load-plan/index.js";
 import { runExportCommand } from "./export/index.js";
 import { runNewCommand } from "./new/index.js";
+import { runNameCommand } from "./name/index.js";
 import { runSessionCommand } from "./session/index.js";
 import { runShareCommand } from "./share/index.js";
 import { runResumeCommand } from "./resume/index.js";
@@ -212,6 +213,21 @@ export const commandRegistry = {
             "Slash command only (interactive session).",
         ],
         execute: runNewCommand,
+        surfaces: ["slash"],
+    },
+    [COMMAND_NAMES.NAME]: {
+        name: COMMAND_NAMES.NAME,
+        displayName: "Session Name",
+        description: "Set or show the current session name",
+        summary: "Set or show the current session name.",
+        usage: [
+            "/name",
+            "/name <name>",
+        ],
+        notes: [
+            "Slash command only (interactive session).",
+        ],
+        execute: runNameCommand,
         surfaces: ["slash"],
     },
     [COMMAND_NAMES.SESSION]: {
