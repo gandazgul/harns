@@ -10,16 +10,13 @@ affectedPaths:
     - "src/cmd/name/index.js"
     - "src/shared/ui/tui.js"
 createdAt: "2026-06-24T13:51:44-04:00"
-updatedAt: "2026-06-24T18:46:09.907Z"
-status: "implemented"
+updatedAt: "2026-06-24T18:47:12.854Z"
+status: "verified"
 origin: "internal"
-failureReason: "git merge --no-ff runweild/worktree/automatic-session-names-terminal-titles-c8587348 failed: Auto-merging plans/automatic-session-names-terminal-titles.md
-    CONFLICT (content): Merge conflict in plans/automatic-session-names-terminal-titles.md
-    Auto-merging plans/local-first-plan-management-ui.md
-    CONFLICT (content): Merge conflict in plans/local-first-plan-management-ui.md
-    Automatic merge failed; fix conflicts and then commit the result."
 implementedAt: "2026-06-24T18:36:32.463Z"
-worktreeStatus: "merge_conflict"
+verifiedAt: "2026-06-24T18:47:12.854Z"
+humanReviewMode: "ask"
+humanReviewDecision: "skipped"
 routingIntent: "FEATURE"
 ---
 
