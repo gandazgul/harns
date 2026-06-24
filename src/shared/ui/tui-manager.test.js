@@ -30,6 +30,7 @@ Deno.test("createTuiManager initializes once and returns the same running TUI", 
         TuiCtor: FakeTui,
         installCrashGuards: () => events.push("install"),
         uninstallCrashGuards: () => events.push("uninstall"),
+        restoreTitle: () => events.push("restoreTitle"),
     });
 
     const first = manager.initTUI();
@@ -64,6 +65,7 @@ Deno.test("createTuiManager throws before initialization and clears state on sto
         TuiCtor: FakeTui,
         installCrashGuards: () => events.push("install"),
         uninstallCrashGuards: () => events.push("uninstall"),
+        restoreTitle: () => events.push("restoreTitle"),
     });
 
     assertThrows(
@@ -80,7 +82,7 @@ Deno.test("createTuiManager throws before initialization and clears state on sto
         Error,
         "TUI not initialized. Call initTUI() first.",
     );
-    assertEquals(events, ["start", "install", "uninstall", "stop"]);
+    assertEquals(events, ["start", "install", "restoreTitle", "uninstall", "stop"]);
 });
 
 Deno.test("createTuiManager stop is safe before init and with TUI lacking stop", () => {
@@ -100,11 +102,12 @@ Deno.test("createTuiManager stop is safe before init and with TUI lacking stop",
         TuiCtor: FakeTui,
         installCrashGuards: () => events.push("install"),
         uninstallCrashGuards: () => events.push("uninstall"),
+        restoreTitle: () => events.push("restoreTitle"),
     });
 
     manager.stopTUI();
     manager.initTUI();
     manager.stopTUI();
 
-    assertEquals(events, ["uninstall", "start", "install", "uninstall"]);
+    assertEquals(events, ["restoreTitle", "uninstall", "start", "install", "restoreTitle", "uninstall"]);
 });

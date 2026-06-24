@@ -4,7 +4,9 @@ description: Generates a concise commit message, stages changes, and pushes to t
 
 # Commit
 
-Generate a concise, informative commit message and commit the current changes.
+Generate a concise, informative commit message and commit the current pending changes in the repo, be default all
+changes staged or not, even unrelated to any other context. If there are staged changes and the unstaged ones seem very
+different and unrelated then feel free to make 2 commits instead of one.
 
 **Execution Steps:**
 

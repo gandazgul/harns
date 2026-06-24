@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { loadReviewerPrompt, runValidationLoop } from "./validation.js";
 import { getActiveExecutionWorkflow, setActiveExecutionWorkflow } from "../session/session-state.js";
 
@@ -68,6 +68,15 @@ Deno.test("loadReviewerPrompt returns a bare tool-free prompt", async () => {
     assertEquals(reviewerDef.systemPrompt, "Review only the supplied plan and diff.");
     assertEquals(reviewerDef.systemPrompt.includes("{{SKILLS}}"), false);
     assertEquals(reviewerDef.systemPrompt.includes("Available tools"), false);
+});
+
+Deno.test("bundled reviewer prompt permits unrelated formatter-only changes", async () => {
+    const prompt = await Deno.readTextFile(
+        new URL("../../agent-definitions/workflow-prompts/reviewer-prompt.md", import.meta.url),
+    );
+
+    assertStringIncludes(prompt, "Ignore unrelated formatter-only changes");
+    assertStringIncludes(prompt, "Do not fail a review merely because the diff touches files the plan did not mention");
 });
 
 Deno.test("runValidationLoop does not switch active agent unless finalAgentName is provided", async () => {
