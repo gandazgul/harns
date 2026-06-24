@@ -13,6 +13,10 @@ _Avoid_: Harness, tool, framework
 **TUI**: The terminal-based interactive user interface that hosts agent conversations and renders workflow output.
 _Avoid_: Shell, console
 
+**Terminal Title**: The terminal emulator window or tab label RunWield sets for an interactive TUI session. _Avoid_: Tab name, shell title
+
+**Session Name**: The persisted short human label for an Agent Session, initially derived from Router Triage for fresh User Requests. _Avoid_: Tab title, conversation name
+
 **User Request**: A natural-language request submitted by the user for triage and execution. _Avoid_: Prompt, input,
 query
 
@@ -291,6 +295,8 @@ command definition, prompt command
 
 ## Relationships
 
+- A **TUI** session may set a **Terminal Title** before and after **Triage** to keep terminal tabs distinguishable.
+- A **Terminal Title** should mirror the current **Session Name** when one exists.
 - A **User Request** is classified by an Agent emitting exactly one **Triage Report** through the **Triage-Report
   Tool**.
 - The **Router** is the default Agent used for fresh Triage, but the **Workflow Orchestrator** reacts to the
