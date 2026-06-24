@@ -3,21 +3,19 @@ classification: "FEATURE"
 complexity: "LOW"
 summary: "Create a JSON schema for wld settings.json and document how to reference it via GitHub releases. This involves defining the schema based on RUNWEILD_CUSTOM_SETTING_KEYS and existing settings logic in src/shared/settings.js, and updating the README to provide the $schema URL."
 affectedPaths:
-    - "config.schema.json"
-    - "README.md"
+  - "config.schema.json"
+  - "README.md"
 createdAt: "2026-06-23T21:07:43-04:00"
-updatedAt: "2026-06-24T17:00:20.938Z"
-status: "in_progress"
+updatedAt: "2026-06-24T17:32:39.948Z"
+status: "implemented"
 origin: "internal"
-humanReviewMode: null
-humanReviewDecision: null
-executionBaselineTree: "5017b70358ac01c59990521efc4525029b9102ef"
-worktreeId: "b1ddff94"
-worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-harns--/harns-runwield-settings-json-github-schema-b1ddff94"
-worktreeBranch: "runwield/worktree/settings-json-github-schema-b1ddff94"
-worktreeStatus: "active"
+failureReason: "git merge --no-ff runweild/worktree/settings-json-github-schema-b1ddff94 failed: Auto-merging README.md
+Auto-merging docs/settings.md
+CONFLICT (content): Merge conflict in docs/settings.md
+Auto-merging plans/archived/plannotator-human-code-review-setting.md
+Automatic merge failed; fix conflicts and then commit the result."
+worktreeStatus: "merge_conflict"
 ---
-
 # Settings JSON Schema Release Asset
 
 ## Context
@@ -134,7 +132,7 @@ Existing source/docs to mirror rather than invent:
 
 - Automated:
   - `deno eval 'JSON.parse(await Deno.readTextFile("config.schema.json")); console.log("schema ok")'`
-  - `deno fmt --check config.schema.json .github/workflows/release.yml docs/settings.md README.md`
+  - `deno fmt --check`
 - Manual:
   - Confirm `config.schema.json` contains
     `$id: "https://github.com/gandazgul/runwield/releases/latest/download/config.schema.json"`.
@@ -147,6 +145,7 @@ Existing source/docs to mirror rather than invent:
   - The schema JSON parses cleanly.
   - Formatting checks pass.
   - Future GitHub releases expose `config.schema.json` at `/releases/latest/download/config.schema.json`.
+- Its ok with deno fmt formatted unrelated files this is always ok
 
 ## Edge Cases & Considerations
 
