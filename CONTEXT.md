@@ -13,9 +13,11 @@ _Avoid_: Harness, tool, framework
 **TUI**: The terminal-based interactive user interface that hosts agent conversations and renders workflow output.
 _Avoid_: Shell, console
 
-**Terminal Title**: The terminal emulator window or tab label RunWield sets for an interactive TUI session. _Avoid_: Tab name, shell title
+**Terminal Title**: The terminal emulator window or tab label RunWield sets for an interactive TUI session. _Avoid_: Tab
+name, shell title
 
-**Session Name**: The persisted short human label for an Agent Session, initially derived from Router Triage for fresh User Requests. _Avoid_: Tab title, conversation name
+**Session Name**: The persisted short human label for an Agent Session, initially derived from Router Triage for fresh
+User Requests. _Avoid_: Tab title, conversation name
 
 **User Request**: A natural-language request submitted by the user for triage and execution. _Avoid_: Prompt, input,
 query
@@ -25,8 +27,8 @@ query
 **Triage**: Structured classification of a User Request by workflow type and complexity, usually performed by the
 Router. _Avoid_: Assessment, evaluation, analysis
 
-**Triage Report**: The structured output of Triage containing routing intent, complexity, summary, affected paths, and an optional auto-generated Session Name.
-_Avoid_: Triage result, classification result
+**Triage Report**: The structured output of Triage containing routing intent, complexity, summary, affected paths, and
+an optional auto-generated Session Name. _Avoid_: Triage result, classification result
 
 **Diagnostic Triage**: Read-only Triage for user-reported broken behavior that gathers enough evidence to estimate
 likely blast radius without reproducing, instrumenting, or fixing the issue. _Avoid_: Diagnosis, debugging,
