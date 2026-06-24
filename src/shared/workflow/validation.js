@@ -356,7 +356,7 @@ export async function runValidationLoop({
     let validationCycles = 0;
     const MAX_VALIDATION_CYCLES = 3;
 
-    while (!executionComplete && validationCycles < MAX_VALIDATION_CYCLES) {
+    while (!executionComplete && !haltReason && validationCycles < MAX_VALIDATION_CYCLES) {
         validationCycles++;
         appendRunWeildSystemMessage(uiAPI, `Starting Validation Cycle ${validationCycles}/${MAX_VALIDATION_CYCLES}`);
 
@@ -453,6 +453,11 @@ export async function runValidationLoop({
                 false,
                 SUCCESS_MESSAGE_STYLE,
             );
+            humanReviewMetadata = {
+                humanReviewMode: getCodeReviewModeImpl(),
+                humanReviewDecision: "not_required",
+                humanReviewedAt: null,
+            };
             executionComplete = true;
             break;
         }
@@ -497,7 +502,10 @@ export async function runValidationLoop({
                         uiAPI,
                     });
 
-                    if (humanReview.exit) {
+                    const hasHumanFeedback = Boolean(
+                        humanReview.feedback?.trim() || humanReview.annotations?.length,
+                    );
+                    if (humanReview.exit || (!humanReview.approved && !hasHumanFeedback)) {
                         haltReason = "Human code review exited without approval or feedback.";
                         break;
                     }
@@ -667,6 +675,7 @@ export async function runValidationLoop({
                     }
                     appendRunWeildSystemMessage(uiAPI, `Workflow halted: Worktree merge failed: ${reason}`, true);
                     executionComplete = false;
+                    haltReason = `Worktree merge failed: ${reason}`;
                 }
             }
         }

@@ -196,6 +196,25 @@ Deno.test("preserveRunWeildCustomSettingsForWrite keeps codereview", () => {
     });
 });
 
+Deno.test("preserveRunWeildCustomSettingsForWrite preserves codereview across SettingsManager-shaped writes", () => {
+    const previous = JSON.stringify({
+        theme: "dark",
+        codereview: "ask",
+        verification_command: "deno task ci",
+    });
+    const next = JSON.stringify({
+        theme: "light",
+        defaultModel: "model-a",
+    });
+
+    assertEquals(JSON.parse(preserveRunWeildCustomSettingsForWrite(previous, next)), {
+        theme: "light",
+        defaultModel: "model-a",
+        codereview: "ask",
+        verification_command: "deno task ci",
+    });
+});
+
 Deno.test("getResolvedVisionFallbackModelSetting prefers active preset over top-level", async () => {
     const originalHome = Deno.env.get("HOME");
     const originalCwd = Deno.cwd();
@@ -298,7 +317,7 @@ Deno.test("getCodeReviewMode defaults none, honors overrides, and rejects invali
 
         assertEquals(getCodeReviewMode(), "none");
 
-        await setCustomSetting("codereview", "always", "global");
+        await setCustomSetting("codereview", " ALWAYS ", "global");
         assertEquals(getCodeReviewMode(), "always");
 
         await setCustomSetting("codereview", "ask", "project");

@@ -421,6 +421,9 @@ export function shouldCleanupMergedWorktrees() {
  */
 export function getCodeReviewMode() {
     const mode = getMergedCustomSetting("codereview");
-    if (mode === "ask" || mode === "always") return mode;
+    if (typeof mode !== "string") return "none";
+
+    const normalized = mode.trim().toLowerCase();
+    if (normalized === "ask" || normalized === "always") return normalized;
     return "none";
 }
