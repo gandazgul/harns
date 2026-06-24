@@ -8,12 +8,14 @@ affectedPaths:
   - "docs/plan-lifecycle.md"
   - "docs/prd/on-hold-plan-status.md"
 createdAt: "2026-06-24T20:14:08.682Z"
-updatedAt: "2026-06-24T21:54:57.627Z"
-status: "ready_for_work"
+updatedAt: "2026-06-24T22:54:57.245Z"
+status: "implemented"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
   []
+failureReason: "Primary checkout has uncommitted changes that overlap execution worktree changes; refusing to merge: plans/local-first-plan-management-ui/plan-resource-identity-and-hierarchy.md"
+worktreeStatus: "merge_conflict"
 ---
 # Lifecycle Board Semantics
 

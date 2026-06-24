@@ -61,6 +61,7 @@ import {
     setActiveExecutionWorkflow,
 } from "../../shared/session/session-state.js";
 import { shouldCleanupMergedWorktrees as shouldCleanupMergedWorktreesFn } from "../../shared/settings.js";
+import { setTerminalTitleForName as setTerminalTitleForNameFn } from "../../shared/ui/terminal-title.js";
 import { resetTuiState as resetTuiStateFn } from "../command-helpers.js";
 import { createAgentHandler as createAgentHandlerFn } from "../../shared/session/agent-handler.js";
 export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
@@ -103,6 +104,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof removeExecutionWorktreeFn} [removeExecutionWorktree]
  * @property {typeof removeWorktreeRegistryEntryFn} [removeWorktreeRegistryEntry]
  * @property {typeof shouldCleanupMergedWorktreesFn} [shouldCleanupMergedWorktrees]
+ * @property {typeof setTerminalTitleForNameFn} [setTerminalTitleForName]
  */
 
 /**
@@ -1763,6 +1765,11 @@ export async function runLoadPlanCommand(argv, options = {}) {
             false,
             "RunWield",
         );
+
+        // Set terminal title and session name to the plan's name
+        const setTitle = deps.setTerminalTitleForName || setTerminalTitleForNameFn;
+        setTitle(plan.planName);
+        options.sessionManager?.appendSessionInfo?.(plan.planName);
 
         const triageMeta = plan.attrs;
         const agentName = triageMeta.classification === "PROJECT" ? AGENTS.ARCHITECT : AGENTS.PLANNER;
