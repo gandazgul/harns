@@ -297,6 +297,7 @@ command definition, prompt command
 
 - A **TUI** session may set a **Terminal Title** before and after **Triage** to keep terminal tabs distinguishable.
 - A **Terminal Title** should mirror the current **Session Name** when one exists.
+- Router-provided auto-naming only sets the **Session Name** for unnamed sessions; manual naming overrides it.
 - A **User Request** is classified by an Agent emitting exactly one **Triage Report** through the **Triage-Report
   Tool**.
 - The **Router** is the default Agent used for fresh Triage, but the **Workflow Orchestrator** reacts to the
