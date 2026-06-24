@@ -29,11 +29,22 @@ Inside the TUI:
 ```text
 /resume          # browse recent sessions
 /new             # start a fresh root session
+/name <name>     # set the current session name
+/name            # show the current session name, or usage if unnamed
 /session         # show current session information
 /compact         # compact current context
 /export          # export to HTML or JSONL
 /share           # upload a secret GitHub Gist
 ```
+
+## Session names and terminal titles
+
+Fresh sessions start with a terminal title of `wld - <current folder>`. When Router completes Triage, it provides a
+short Session Name for unnamed sessions. RunWield persists that name in the session and mirrors it into the terminal
+title as `wld - <session name>`.
+
+Manual names win. Use `/name <name>` to set or override the Session Name; later Router Triage will not replace an
+existing name. Use `/name` with no arguments to show the current name, matching Pi behavior.
 
 ## Root-agent behavior
 

@@ -123,19 +123,19 @@ See [Plans and workflows](workflows.md) and [Plan Lifecycle](plan-lifecycle.md).
 
 Type `/` to open command completion. Common commands:
 
-| Command                        | Purpose                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| `/login`, `/logout`, `/status` | Manage model credentials.                                                     |
-| `/model`                       | Switch active model.                                                          |
-| `/agent`                       | Switch active agent.                                                          |
-| `/init`                        | Initialize the current project.                                               |
-| `/load-plan`                   | Continue a saved plan.                                                        |
-| `/resume`, `/new`, `/session`  | Manage sessions.                                                              |
-| `/compact`                     | Compact the current session context.                                          |
-| `/theme`                       | Pick a theme.                                                                 |
-| `/reload`                      | Reload settings, instructions, prompts, skills, models, themes, and memories. |
-| `/export`, `/share`            | Export or share a session.                                                    |
-| `/quit`                        | Exit.                                                                         |
+| Command                                | Purpose                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------- |
+| `/login`, `/logout`, `/status`         | Manage model credentials.                                                     |
+| `/model`                               | Switch active model.                                                          |
+| `/agent`                               | Switch active agent.                                                          |
+| `/init`                                | Initialize the current project.                                               |
+| `/load-plan`                           | Continue a saved plan.                                                        |
+| `/resume`, `/new`, `/name`, `/session` | Manage sessions.                                                              |
+| `/compact`                             | Compact the current session context.                                          |
+| `/theme`                               | Pick a theme.                                                                 |
+| `/reload`                              | Reload settings, instructions, prompts, skills, models, themes, and memories. |
+| `/export`, `/share`                    | Export or share a session.                                                    |
+| `/quit`                                | Exit.                                                                         |
 
 For editor behavior, message queue behavior, file references, shell commands, and terminal shortcuts that match Pi, see
 [Pi Using Pi](https://pi.dev/docs/latest/usage) and [Pi Keybindings](https://pi.dev/docs/latest/keybindings). See

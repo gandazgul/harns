@@ -75,8 +75,9 @@ radius:
    current implementation, and identify the vertical slice of code that will be affected. A good place to start is
    `code_structure`. Only read files directly relevant to routing. Avoid broad surveys. You may also use memory_recall
    and memory_recall_global to check for relevant memories.
-6. Call `triage_report` with: `routingIntent`, `complexity`, `summary`, and an ordered `affectedPaths` list that
-   represents this vertical slice.
+6. Call `triage_report` with: `routingIntent`, `complexity`, `summary`, `sessionName`, and an ordered `affectedPaths`
+   list that represents this vertical slice. `sessionName` must be a short 3–6 word noun phrase for the persisted
+   Session Name and terminal tab title, such as `terminal titles`, `plan board UI`, or `fix model routing`.
 
 Guidelines for discovery:
 
