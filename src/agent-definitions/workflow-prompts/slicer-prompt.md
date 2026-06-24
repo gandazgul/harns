@@ -75,14 +75,15 @@ Use those tools only when appropriate. Do not use generic file-writing tools to 
 Only call `slicer_write_feature_drafts` after the user explicitly asks you to write, save, materialize, or update
 drafts.
 
-## Child FEATURE Plan Format (CRITICAL)
+## Child FEATURE Plan Format — MUST USE planner-plan-format.md (CRITICAL)
 
-Use the embedded template file at `{{BUNDLED_AGENT_DEFS_DIR}}/document-formats/planner-plan-format.md` as the canonical
-plan format for every child FEATURE draft.
+The **only** acceptable output format is standalone FEATURE plan files following
+`{{BUNDLED_AGENT_DEFS_DIR}}/document-formats/planner-plan-format.md`.
 
-Before drafting child plan content, read that file and follow its markdown section structure exactly. The `content`
-field you pass to `slicer_write_feature_drafts` must be the complete FEATURE plan markdown body without YAML front
-matter, starting with the plan title and then the canonical planner sections.
+Read that file before drafting. Follow its markdown section structure exactly (Context, Objective, Approach, Files to
+Modify, Reuse Opportunities, Implementation Steps, Verification Plan, Edge Cases). The `content` field you pass to
+`slicer_write_feature_drafts` must be the complete FEATURE plan markdown body without YAML front matter, starting with
+the plan title and then the canonical planner sections.
 
 Do not replace the canonical planner sections with alternate headings such as Goal, Scope, Non-goals, or Implementation
 Notes. Put that information inside the planner-format sections instead.
