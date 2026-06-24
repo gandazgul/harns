@@ -476,10 +476,10 @@ export async function runValidationLoop({
                 let shouldOpenReview = codeReviewMode === "always";
                 if (codeReviewMode === "ask") {
                     const choice = await uiAPI.promptSelect?.(
-                        "Semantic review passed. Open Plannotator human code review before merge-back?",
+                        "Semantic review passed. Open Plannotator for code review before merge-back?",
                         [
                             { value: "open", label: "Open code review" },
-                            { value: "skip", label: "Skip human review" },
+                            { value: "skip", label: "Skip code review" },
                         ],
                     );
                     shouldOpenReview = choice === "open";
@@ -494,7 +494,7 @@ export async function runValidationLoop({
                 }
 
                 if (shouldOpenReview) {
-                    appendRunWieldSystemMessage(uiAPI, "Opening Plannotator Human Code Review...");
+                    appendRunWieldSystemMessage(uiAPI, "Opening Plannotator Code Review...");
                     const humanReview = await runPlannotatorCodeReviewImpl({
                         planName,
                         diffText,
@@ -506,12 +506,12 @@ export async function runValidationLoop({
                         humanReview.feedback?.trim() || humanReview.annotations?.length,
                     );
                     if (humanReview.exit || (!humanReview.approved && !hasHumanFeedback)) {
-                        haltReason = "Human code review exited without approval or feedback.";
+                        haltReason = "User code review exited without approval or feedback.";
                         break;
                     }
 
                     if (humanReview.approved) {
-                        appendRunWieldSystemMessage(uiAPI, "Human Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
+                        appendRunWieldSystemMessage(uiAPI, "User Code Review Approved.", false, SUCCESS_MESSAGE_STYLE);
                         humanReviewMetadata = {
                             humanReviewMode: codeReviewMode,
                             humanReviewDecision: "approved",
@@ -526,17 +526,17 @@ export async function runValidationLoop({
                         ].filter(Boolean).join("\n\n");
                         appendRunWieldSystemMessage(
                             uiAPI,
-                            `Human review returned feedback. Sending feedback back to ${
+                            `User code review returned feedback. Sending feedback back to ${
                                 getAgentDisplayName(AGENTS.ENGINEER)
-                            }...\n\nHuman Review Feedback:\n${feedbackText}`,
+                            }...\nUser Code Review Feedback:\n${feedbackText}`,
                             true,
                         );
                         const completed = await repair({
                             agentName: AGENTS.ENGINEER,
                             userRequest:
-                                "The human code reviewer found issues with your implementation. Please fix them, " +
+                                "The user provided feedback about your implementation during a code review. Please fix them, " +
                                 `do not break existing tests, and call task_completed when finished.\n\n` +
-                                `Human Review Feedback:\n${feedbackText}`,
+                                `User Code Review Feedback:\n${feedbackText}`,
                             uiAPI,
                             sessionManager,
                             cwd: executionCwd,

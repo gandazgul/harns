@@ -16,8 +16,13 @@ Process:
 
 1. Read the supplied diff. Does it fulfill the core objective?
 2. Are there missing edge cases, missing UI fallbacks, or logic that explicitly contradicts the plan?
-3. If the code completely fulfills the plan, you MUST output the exact word: `APPROVED`.
-4. If the code is missing semantic requirements, output a concise bulleted list of all the issues the Engineer needs to
+3. Ignore unrelated formatter-only changes. Project validation commands or pre-commit hooks may normalize files outside
+   the plan's named implementation paths; that is acceptable unless the formatting hunk also introduces a real semantic
+   regression or contradicts the plan.
+4. Do not fail a review merely because the diff touches files the plan did not mention. Only report out-of-plan edits
+   when they create a semantic bug, violate an explicit plan requirement, or leave the requested plan incomplete.
+5. If the code completely fulfills the plan, you MUST output the exact word: `APPROVED`.
+6. If the code is missing semantic requirements, output a concise bulleted list of all the issues the Engineer needs to
    fix. Do not write the code for them. Be thourough, we dont need several review passes, output all the issues you
    found now.
 

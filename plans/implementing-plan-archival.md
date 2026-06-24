@@ -3,19 +3,20 @@ classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Implement first-class Plan archival using the existing plans/archived convention, with safe move/restore commands and lightweight filter/search over archived Plans."
 affectedPaths:
-  - "docs/adr/008-plan-archival-and-retrieval.md"
-  - "docs/plan-lifecycle.md"
-  - "src/plan-store.js"
-  - "src/plan-store.test.js"
-  - "src/cmd/plans/index.js"
-  - "src/cmd/plans/index.test.js"
-  - "src/cmd/plans/archive.js"
-  - "README.md"
+    - "docs/adr/008-plan-archival-and-retrieval.md"
+    - "docs/plan-lifecycle.md"
+    - "src/plan-store.js"
+    - "src/plan-store.test.js"
+    - "src/cmd/plans/index.js"
+    - "src/cmd/plans/index.test.js"
+    - "src/cmd/plans/archive.js"
+    - "README.md"
 createdAt: "2026-06-24T14:15:10-04:00"
 updatedAt: "2026-06-24T18:18:57.646Z"
 status: "draft"
 origin: "internal"
 ---
+
 # Plan Archival and Retrieval
 
 ## Context
@@ -38,12 +39,13 @@ correct:
 - ADR number `007` is already used by the local-first Workspace Plan Board. This feature should create ADR `008` if an
   ADR is still warranted.
 
-Ordering against `plans/local-first-plan-management-ui.md`: implement this archival feature **before** fresh Plan UI work
-in the current checkout if that UI is not actively being merged, because it is smaller, establishes the canonical
+Ordering against `plans/local-first-plan-management-ui.md`: implement this archival feature **before** fresh Plan UI
+work in the current checkout if that UI is not actively being merged, because it is smaller, establishes the canonical
 archive APIs, and keeps the future board from inventing its own archive model. If the Plan UI implementation is already
-active in another worktree/branch, merge or coordinate that work first because both efforts touch `src/plan-store.js` and
-`src/cmd/plans/index.js`. Archival should not block the UI lifecycle work for `closed_without_verification` or `on_hold`;
-this slice should default to archiving `verified` Plans and allow deliberate forced archival of other non-recovery Plans.
+active in another worktree/branch, merge or coordinate that work first because both efforts touch `src/plan-store.js`
+and `src/cmd/plans/index.js`. Archival should not block the UI lifecycle work for `closed_without_verification` or
+`on_hold`; this slice should default to archiving `verified` Plans and allow deliberate forced archival of other
+non-recovery Plans.
 
 ## Objective
 
@@ -57,14 +59,15 @@ Build first-class, local-file Plan archival around `plans/archived/`:
 
 ## Approach
 
-Add archive primitives to `src/plan-store.js` and expose them through a `wld plans archive ...` subcommand module.
-Treat the archive directory as a physical storage/visibility concern, not a lifecycle status. The Plan's last real
-status remains meaningful (`verified`, `implemented`, `draft`, etc.), while new archive metadata explains why and when it
-was moved.
+Add archive primitives to `src/plan-store.js` and expose them through a `wld plans archive ...` subcommand module. Treat
+the archive directory as a physical storage/visibility concern, not a lifecycle status. The Plan's last real status
+remains meaningful (`verified`, `implemented`, `draft`, etc.), while new archive metadata explains why and when it was
+moved.
 
 Recommended command surface:
 
-- `wld plans archive move <plan-name> [--reason <text>] [--force]` — move an active Plan to `plans/archived/<plan-name>.md`.
+- `wld plans archive move <plan-name> [--reason <text>] [--force]` — move an active Plan to
+  `plans/archived/<plan-name>.md`.
 - `wld plans archive list [--status <status>] [--query <text>]` — list archived Plans with optional metadata filters.
 - `wld plans archive search <query> [--limit <n>]` — bounded case-insensitive search over archived Plan summaries,
   affected paths, Front Matter, headings, and bodies.
@@ -152,7 +155,8 @@ Existing functions, modules, or patterns to reuse:
 - Nested child Plans: preserve path shape, but do not cascade archive/restore parent-child relationships automatically.
 - Malformed Front Matter: search/list should skip or degrade gracefully; move/restore should avoid destroying body text
   and report parse issues clearly.
-- Worktree recovery: active or failed worktree states should not be hidden by archival without an explicit user decision.
+- Worktree recovery: active or failed worktree states should not be hidden by archival without an explicit user
+  decision.
 - Future Plan UI: expose archive operations through plan-store helpers so `wld plans ui` can reuse them later instead of
   inventing direct filesystem mutations.
 - Future semantic search: archived Plan content can be indexed later by a unified search system; do not add a dedicated
