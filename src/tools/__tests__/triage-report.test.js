@@ -11,6 +11,7 @@ Deno.test("createTriageReportTool exposes expected metadata", () => {
     assertEquals(typeof tool.parameters, "object");
     assert(!("classification" in tool.parameters.properties));
     assert(tool.parameters.required.includes("routingIntent"));
+    assert(tool.parameters.required.includes("sessionName"));
 });
 
 Deno.test("createTriageReportTool called with no opts produces valid tool shape", () => {
@@ -41,6 +42,7 @@ Deno.test("triage_report execute returns canonical routingIntent details for INQ
         routingIntent: /** @type {const} */ ("INQUIRY"),
         complexity: /** @type {const} */ ("LOW"),
         summary: "explain routing",
+        sessionName: "routing overview",
         affectedPaths: ["src/shared/workflow/orchestrator.js"],
     };
 
@@ -61,12 +63,14 @@ Deno.test("triage_report execute preserves plan classification only for FEATURE 
         routingIntent: "FEATURE",
         complexity: "MEDIUM",
         summary: "plan feature",
+        sessionName: "plan feature",
         affectedPaths: ["src/foo.js"],
     });
     const quickFix = await /** @type {any} */ (tool.execute)("call-2", {
         routingIntent: "QUICK_FIX",
         complexity: "LOW",
         summary: "fix typo",
+        sessionName: "fix typo",
         affectedPaths: ["src/foo.js"],
     });
 
@@ -83,11 +87,34 @@ Deno.test("triage_report execute normalizes legacy classification params", async
         classification: "PROJECT",
         complexity: "HIGH",
         summary: "legacy project",
+        sessionName: "legacy project",
         affectedPaths: ["src/foo.js"],
     });
 
     assertEquals(result.details.routingIntent, "PROJECT");
     assertEquals(result.details.classification, "PROJECT");
+});
+
+Deno.test("triage_report execute sanitizes sessionName and falls back to summary", async () => {
+    const tool = createTriageReportTool();
+
+    const sanitized = await /** @type {any} */ (tool.execute)("call-1", {
+        routingIntent: "INQUIRY",
+        complexity: "LOW",
+        summary: "explain routing",
+        sessionName: " explain\n\trouting\u0007 ",
+        affectedPaths: [],
+    });
+    const fallback = await /** @type {any} */ (tool.execute)("call-2", {
+        routingIntent: "INQUIRY",
+        complexity: "LOW",
+        summary: "explain routing",
+        sessionName: "\n",
+        affectedPaths: [],
+    });
+
+    assertEquals(sanitized.details.sessionName, "explain routing");
+    assertEquals(fallback.details.sessionName, "explain routing");
 });
 
 Deno.test("triage_report execute rejects params without canonical or legacy intent", async () => {

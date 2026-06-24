@@ -119,6 +119,7 @@ Type `/` in the editor for completion.
 | `/load-plan`     | Continue a saved plan.                                                        |
 | `/resume`        | Browse and resume a recent session.                                           |
 | `/new`           | Start a new root session.                                                     |
+| `/name`          | Set or show the current session name.                                         |
 | `/session`       | Show current session information.                                             |
 | `/sleep`         | Run the bundled sleep prompt for memory/context cleanup.                      |
 | `/compact`       | Compact session context.                                                      |
