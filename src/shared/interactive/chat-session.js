@@ -14,6 +14,7 @@ import {
     visibleWidth,
 } from "@earendil-works/pi-tui";
 import { initTUI } from "../ui/tui.js";
+import { setTerminalTitleForSession } from "../ui/terminal-title.js";
 import { applyPersistedTheme, getEditorTheme, initRunWieldTheme, onThemeChange, theme } from "../ui/theme.js";
 import { VERSION } from "../version.js";
 import { endBlink, renderBootLogo } from "../ui/boot-logo.js";
@@ -569,6 +570,7 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
     initRunWieldTheme();
     await applyPersistedTheme();
     const tui = initTUI();
+    setTerminalTitleForSession(rootSessionManager, Deno.cwd());
 
     const container = new Container();
     const suppressStartupHeader = options.sessionStartMode === "continue";

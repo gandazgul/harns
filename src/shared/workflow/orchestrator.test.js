@@ -329,6 +329,82 @@ Deno.test("dispatchPostTriage restores PROJECT owner after incomplete execution"
     assertEquals(activeAgents, ["architect"]);
 });
 
+Deno.test("dispatchPostTriage auto-names unnamed sessions and mirrors title", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const infos = [];
+    /** @type {string[]} */
+    const titles = [];
+
+    await dispatchPostTriage({
+        triage: {
+            routingIntent: "INQUIRY",
+            complexity: "LOW",
+            summary: "question",
+            sessionName: "terminal titles",
+            affectedPaths: [],
+        },
+        userRequest: "How should titles work?",
+        images: [],
+        uiAPI,
+        sessionManager: /** @type {any} */ ({
+            getSessionName: () => undefined,
+            appendSessionInfo: (/** @type {string} */ name) => infos.push(name),
+        }),
+        __deps: /** @type {any} */ ({
+            applyPendingRootSwap: () => Promise.resolve(),
+            createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            runRootTurn: () => Promise.resolve([]),
+            setActiveAgent: () => {},
+            setTerminalTitleForName: (/** @type {string} */ name) => {
+                titles.push(name);
+                return `wld - ${name}`;
+            },
+        }),
+    });
+
+    assertEquals(infos, ["terminal titles"]);
+    assertEquals(titles, ["terminal titles"]);
+});
+
+Deno.test("dispatchPostTriage does not overwrite existing session names", async () => {
+    const uiAPI = makeUi();
+    /** @type {string[]} */
+    const infos = [];
+    /** @type {string[]} */
+    const titles = [];
+
+    await dispatchPostTriage({
+        triage: {
+            routingIntent: "INQUIRY",
+            complexity: "LOW",
+            summary: "question",
+            sessionName: "router name",
+            affectedPaths: [],
+        },
+        userRequest: "How should titles work?",
+        images: [],
+        uiAPI,
+        sessionManager: /** @type {any} */ ({
+            getSessionName: () => "manual name",
+            appendSessionInfo: (/** @type {string} */ name) => infos.push(name),
+        }),
+        __deps: /** @type {any} */ ({
+            applyPendingRootSwap: () => Promise.resolve(),
+            createAgentHandler: (/** @type {string} */ name) => () => Promise.resolve(name),
+            runRootTurn: () => Promise.resolve([]),
+            setActiveAgent: () => {},
+            setTerminalTitleForName: (/** @type {string} */ name) => {
+                titles.push(name);
+                return `wld - ${name}`;
+            },
+        }),
+    });
+
+    assertEquals(infos, []);
+    assertEquals(titles, ["manual name"]);
+});
+
 Deno.test("readLatestTriageOutcome returns the latest triage_report details", () => {
     const messages = [
         /** @type {any} */ ({
@@ -349,6 +425,7 @@ Deno.test("readLatestTriageOutcome returns the latest triage_report details", ()
                 classification: "FEATURE",
                 complexity: "MEDIUM",
                 summary: "second",
+                sessionName: "second feature",
                 affectedPaths: ["b.js"],
             },
         }),
@@ -358,6 +435,7 @@ Deno.test("readLatestTriageOutcome returns the latest triage_report details", ()
         classification: "FEATURE",
         complexity: "MEDIUM",
         summary: "second",
+        sessionName: "second feature",
         affectedPaths: ["b.js"],
     });
 });

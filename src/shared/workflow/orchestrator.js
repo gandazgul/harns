@@ -28,6 +28,7 @@ import { applyPendingRootSwap, setActiveAgent } from "../interactive/chat-sessio
 import { runRootTurn } from "../session/session.js";
 import { getAgentDisplayName } from "../session/agents.js";
 import { consumePendingSwitchHandoff } from "../session/session-state.js";
+import { sanitizeSessionName, setTerminalTitleForName } from "../ui/terminal-title.js";
 import { decidePostExecution, decidePostPlanning } from "./decisions.js";
 import { executePlan, readLatestTaskCompletedOutcome, runPlanningAgent } from "./workflow.js";
 import { runValidationLoop, shouldRunWorkflowValidation } from "./validation.js";
@@ -40,6 +41,7 @@ export { runLocalCI, runValidationLoop } from "./validation.js";
  * @property {"FEATURE" | "PROJECT" | undefined} [classification]
  * @property {"LOW" | "MEDIUM" | "HIGH"} complexity
  * @property {string} summary
+ * @property {string} [sessionName]
  * @property {string[]} affectedPaths
  */
 
@@ -73,6 +75,12 @@ function normalizeTriageOutcome(details) {
         ...record,
         routingIntent,
     });
+    const sessionName = sanitizeSessionName(record.sessionName);
+    if (sessionName) {
+        outcome.sessionName = sessionName;
+    } else {
+        delete outcome.sessionName;
+    }
 
     if (PLAN_ROUTING_INTENTS.includes(routingIntent)) {
         outcome.classification = /** @type {"FEATURE" | "PROJECT"} */ (routingIntent);
@@ -115,6 +123,7 @@ function buildTriageBlock(triage) {
         `- Routing Intent: ${triage.routingIntent}`,
     ];
     if (triage.classification) lines.push(`- Plan Classification: ${triage.classification}`);
+    if (triage.sessionName) lines.push(`- Session Name: ${triage.sessionName}`);
     lines.push(
         `- Complexity: ${triage.complexity}`,
         `- Summary: ${triage.summary}`,
@@ -122,6 +131,30 @@ function buildTriageBlock(triage) {
         "",
     );
     return lines.join("\n");
+}
+
+/**
+ * Apply a Router-provided Session Name only when the session is currently unnamed.
+ * Always mirror the effective Session Name to the Terminal Title when available.
+ *
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager
+ * @param {TriageOutcome} triage
+ * @param {(name: string) => string} setTitle
+ */
+function applyAutoSessionName(sessionManager, triage, setTitle) {
+    if (!sessionManager) return;
+
+    const existingName = sanitizeSessionName(sessionManager.getSessionName?.() || "");
+    if (existingName) {
+        setTitle(existingName);
+        return;
+    }
+
+    const sessionName = sanitizeSessionName(triage.sessionName || "");
+    if (!sessionName) return;
+
+    sessionManager.appendSessionInfo?.(sessionName);
+    setTitle(sessionName);
 }
 
 /**
@@ -148,6 +181,7 @@ function buildTriageBlock(triage) {
  *   runRootTurn?: typeof runRootTurn,
  *   runValidationLoop?: typeof runValidationLoop,
  *   setActiveAgent?: typeof setActiveAgent,
+ *   setTerminalTitleForName?: typeof setTerminalTitleForName,
  *   shouldRunWorkflowValidation?: typeof shouldRunWorkflowValidation,
  * }} [args.__deps]
  */
@@ -166,6 +200,9 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
     const decidePostPlanningImpl = __deps?.decidePostPlanning || decidePostPlanning;
     const decidePostExecutionImpl = __deps?.decidePostExecution || decidePostExecution;
     const setActiveAgentImpl = __deps?.setActiveAgent || setActiveAgent;
+    const setTerminalTitleForNameImpl = __deps?.setTerminalTitleForName || setTerminalTitleForName;
+
+    applyAutoSessionName(sessionManager, normalizedTriage, setTerminalTitleForNameImpl);
 
     if (normalizedTriage.routingIntent === "INQUIRY" || normalizedTriage.routingIntent === "IDEATION") {
         const agentName = normalizedTriage.routingIntent === "INQUIRY" ? AGENTS.GUIDE : AGENTS.IDEATOR;

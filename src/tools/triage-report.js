@@ -10,6 +10,7 @@
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { ROUTING_INTENTS } from "../constants.js";
+import { sanitizeSessionName } from "../shared/ui/terminal-title.js";
 
 const PLAN_CLASSIFICATIONS = ["FEATURE", "PROJECT"];
 
@@ -23,6 +24,10 @@ const TOOL_PARAMS = Type.Object({
     }),
     summary: Type.String({
         description: "Brief summary of the request and why it should route there.",
+    }),
+    sessionName: Type.String({
+        description:
+            "Short 3-6 word Session Name suitable for /session display and the terminal tab title. Use concise noun phrases, not a sentence.",
     }),
     affectedPaths: Type.Array(Type.String(), {
         description:
@@ -41,6 +46,14 @@ function normalizeRoutingIntent(value) {
 
 /**
  * @param {Record<string, unknown>} params
+ * @returns {string}
+ */
+function normalizeSessionName(params) {
+    return sanitizeSessionName(params.sessionName) || sanitizeSessionName(params.summary) || "RunWield session";
+}
+
+/**
+ * @param {Record<string, unknown>} params
  * @returns {Record<string, unknown>}
  */
 function normalizeTriageParams(params) {
@@ -53,6 +66,7 @@ function normalizeTriageParams(params) {
     const normalized = {
         ...params,
         routingIntent,
+        sessionName: normalizeSessionName(params),
     };
 
     if (PLAN_CLASSIFICATIONS.includes(routingIntent)) {

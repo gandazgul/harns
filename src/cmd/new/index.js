@@ -5,6 +5,7 @@
 
 import { createRootSessionManager } from "../../shared/session/root-session.js";
 import { setRootSessionManager } from "../../shared/session/session-state.js";
+import { setTerminalTitleForSession } from "../../shared/ui/terminal-title.js";
 
 /**
  * Handle new session command.
@@ -21,10 +22,12 @@ export async function runNewCommand(argv, options = {}) {
     const deps = /** @type {{
         createRootSessionManager?: typeof createRootSessionManager,
         setRootSessionManager?: typeof setRootSessionManager,
+        setTerminalTitleForSession?: typeof setTerminalTitleForSession,
     }} */
         (options.__testDeps || {});
     const createRoot = deps.createRootSessionManager || createRootSessionManager;
     const setRoot = deps.setRootSessionManager || setRootSessionManager;
+    const setTitle = deps.setTerminalTitleForSession || setTerminalTitleForSession;
     const { uiAPI } = options;
     const sessionName = argv.join(" ").trim();
 
@@ -33,6 +36,7 @@ export async function runNewCommand(argv, options = {}) {
         rootSessionManager.appendSessionInfo(sessionName);
     }
     setRoot(rootSessionManager);
+    setTitle(rootSessionManager, Deno.cwd());
 
     if (uiAPI.clearMessages) {
         uiAPI.clearMessages();

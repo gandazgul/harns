@@ -24,9 +24,12 @@ Deno.test("runNewCommand creates and installs a fresh root session", async () =>
     let installed = false;
     /** @type {unknown[]} */
     const createArgs = [];
+    /** @type {string[]} */
+    const titles = [];
 
     const manager = {
         appendSessionInfo: (/** @type {string} */ info) => infos.push(info),
+        getSessionName: () => infos.at(-1),
         getSessionId: () => "session-123",
     };
 
@@ -50,6 +53,10 @@ Deno.test("runNewCommand creates and installs a fresh root session", async () =>
                 setRootSessionManager: (/** @type {unknown} */ value) => {
                     installed = value === manager;
                 },
+                setTerminalTitleForSession: (/** @type {any} */ sessionManager, /** @type {string} */ cwd) => {
+                    titles.push(`${sessionManager.getSessionName?.() || cwd}`);
+                    return "wld - build coverage";
+                },
             },
         }),
     );
@@ -57,6 +64,35 @@ Deno.test("runNewCommand creates and installs a fresh root session", async () =>
     assertEquals(createArgs, ["new", Deno.cwd()]);
     assertEquals(infos, ["build coverage"]);
     assertEquals(installed, true);
+    assertEquals(titles, ["build coverage"]);
     assertEquals(cleared, true);
     assertEquals(messages, ["Started new session: session-123"]);
+});
+
+Deno.test("runNewCommand updates terminal title for unnamed sessions", async () => {
+    /** @type {string[]} */
+    const titles = [];
+    const manager = {
+        getSessionName: () => undefined,
+        getSessionId: () => "session-456",
+    };
+
+    await runNewCommand(
+        [],
+        /** @type {any} */ ({
+            uiAPI: {
+                appendSystemMessage: () => {},
+            },
+            __testDeps: {
+                createRootSessionManager: () => Promise.resolve(manager),
+                setRootSessionManager: () => {},
+                setTerminalTitleForSession: (/** @type {any} */ _sessionManager, /** @type {string} */ cwd) => {
+                    titles.push(cwd);
+                    return "wld - project";
+                },
+            },
+        }),
+    );
+
+    assertEquals(titles, [Deno.cwd()]);
 });
