@@ -225,6 +225,7 @@ Deno.test("groupPlanHierarchy groups Epics, nested children, standalone, and orp
         verified: 1,
         active: 0,
         failed: 1,
+        onHold: 0,
         remaining: 1,
         total: 3,
     });
@@ -989,6 +990,7 @@ Deno.test("shared hierarchy helpers match Epic, child, orphan, standalone, and p
         verified: 1,
         active: 1,
         failed: 1,
+        onHold: 0,
         remaining: 1,
         total: 4,
     });

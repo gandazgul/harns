@@ -3,27 +3,27 @@ classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Introduce `wld plans ui`, the local Fresh/Vite/Preact Workspace app, secure localhost launch, read-only REST APIs, and a first read-only Plan Board backed by canonical markdown Plans."
 affectedPaths:
-  - "src/cmd/plans/index.js"
-  - "src/cmd/plans/ui.js"
-  - "src/cmd/plans/index.test.js"
-  - "src/cmd/registry.js"
-  - "src/constants.js"
-  - "src/ui/workspace/"
-  - "deno.json"
-  - "deno.lock"
-  - "README.md"
+    - "src/cmd/plans/index.js"
+    - "src/cmd/plans/ui.js"
+    - "src/cmd/plans/index.test.js"
+    - "src/cmd/registry.js"
+    - "src/constants.js"
+    - "src/ui/workspace/"
+    - "deno.json"
+    - "deno.lock"
+    - "README.md"
 createdAt: "2026-06-24T20:14:08.682Z"
 updatedAt: "2026-06-25T13:18:32.182Z"
 status: "implemented"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
-  - "plan-resource-identity-and-hierarchy"
+    - "plan-resource-identity-and-hierarchy"
 failureReason: "git merge --no-ff runwield/worktree/local-first-plan-management-ui-secure-workspace--a7e221d5 failed: error: Your local changes to the following files would be overwritten by merge:
-	plans/local-first-plan-management-ui/secure-workspace-read-only-board.md
-Please commit your changes or stash them before you merge.
-Aborting
-Merge with strategy ort failed."
+    plans/local-first-plan-management-ui/secure-workspace-read-only-board.md
+    Please commit your changes or stash them before you merge.
+    Aborting
+    Merge with strategy ort failed."
 worktreeStatus: "merge_conflict"
 ---
 

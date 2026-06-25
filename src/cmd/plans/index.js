@@ -25,10 +25,11 @@ import { runPlansUiCommand as runPlansUiCommandFn } from "./ui.js";
  * @returns {string}
  */
 function formatChildProgress(children) {
-    const { verified, active, failed, remaining, total } = countChildPlanProgress(children);
+    const { verified, active, failed, onHold, remaining, total } = countChildPlanProgress(children);
     const label = total === 1 ? "feature" : "features";
     const parts = [`${verified}/${total} ${label} verified`];
     if (active > 0) parts.push(`${active} active/implemented`);
+    if (onHold > 0) parts.push(`${onHold} on hold`);
     if (remaining > 0) parts.push(`${remaining} remaining`);
     if (failed > 0) parts.push(`${failed} failed`);
     return parts.join(" — ");
@@ -51,6 +52,10 @@ function printPlanDetails(plan, indent) {
     console.log(
         `${indent}Status: ${plan.attrs.status} | Classification: ${plan.attrs.classification} | Complexity: ${plan.attrs.complexity}`,
     );
+    if (plan.attrs.status === "on_hold") {
+        console.log(`${indent}Held from: ${plan.attrs.heldFromStatus || "unknown"}`);
+        if (plan.attrs.holdReason) console.log(`${indent}Reason: ${plan.attrs.holdReason}`);
+    }
     console.log(`${indent}Summary: ${plan.attrs.summary || "(none)"}`);
     if (plan.attrs.worktreeStatus || plan.attrs.worktreeBranch || plan.attrs.worktreePath) {
         const ref = plan.attrs.worktreeBranch || plan.attrs.worktreePath || "unknown";
@@ -120,40 +125,58 @@ export async function runPlansCommand(argv, options = {}) {
     }
 
     const { epics, childrenByParent, standalone, orphanChildren } = groupPlanHierarchy(plans);
+    const activeEpics = epics.filter((epic) => epic.attrs.status !== "on_hold");
+    const heldEpics = epics.filter((epic) => epic.attrs.status === "on_hold");
+    const activeStandalone = standalone.filter((plan) => plan.attrs.status !== "on_hold");
+    const heldStandalone = standalone.filter((plan) => plan.attrs.status === "on_hold");
+    const activeOrphans = orphanChildren.filter((plan) => plan.attrs.status !== "on_hold");
+    const heldOrphans = orphanChildren.filter((plan) => plan.attrs.status === "on_hold");
 
     console.log("\n[RunWield] Saved plans:\n");
 
-    if (epics.length > 0) {
+    /** @param {PlanEntry} epic */
+    const printEpic = (epic) => {
+        const children = childrenByParent.get(epic.name) || [];
+        console.log(`  ${epic.name}`);
+        printPlanDetails(epic, "    ");
+        console.log(`    Progress: ${formatChildProgress(children)}${formatEpicCompletionState(epic)}`);
+        if (epic.attrs.epicDoneEnoughSummary) {
+            console.log(`    Done enough: ${epic.attrs.epicDoneEnoughSummary}`);
+        }
+        if (children.length > 0) {
+            console.log("    Features:");
+            for (const child of children) {
+                printChildPlan(child);
+            }
+        }
+        console.log();
+    };
+
+    if (activeEpics.length > 0) {
         console.log("Epics:");
-        for (const epic of epics) {
-            const children = childrenByParent.get(epic.name) || [];
-            console.log(`  ${epic.name}`);
-            printPlanDetails(epic, "    ");
-            console.log(`    Progress: ${formatChildProgress(children)}${formatEpicCompletionState(epic)}`);
-            if (epic.attrs.epicDoneEnoughSummary) {
-                console.log(`    Done enough: ${epic.attrs.epicDoneEnoughSummary}`);
-            }
-            if (children.length > 0) {
-                console.log("    Features:");
-                for (const child of children) {
-                    printChildPlan(child);
-                }
-            }
-            console.log();
-        }
+        for (const epic of activeEpics) printEpic(epic);
     }
 
-    if (standalone.length > 0) {
+    if (activeStandalone.length > 0) {
         console.log("Standalone plans:");
-        for (const plan of standalone) {
+        for (const plan of activeStandalone) {
             printTopLevelPlan(plan);
         }
     }
 
-    if (orphanChildren.length > 0) {
+    if (activeOrphans.length > 0) {
         console.log("Orphaned child plans:");
-        for (const plan of orphanChildren) {
+        for (const plan of activeOrphans) {
             printTopLevelPlan(plan);
+        }
+    }
+
+    const onHoldPlans = [...heldEpics, ...heldStandalone, ...heldOrphans];
+    if (onHoldPlans.length > 0) {
+        console.log("On Hold:");
+        for (const plan of onHoldPlans) {
+            if (heldEpics.includes(plan)) printEpic(plan);
+            else printTopLevelPlan(plan);
         }
     }
 }

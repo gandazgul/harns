@@ -1188,7 +1188,7 @@ export function groupPlanHierarchy(plans) {
 
 /**
  * @param {Array<{ attrs: PlanFrontMatter }>} children
- * @returns {{ verified: number, active: number, failed: number, remaining: number, total: number }}
+ * @returns {{ verified: number, active: number, failed: number, onHold: number, remaining: number, total: number }}
  */
 export function countChildPlanProgress(children) {
     const verified = children.filter((child) => child.attrs.status === "verified").length;
@@ -1196,9 +1196,10 @@ export function countChildPlanProgress(children) {
         children.filter((child) => child.attrs.status === "in_progress" || child.attrs.status === "implemented")
             .length;
     const failed = children.filter((child) => child.attrs.status === "failed").length;
+    const onHold = children.filter((child) => child.attrs.status === "on_hold").length;
     const total = children.length;
-    const remaining = total - verified - active - failed;
-    return { verified, active, failed, remaining, total };
+    const remaining = total - verified - active - failed - onHold;
+    return { verified, active, failed, onHold, remaining, total };
 }
 
 /**
