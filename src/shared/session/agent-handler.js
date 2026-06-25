@@ -134,13 +134,26 @@ export function createAgentHandler(agentName, __deps) {
             const tasks = /** @type {import('../workflow/workflow.js').PlanOutcomeResult["tasks"]} */ (
                 planningDecision.payload.tasks
             );
-            const executionResult = await executePlan(
-                planName,
-                triageMeta,
-                uiAPI,
-                tasks,
-                sessionManager,
-            );
+            /** @type {import('../workflow/workflow.js').PlanExecutionResult} */
+            let executionResult;
+            try {
+                executionResult = await executePlan(
+                    planName,
+                    triageMeta,
+                    uiAPI,
+                    tasks,
+                    sessionManager,
+                );
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                uiAPI?.appendSystemMessage?.(
+                    `Plan execution failed: ${reason}. The Engineer may need manual intervention.`,
+                    true,
+                    "RunWield",
+                );
+                setActiveAgent(AGENTS.ENGINEER, createAgentHandler(AGENTS.ENGINEER), uiAPI);
+                return;
+            }
 
             consumePendingSwitchHandoff(); // Drain any switch requests from execution sub-agents
 
@@ -169,6 +182,15 @@ export function createAgentHandler(agentName, __deps) {
             } else if (executionDecision.kind === "stay_with_agent") {
                 const nextAgentName = /** @type {string} */ (executionDecision.payload.agentName || AGENTS.ENGINEER);
                 setActiveAgent(nextAgentName, createAgentHandler(nextAgentName), uiAPI);
+            } else {
+                // halt or repair_plan — stay with Engineer for manual recovery
+                const reason = executionDecision.payload?.reason || "unknown";
+                uiAPI?.appendSystemMessage?.(
+                    `Execution stopped: ${reason}. Staying with Engineer for manual intervention.`,
+                    true,
+                    "RunWield",
+                );
+                setActiveAgent(AGENTS.ENGINEER, createAgentHandler(AGENTS.ENGINEER), uiAPI);
             }
             return;
         }

@@ -1128,7 +1128,8 @@ Deno.test("runLoadPlanCommand validates completed execution against freshly load
 });
 
 Deno.test("runLoadPlanCommand non-approved plan kicks off planning agent", async () => {
-    const { uiAPI } = makeUi();
+    const { uiAPI, selections } = makeUi();
+    selections.push("resume");
     let lifecycleCalled = false;
 
     await runLoadPlanCommand(["plan-b"], {
@@ -2066,7 +2067,7 @@ Deno.test("runLoadPlanCommand can manually merge merge-conflict worktree recover
 
 Deno.test("runLoadPlanCommand verified plan review path records review_reopened", async () => {
     const { uiAPI, selections } = makeUi();
-    selections.push("review");
+    selections.push("review", "resume");
     let lifecycleCalled = false;
     /** @type {string | null} */
     let lifecycleEvent = null;
@@ -2171,7 +2172,8 @@ Deno.test("runLoadPlanCommand starts interactive session when ui missing", async
 });
 
 Deno.test("runLoadPlanCommand keeps planner active when lifecycle canceled", async () => {
-    const { uiAPI } = makeUi();
+    const { uiAPI, selections } = makeUi();
+    selections.push("resume");
     /** @type {string[]} */
     const activeAgents = [];
 
@@ -2207,7 +2209,8 @@ Deno.test("runLoadPlanCommand keeps planner active when lifecycle canceled", asy
 });
 
 Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_written", async () => {
-    const { uiAPI } = makeUi();
+    const { uiAPI, selections } = makeUi();
+    selections.push("resume");
     /** @type {string[]} */
     const activeAgents = [];
 
@@ -2241,7 +2244,8 @@ Deno.test("runLoadPlanCommand keeps planner active when agent ends without plan_
 });
 
 Deno.test("runLoadPlanCommand keeps planner active after lifecycle saves a plan from router flow", async () => {
-    const { uiAPI } = makeUi();
+    const { uiAPI, selections } = makeUi();
+    selections.push("resume");
     /** @type {string[]} */
     const restoredAgents = [];
 
@@ -2321,4 +2325,175 @@ Deno.test("runLoadPlanCommand restores the initially active agent after lifecycl
 
     assertEquals(restoredAgents.includes(AGENTS.IDEATOR), true);
     assertEquals(restoredAgents.includes(AGENTS.ROUTER), false);
+});
+
+Deno.test("runLoadPlanCommand draft FEATURE can be put on hold", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("hold");
+    let recorded = null;
+
+    await runLoadPlanCommand(["hold-me"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["hold-me"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "hold-me",
+                    path: "plans/hold-me.md",
+                    body: "body",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "draft",
+                        updatedAt: "2026-01-01T00:00:00.000Z",
+                    },
+                }),
+            recordPlanEvent: (/** @type {any} */ args) => {
+                recorded = args;
+                return Promise.resolve({ status: "on_hold", heldFromStatus: "draft" });
+            },
+            createAgentHandler: () => async () => {},
+            setActiveAgent: () => {},
+            resetTuiState: () => {},
+        }),
+    });
+
+    assertEquals(/** @type {any} */ (recorded).event, "plan_held");
+    assertEquals(/** @type {any} */ (recorded).details.holdStalenessBaseline, "2026-01-01T00:00:00.000Z");
+    assertEquals(messages.some((message) => message.includes("Plan put on hold")), true);
+});
+
+Deno.test("runLoadPlanCommand on-hold plan resumes after passing Resume Check", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("resume", "cancel");
+    let recorded = null;
+
+    await runLoadPlanCommand(["held-plan"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["held-plan"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "held-plan",
+                    path: "plans/held-plan.md",
+                    body: "body",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "on_hold",
+                        heldFromStatus: "draft",
+                    },
+                }),
+            listCommitsTouchingPathsSince: () => Promise.resolve([]),
+            recordPlanEvent: (/** @type {any} */ args) => {
+                recorded = args;
+                return Promise.resolve({
+                    status: "draft",
+                    heldFromStatus: null,
+                    heldAt: null,
+                    holdReason: null,
+                    holdStalenessBaseline: null,
+                });
+            },
+            createAgentHandler: () => async () => {},
+            setActiveAgent: () => {},
+            resetTuiState: () => {},
+        }),
+    });
+
+    assertEquals(/** @type {any} */ (recorded).event, "hold_resumed");
+    assertEquals(messages.some((message) => message.includes("Resume Check")), true);
+});
+
+Deno.test("runLoadPlanCommand on-hold plan can reset status to draft", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("reset", "confirm");
+    let recorded = null;
+
+    await runLoadPlanCommand(["held-reset"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["held-reset"] }),
+            resolvePlan: () =>
+                Promise.resolve({
+                    planName: "held-reset",
+                    path: "plans/held-reset.md",
+                    body: "body",
+                    attrs: {
+                        classification: "FEATURE",
+                        complexity: "LOW",
+                        summary: "s",
+                        affectedPaths: [],
+                        status: "on_hold",
+                        heldFromStatus: "implemented",
+                    },
+                }),
+            findWorktreeByPlanName: () => Promise.resolve(null),
+            recordPlanEvent: (/** @type {any} */ args) => {
+                recorded = args;
+                return Promise.resolve({ status: "draft", heldFromStatus: null });
+            },
+            createAgentHandler: () => async () => {},
+            setActiveAgent: () => {},
+            resetTuiState: () => {},
+        }),
+    });
+
+    assertEquals(/** @type {any} */ (recorded).event, "hold_reset_to_draft");
+});
+
+Deno.test("runLoadPlanCommand blocks child FEATURE when parent Epic is on hold", async () => {
+    const { uiAPI, selections, messages } = makeUi();
+    selections.push("cancel");
+
+    await runLoadPlanCommand(["epic/child"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: ["epic/child"] }),
+            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ name) =>
+                Promise.resolve(
+                    name === "epic"
+                        ? {
+                            planName: "epic",
+                            path: "plans/epic.md",
+                            body: "epic body",
+                            attrs: {
+                                classification: "PROJECT",
+                                type: "epic",
+                                complexity: "HIGH",
+                                summary: "epic",
+                                affectedPaths: [],
+                                status: "on_hold",
+                                heldFromStatus: "ready_for_work",
+                            },
+                        }
+                        : {
+                            planName: "epic/child",
+                            path: "plans/epic/child.md",
+                            body: "child body",
+                            attrs: {
+                                classification: "FEATURE",
+                                complexity: "LOW",
+                                summary: "child",
+                                affectedPaths: [],
+                                status: "ready_for_work",
+                                parentPlan: "epic",
+                            },
+                        },
+                ),
+            createAgentHandler: () => async () => {},
+            setActiveAgent: () => {},
+            resetTuiState: () => {},
+        }),
+    });
+
+    assertEquals(messages.some((message) => message.includes("Parent Epic") && message.includes("on hold")), true);
 });

@@ -203,6 +203,56 @@ export async function getWorktreeStatus({ path, branch, baseTree }) {
 }
 
 /**
+ * Inspect whether merging an execution worktree branch into the primary checkout
+ * is obviously risky, without mutating either checkout.
+ *
+ * @param {{ projectRoot: string, branch: string, allowedDirtyPaths?: string[] }} opts
+ * @returns {Promise<{ ok: boolean, warnings: string[], failures: string[] }>}
+ */
+export async function inspectExecutionWorktreeMergeRisk({ projectRoot, branch, allowedDirtyPaths = [] }) {
+    /** @type {string[]} */
+    const warnings = [];
+    /** @type {string[]} */
+    const failures = [];
+
+    try {
+        await runGit(projectRoot, ["rev-parse", "--verify", branch]);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false, warnings, failures: [`Recorded worktree branch is not available: ${message}`] };
+    }
+
+    try {
+        const statusText = await runGit(projectRoot, ["status", "--porcelain"]);
+        const allowed = new Set(allowedDirtyPaths);
+        const branchChangedPaths = new Set(
+            parseNameOnlyPaths(await runGit(projectRoot, ["diff", "--name-only", `HEAD...${branch}`])),
+        );
+        const blockingDirtyPaths = parseStatusPaths(statusText).filter((path) =>
+            !isAllowedDirtyPath(path, allowed) && overlapsBranchChangedPath(path, branchChangedPaths)
+        );
+        if (blockingDirtyPaths.length > 0) {
+            warnings.push(
+                "Primary checkout has uncommitted changes that overlap execution worktree changes: " +
+                    blockingDirtyPaths.join(", "),
+            );
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        warnings.push(`Could not inspect primary checkout dirty-path risk: ${message}`);
+    }
+
+    try {
+        await runGit(projectRoot, ["merge-tree", "--write-tree", "HEAD", branch]);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        warnings.push(`Merge check reported possible conflicts or unsupported git merge-tree behavior: ${message}`);
+    }
+
+    return { ok: failures.length === 0, warnings, failures };
+}
+
+/**
  * @param {{ projectRoot: string, branch: string, worktreePath?: string, allowedDirtyPaths?: string[] }} opts
  */
 export async function mergeExecutionWorktree({ projectRoot, branch, worktreePath, allowedDirtyPaths = [] }) {

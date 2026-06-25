@@ -236,3 +236,84 @@ Deno.test("runPlansCommand renders standalone FEATURE plans separately", async (
     assertEquals(logs.some((m) => m.includes("Standalone plans:")), true);
     assertEquals(logs.some((m) => m.includes("standalone-feature")), true);
 });
+
+Deno.test("runPlansCommand groups held top-level plans at bottom and keeps held children inline", async () => {
+    const logs = await capturePlansOutput([
+        {
+            name: "active-epic",
+            path: "plans/active-epic.md",
+            attrs: {
+                status: "ready_for_work",
+                classification: "PROJECT",
+                type: "epic",
+                complexity: "HIGH",
+                summary: "Active epic",
+                createdAt: "now",
+            },
+        },
+        {
+            name: "active-epic/01-held",
+            path: "plans/active-epic/01-held.md",
+            attrs: {
+                status: "on_hold",
+                heldFromStatus: "ready_for_work",
+                holdReason: "later",
+                classification: "FEATURE",
+                complexity: "LOW",
+                summary: "Held child",
+                createdAt: "now",
+                parentPlan: "active-epic",
+            },
+        },
+        {
+            name: "held-epic",
+            path: "plans/held-epic.md",
+            attrs: {
+                status: "on_hold",
+                heldFromStatus: "ready_for_work",
+                holdReason: "priority shifted",
+                classification: "PROJECT",
+                type: "epic",
+                complexity: "HIGH",
+                summary: "Held epic",
+                createdAt: "now",
+            },
+        },
+        {
+            name: "held-epic/01-child",
+            path: "plans/held-epic/01-child.md",
+            attrs: {
+                status: "draft",
+                classification: "FEATURE",
+                complexity: "LOW",
+                summary: "Child stays draft",
+                createdAt: "now",
+                parentPlan: "held-epic",
+            },
+        },
+        {
+            name: "standalone-held",
+            path: "plans/standalone-held.md",
+            attrs: {
+                status: "on_hold",
+                heldFromStatus: "implemented",
+                holdReason: "cannot merge right now",
+                classification: "FEATURE",
+                complexity: "LOW",
+                summary: "Held standalone",
+                createdAt: "now",
+            },
+        },
+    ]);
+
+    const onHoldIndex = logs.findIndex((message) => message.includes("On Hold:"));
+    assertEquals(onHoldIndex >= 0, true);
+    assertEquals(
+        logs.some((message) => message.includes("Progress: 0/1 feature verified") && message.includes("1 on hold")),
+        true,
+    );
+    assertEquals(logs.some((message) => message.includes("Held from: ready_for_work")), true);
+    assertEquals(logs.some((message) => message.includes("Reason: priority shifted")), true);
+    assertEquals(logs.slice(onHoldIndex).some((message) => message.includes("standalone-held")), true);
+    assertEquals(logs.slice(onHoldIndex).some((message) => message.includes("held-epic/01-child")), true);
+});
