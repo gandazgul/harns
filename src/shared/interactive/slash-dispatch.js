@@ -13,6 +13,21 @@
 import { abortActiveSession, expandPromptTemplate, expandSkillCommand, runAgentSession } from "../session/session.js";
 import { createAgentHandler } from "../session/agent-handler.js";
 import { getRootSessionManager } from "../session/session-state.js";
+import { setTerminalTitleForName } from "../ui/terminal-title.js";
+
+/**
+ * If the current session has no display name, update the terminal title to
+ * `wld - ${command}` so it reflects the active slash command rather than
+ * the cwd basename.
+ *
+ * @param {string} command
+ */
+function maybeUpdateTitleForSlashCommand(command) {
+    const rootSessionManager = getRootSessionManager();
+    if (rootSessionManager && !rootSessionManager.getSessionName?.()) {
+        setTerminalTitleForName(command);
+    }
+}
 
 /**
  * @typedef {Object} SkillMeta
@@ -78,12 +93,14 @@ export async function handleSlashCommand(ctx) {
 
     const builtinCommand = getSlashCommandDefinition(command);
     if (builtinCommand && ctx.builtinNames.has(builtinCommand.name)) {
+        maybeUpdateTitleForSlashCommand(builtinCommand.name);
         await dispatchBuiltin(ctx, builtinCommand.name, args, commandRegistry, thisGen);
         return true;
     }
 
     const template = ctx.promptTemplateByName.get(command);
     if (template) {
+        maybeUpdateTitleForSlashCommand(command);
         await dispatchTemplate(ctx, template, args.join(" "), thisGen);
         return true;
     }
@@ -93,6 +110,7 @@ export async function handleSlashCommand(ctx) {
         const skillName = command.slice(6);
         const skill = ctx.skills.find((s) => s.name === skillName);
         if (skill) {
+            maybeUpdateTitleForSlashCommand(command);
             await dispatchSkill(ctx, skill, args.join(" "), thisGen);
             return true;
         }
