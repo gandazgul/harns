@@ -1,4 +1,5 @@
 ---
+planId: "221b9bf1-4e06-41d3-82b1-cca38d49aecf"
 classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Implement the 'on_hold' Plan Status as described in the PRD. This involves updating the plan store to handle hold metadata, modifying the `load-plan` command to include hold/resume/reset options and the Resume Check logic, and updating the `wld plans` command to display held plans in a separate section."
@@ -7,9 +8,18 @@ affectedPaths:
   - "src/cmd/plans/index.js"
   - "src/plan-store.js"
 createdAt: "2026-06-24T22:36:26-04:00"
-updatedAt: "2026-06-25T02:43:56.598Z"
-status: "draft"
+updatedAt: "2026-06-25T14:12:27.708Z"
+status: "in_progress"
 origin: "internal"
+humanReviewMode: null
+humanReviewDecision: null
+executionBaselineTree: "fc688f4fa4719f23399c486545ef119c5cc9f3c3"
+worktreeId: "e89d43c1"
+worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-harns--/harns-runwield-implement-on-hold-plan-status-e89d43c1"
+worktreeBranch: "runwield/worktree/implement-on-hold-plan-status-e89d43c1"
+worktreeStatus: "active"
+routingIntent: "FEATURE"
+sessionName: "on-hold plan status implementation"
 ---
 # Implement On-Hold Plan Status
 
