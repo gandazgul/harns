@@ -6,6 +6,7 @@
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { CWD } from "../../constants.js";
 import { countChildPlanProgress, groupPlanHierarchy, listPlans as listPlansFn } from "../../plan-store.js";
+import { runPlansUiCommand as runPlansUiCommandFn } from "./ui.js";
 
 /**
  * @typedef {Awaited<ReturnType<typeof listPlansFn>>[number]} PlanEntry
@@ -16,6 +17,7 @@ import { countChildPlanProgress, groupPlanHierarchy, listPlans as listPlansFn } 
  * @property {typeof parseArgsFn} [parseArgs]
  * @property {typeof listPlansFn} [listPlans]
  * @property {(commandName: string) => boolean} [printCommandHelp]
+ * @property {typeof runPlansUiCommandFn} [runPlansUiCommand]
  */
 
 /**
@@ -86,7 +88,14 @@ export async function runPlansCommand(argv, options = {}) {
         parseArgs: parseArgsDep,
         listPlans: listPlansDep,
         printCommandHelp: printCommandHelpDep,
+        runPlansUiCommand: runPlansUiCommandDep,
     } = deps;
+
+    if (argv[0] === "ui") {
+        const runPlansUiCommand = runPlansUiCommandDep || runPlansUiCommandFn;
+        await runPlansUiCommand(argv.slice(1), options);
+        return;
+    }
 
     /** @type {typeof parseArgsFn} */
     const parseArgs = parseArgsDep || parseArgsFn;

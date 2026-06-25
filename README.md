@@ -181,6 +181,7 @@ wld router "your request"           # explicit router form
 wld agent                           # list available agents
 wld agent engineer "implement X"    # start with Engineer instead of Router
 wld plans                           # list saved plans
+wld plans ui --no-open              # start the local read-only Plans Workspace
 wld load-plan <name-or-path>        # review, execute, or continue a plan
 wld init                            # bootstrap project context
 wld snip-filters install            # optional: install Deno filters for plain snip commands
@@ -221,7 +222,7 @@ Plans are markdown files with YAML front matter in `plans/`. RunWield records:
 - complexity: `LOW`, `MEDIUM`, or `HIGH`
 - summary and affected paths
 - status: `draft`, `feedback`, `approved`, `ready_for_decomposition`, `ready_for_work`, `in_progress`, `failed`,
-  `implemented`, or `verified`
+  `implemented`, `verified`, `closed_without_verification`, or `on_hold`
 - origin: `internal` or `external`
 - Epic metadata: `type: epic` on PROJECT Epic containers, plus `parentPlan` and optional `dependencies` on child FEATURE
   plans
@@ -233,6 +234,22 @@ normal FEATURE lifecycle with its own review, execution, validation, and merge h
 
 Use `wld plans` to list saved plans. Epic children are grouped under their parent, and orphaned child plans are shown
 separately.
+
+Use `wld plans ui` to launch the local browser Workspace for the current checkout:
+
+```bash
+wld plans ui --no-open
+```
+
+The Workspace is a read-only milestone: it shows Board, Closed, On Hold, and Plan detail views, but does not provide
+edit, drag/drop, or lifecycle mutation controls. It serves non-archived Plans from the checkout where the command was
+started and uses stable `planId` detail URLs. Plans missing `planId` may be backfilled by the existing Plan resource
+loader; Plan bodies and lifecycle fields are not changed by the UI.
+
+Security defaults are intentionally local-first. The server binds to `127.0.0.1` and a random available port by default,
+prints a tokenized URL, and requires that per-server token for Workspace HTML and API access. Plan markdown is local
+plaintext and may contain sensitive context. If you explicitly expose the server with `--bind`/`--host` (for example
+`wld plans ui --bind 0.0.0.0 --no-open`), RunWield prints a warning before serving. No permissive CORS is enabled.
 
 Use `wld load-plan <name-or-path>` to:
 

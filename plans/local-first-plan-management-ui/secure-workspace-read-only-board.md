@@ -26,12 +26,13 @@ Aborting
 Merge with strategy ort failed."
 worktreeStatus: "merge_conflict"
 ---
+
 # Secure Workspace Read-Only Board
 
 ## Context
 
-RunWield currently has terminal-first Plan management. Users need a local browser Workspace to compare active work,
-open stable Plan URLs, and inspect Plans from the current checkout without introducing a database or remote service.
+RunWield currently has terminal-first Plan management. Users need a local browser Workspace to compare active work, open
+stable Plan URLs, and inspect Plans from the current checkout without introducing a database or remote service.
 
 The prerequisite `plan-resource-identity-and-hierarchy` slice is verified and provides durable `planId` identity,
 Plan-resource lookup, and shared Epic/child/orphan grouping helpers. The prerequisite `lifecycle-board-semantics` slice
@@ -62,34 +63,32 @@ The shipped milestone should provide:
 
 ## Approach
 
-Evolve `wld plans` into a small subcommand dispatcher while preserving default list behavior. Add
-`src/cmd/plans/ui.js` as the CLI launch boundary: parse launch flags, create a random per-server session token, bind to
-`127.0.0.1` by default, warn on non-loopback binds, start the Workspace server, and either open or print the tokenized
-URL.
+Evolve `wld plans` into a small subcommand dispatcher while preserving default list behavior. Add `src/cmd/plans/ui.js`
+as the CLI launch boundary: parse launch flags, create a random per-server session token, bind to `127.0.0.1` by
+default, warn on non-loopback binds, start the Workspace server, and either open or print the tokenized URL.
 
 Build the Workspace under `src/ui/workspace/` with a narrow server adapter layer, but keep the repository on a single
 Deno configuration root. Do not add `src/ui/workspace/deno.json`; add Workspace imports, JSX options for `.jsx`, Vite
 client types, and tasks to the root `deno.json` so `deno task ci` remains the single normal verification entry point.
 Use existing shared code directly where appropriate from server-side Workspace modules instead of creating a separate UI
-app dependency universe. Browser/client/island modules must call local REST APIs and must never import `src/plan-store.js`,
-`src/shared/workflow/plan-lifecycle.js`, `Deno`, or other filesystem/server-only helpers. Server routes should reuse
-`listPlanResources`, `findPlanById`, `groupPlanHierarchy`, `countChildPlanProgress`, and lifecycle status meanings to
-serialize UI DTOs. Do not add a database or write any Plan files except for the existing lazy `planId` backfill performed
-by `listPlanResources`/`findPlanById`.
+app dependency universe. Browser/client/island modules must call local REST APIs and must never import
+`src/plan-store.js`, `src/shared/workflow/plan-lifecycle.js`, `Deno`, or other filesystem/server-only helpers. Server
+routes should reuse `listPlanResources`, `findPlanById`, `groupPlanHierarchy`, `countChildPlanProgress`, and lifecycle
+status meanings to serialize UI DTOs. Do not add a database or write any Plan files except for the existing lazy
+`planId` backfill performed by `listPlanResources`/`findPlanById`.
 
-Use Fresh the way Fresh is designed to work: a programmatic Fresh `App` with route handlers that render
-server-generated Preact component trees, an app wrapper for the shared `<html>/<head>/<body>` shell, layouts for the
-Workspace chrome, and islands only where browser interactivity is needed. `src/ui/workspace/server.js` must be a thin
+Use Fresh the way Fresh is designed to work: a programmatic Fresh `App` with route handlers that render server-generated
+Preact component trees, an app wrapper for the shared `<html>/<head>/<body>` shell, layouts for the Workspace chrome,
+and islands only where browser interactivity is needed. `src/ui/workspace/server.js` must be a thin
 startup/app-composition boundary; it must not contain page markup, encoded JavaScript, or string-built HTML. This slice
 should be SSR-first: route handlers load Plan data and render board/detail components; read-only REST APIs still exist
 for future consumers and small enhancements, but the board should not be a client-side app shell and initial card/detail
 rendering must not depend on fetch-then-render JavaScript. Refreshing by reloading the page is acceptable for this
-read-only milestone. Use `.jsx` for
-Fresh/Preact component files where it keeps the implementation idiomatic. Avoid TypeScript syntax and avoid adding
-`.ts`/`.tsx`. Do not build production pages with monolithic functions that concatenate HTML strings such as
-`boardHtml(token)`, and do not ship string-encoded client JS. Template strings are acceptable only for tiny non-HTML
-values such as URLs or test fixtures. If Fresh cannot render the Workspace cleanly with JavaScript/JSX source, stop for a
-design decision rather than inventing a custom HTML templating path.
+read-only milestone. Use `.jsx` for Fresh/Preact component files where it keeps the implementation idiomatic. Avoid
+TypeScript syntax and avoid adding `.ts`/`.tsx`. Do not build production pages with monolithic functions that
+concatenate HTML strings such as `boardHtml(token)`, and do not ship string-encoded client JS. Template strings are
+acceptable only for tiny non-HTML values such as URLs or test fixtures. If Fresh cannot render the Workspace cleanly
+with JavaScript/JSX source, stop for a design decision rather than inventing a custom HTML templating path.
 
 ## Files to Modify
 
@@ -189,8 +188,8 @@ Existing functions, modules, or patterns to reuse:
 - [ ] Step 7: Implement the first read-only Workspace UI.
   - Add a Workspace document shell via `app.appWrapper()` and navigation/chrome via `app.layout()` components for Board,
     Closed, and On Hold views.
-  - Render the read-only board/detail pages SSR-first from Fresh route handlers that load data server-side and pass it to
-    Preact components; all cards for the current board view should be present in the initial HTML.
+  - Render the read-only board/detail pages SSR-first from Fresh route handlers that load data server-side and pass it
+    to Preact components; all cards for the current board view should be present in the initial HTML.
   - Add board markup as small reusable components; do not inline large HTML in JS functions and do not encode client JS
     inside server strings.
   - Keep child FEATURE Plans under their Epic summary by default; standalone FEATUREs and top-level Epics should be the
@@ -248,5 +247,5 @@ Existing functions, modules, or patterns to reuse:
   HTML string templates, checked-in HTML template shims, or string-encoded client scripts. Stop for a design decision
   before adding TypeScript or `.tsx` files.
 - Keep browser source modules contained under `src/ui/workspace/` as much as practical, but keep dependency aliases and
-  tasks in the root `deno.json` to avoid multiple Deno roots and reuse existing shared modules from server-side Workspace
-  adapters instead of creating a separate app dependency graph.
+  tasks in the root `deno.json` to avoid multiple Deno roots and reuse existing shared modules from server-side
+  Workspace adapters instead of creating a separate app dependency graph.
