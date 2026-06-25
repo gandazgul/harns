@@ -10,10 +10,10 @@ updatedAt: "2026-06-25T02:21:07.779Z"
 status: "implemented"
 origin: "internal"
 failureReason: "git merge --no-ff runwield/worktree/keep-engineer-active-after-execution-interruptio-0652e268 failed: error: Your local changes to the following files would be overwritten by merge:
-	plans/keep-engineer-active-after-execution-interruption.md
-Please commit your changes or stash them before you merge.
-Aborting
-Merge with strategy ort failed."
+    plans/keep-engineer-active-after-execution-interruption.md
+    Please commit your changes or stash them before you merge.
+    Aborting
+    Merge with strategy ort failed."
 implementedAt: "2026-06-25T01:57:09.144Z"
 worktreeStatus: "merge_conflict"
 routingIntent: "FEATURE"

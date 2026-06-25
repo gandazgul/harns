@@ -25,6 +25,26 @@ async function capturePlansOutput(plans) {
     return logs;
 }
 
+Deno.test("runPlansCommand delegates ui subcommand before list parsing", async () => {
+    let delegated = false;
+
+    await runPlansCommand(
+        ["ui", "--no-open"],
+        /** @type {any} */ ({
+            __testDeps: {
+                runPlansUiCommand: (/** @type {string[]} */ argv) => {
+                    delegated = argv[0] === "--no-open";
+                },
+                listPlans: () => {
+                    throw new Error("listPlans should not be called");
+                },
+            },
+        }),
+    );
+
+    assertEquals(delegated, true);
+});
+
 Deno.test("runPlansCommand help path", async () => {
     let helped = false;
 

@@ -35,6 +35,21 @@ export const COMPLEXITIES = ["LOW", "MEDIUM", "HIGH"];
 /** Directory name where plan markdown files are stored. */
 export const PLANS_DIR_NAME = "plans";
 
+/** Default bind host for the local read-only Plans Workspace. */
+export const PLAN_UI_DEFAULT_HOST = "127.0.0.1";
+
+/** Default Plans Workspace port. 0 asks the OS for an available random port. */
+export const PLAN_UI_DEFAULT_PORT = 0;
+
+/** Query parameter accepted for bootstrapping Workspace access. */
+export const PLAN_UI_TOKEN_QUERY = "token";
+
+/** Header accepted by read-only Workspace API endpoints. */
+export const PLAN_UI_TOKEN_HEADER = "x-runwield-workspace-token";
+
+/** User-facing label for the Plans Workspace subcommand. */
+export const PLAN_UI_COMMAND_LABEL = "plans ui";
+
 /** Directory name for project-local RunWield metadata. */
 export const RUNWEILD_DIR_NAME = ".wld";
 
