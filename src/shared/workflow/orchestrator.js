@@ -289,13 +289,27 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         );
         const tasks = /** @type {import('./workflow.js').PlanOutcomeResult["tasks"]} */ (decision.payload.tasks);
 
-        const executionResult = await executePlanImpl(
-            planName,
-            decisionTriageMeta,
-            uiAPI,
-            tasks,
-            sessionManager,
-        );
+        /** @type {import('./workflow.js').PlanExecutionResult} */
+        let executionResult;
+        try {
+            executionResult = await executePlanImpl(
+                planName,
+                decisionTriageMeta,
+                uiAPI,
+                tasks,
+                sessionManager,
+            );
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            uiAPI.appendSystemMessage(
+                `Plan execution failed: ${reason}. The Engineer may need manual intervention.`,
+                true,
+                "RunWield",
+            );
+            setActiveAgentImpl(AGENTS.ENGINEER, createAgentHandlerImpl(AGENTS.ENGINEER), uiAPI);
+            return;
+        }
+
         const executionDecision = decidePostExecutionImpl(executionResult, {
             planName,
             triageMeta: decisionTriageMeta,
@@ -316,6 +330,15 @@ export async function dispatchPostTriage({ triage, userRequest, images, uiAPI, s
         } else if (executionDecision.kind === "stay_with_agent") {
             const nextAgentName = /** @type {string} */ (executionDecision.payload.agentName || AGENTS.ENGINEER);
             setActiveAgentImpl(nextAgentName, createAgentHandlerImpl(nextAgentName), uiAPI);
+        } else {
+            // halt or repair_plan — stay with Engineer for manual recovery
+            const reason = executionDecision.payload?.reason || "unknown";
+            uiAPI.appendSystemMessage(
+                `Execution stopped: ${reason}. Staying with Engineer for manual intervention.`,
+                true,
+                "RunWield",
+            );
+            setActiveAgentImpl(AGENTS.ENGINEER, createAgentHandlerImpl(AGENTS.ENGINEER), uiAPI);
         }
     }
 }
