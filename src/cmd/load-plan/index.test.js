@@ -349,7 +349,8 @@ Deno.test("runLoadPlanCommand child FEATURE detail inspection resolves and displ
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
             parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
-            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ planName) => {
+            /** @param {string} _cwd @param {string} planName */
+            resolvePlan: (_cwd, planName) => {
                 resolved.push(planName);
                 if (planName === "epic-inspect/01-child") {
                     return Promise.resolve({
@@ -715,7 +716,8 @@ Deno.test("runLoadPlanCommand Epic child selection delegates to FEATURE load beh
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
             parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
-            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ planName) => {
+            /** @param {string} _cwd @param {string} planName */
+            resolvePlan: (_cwd, planName) => {
                 resolved.push(planName);
                 if (planName === "epic-d/01-child") {
                     return Promise.resolve({
@@ -2458,7 +2460,8 @@ Deno.test("runLoadPlanCommand blocks child FEATURE when parent Epic is on hold",
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
             parseArgs: () => ({ help: false, _: ["epic/child"] }),
-            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ name) =>
+            /** @param {string} _cwd @param {string} name */
+            resolvePlan: (_cwd, name) =>
                 Promise.resolve(
                     name === "epic"
                         ? {
@@ -2555,7 +2558,8 @@ Deno.test("runLoadPlanCommand child FEATURE can be put on hold with child-only w
         editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
         __testDeps: /** @type {any} */ ({
             parseArgs: () => ({ help: false, _: ["epic/child-hold"] }),
-            resolvePlan: (/** @type {string} */ _cwd, /** @type {string} */ name) =>
+            /** @param {string} _cwd @param {string} name */
+            resolvePlan: (_cwd, name) =>
                 Promise.resolve(
                     name === "epic"
                         ? {

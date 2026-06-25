@@ -285,6 +285,82 @@ export async function mergeExecutionWorktree({ projectRoot, branch, worktreePath
         );
     }
 
+    // --- Plan metadata isolation ---
+    // If the worktree branch modified plan files that HEAD also modified, restore
+    // HEAD's version to avoid frontmatter metadata conflicts on merge. Plan
+    // frontmatter (worktreeStatus, failureReason, etc.) is bookkeeping set by the
+    // post-merge lifecycle, not meaningful worktree content.
+    const mergeBase = (await runGit(projectRoot, ["merge-base", "HEAD", branch])).trim();
+    if (resolvedWorktreePath) {
+        const planFilesInBranch = new Set(
+            parseNameOnlyPaths(
+                await runGit(projectRoot, ["diff", "--name-only", `${mergeBase}..${branch}`, "--", "plans/*.md"]),
+            ),
+        );
+        const planFilesInHead = new Set(
+            parseNameOnlyPaths(
+                await runGit(projectRoot, ["diff", "--name-only", `${mergeBase}..HEAD`, "--", "plans/*.md"]),
+            ),
+        );
+        const conflictingPlanFiles = [...planFilesInBranch].filter((/** @type {string} */ f) => planFilesInHead.has(f));
+
+        if (conflictingPlanFiles.length > 0) {
+            for (const file of conflictingPlanFiles) {
+                const content = await runGit(projectRoot, ["show", `HEAD:${file}`]);
+                const fullPath = join(resolvedWorktreePath, file);
+                const parentDir = join(fullPath, "..");
+                await Deno.mkdir(parentDir, { recursive: true });
+                await Deno.writeTextFile(fullPath, content);
+            }
+            await runGit(resolvedWorktreePath, ["add", "-A", "--", ...conflictingPlanFiles]);
+            await runGit(resolvedWorktreePath, [
+                "commit",
+                "-m",
+                "Align plan files with main to avoid frontmatter metadata conflicts",
+            ]);
+        }
+    }
+
+    // --- Staleness check and auto-rebase ---
+    // If the worktree branch is several commits behind HEAD, rebase it onto HEAD
+    // before merging to reduce the risk of merge conflicts.
+    const commitsBehind = parseInt(
+        (await runGit(projectRoot, ["rev-list", "--count", `${mergeBase}..HEAD`])).trim(),
+        10,
+    );
+    if (commitsBehind > 5) {
+        const currentBranch = (await runGit(projectRoot, ["branch", "--show-current"])).trim();
+        const hasDirtyChanges = !!(await runGit(projectRoot, ["status", "--porcelain"])).trim();
+        let stashed = false;
+        if (hasDirtyChanges) {
+            await runGit(projectRoot, ["stash", "push", "-m", "auto-stash before merge staleness rebase"]);
+            stashed = true;
+        }
+        try {
+            await runGit(projectRoot, ["checkout", branch]);
+            await runGit(projectRoot, ["rebase", currentBranch]);
+            await runGit(projectRoot, ["checkout", currentBranch]);
+        } catch (rebaseError) {
+            // Abort the rebase and return to the primary branch
+            try {
+                const onBranch = (await runGit(projectRoot, ["branch", "--show-current"])).trim();
+                if (onBranch !== currentBranch) {
+                    await runGit(projectRoot, ["rebase", "--abort"]).catch(() => {});
+                    await runGit(projectRoot, ["checkout", currentBranch]).catch(() => {});
+                }
+            } catch {
+                // Best-effort recovery
+            }
+            const reason = rebaseError instanceof Error ? rebaseError.message : String(rebaseError);
+            throw new Error(
+                `Worktree branch ${branch} is ${commitsBehind} commits behind HEAD and rebase failed: ${reason}. ` +
+                    "Resolve conflicts on the worktree branch manually, or increase the staleness threshold.",
+            );
+        } finally {
+            if (stashed) await runGit(projectRoot, ["stash", "pop"]).catch(() => {});
+        }
+    }
+
     await runGit(projectRoot, ["merge", "--no-ff", branch]);
 }
 

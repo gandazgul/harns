@@ -4,20 +4,21 @@ classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "The user wants to create a new plan under the 'local-first-plan-management-ui' epic to correct the design of the workspace UI, as the current implementation deviates from their vision. This requires a new FEATURE plan to redefine the foundation before further development."
 affectedPaths:
-  - "plans/local-first-plan-management-ui/"
-  - "src/ui/workspace/"
+    - "plans/local-first-plan-management-ui/"
+    - "src/ui/workspace/"
 createdAt: "2026-06-25T10:33:18-04:00"
 updatedAt: "2026-06-25T15:03:13.876Z"
 status: "implemented"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
-  - "secure-workspace-read-only-board"
+    - "secure-workspace-read-only-board"
 implementedAt: "2026-06-25T15:03:13.876Z"
 worktreeStatus: "completed"
 routingIntent: "FEATURE"
 sessionName: "correct workspace ui design"
 ---
+
 # Correct Workspace Design Foundation
 
 ## Context
