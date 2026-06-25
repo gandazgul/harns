@@ -1,14 +1,15 @@
 ---
+planId: "fcdc3cfb-4111-4ea4-bef2-9f29d0e0cf51"
 classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Implement automatic terminal tab titles and session naming. This includes updating the `triage_report` tool schema and Router prompt to provide a `sessionName`, implementing the logic to apply this name to unnamed sessions, setting the initial terminal title to `wld - <cwd>`, and adding a `/name` slash command for manual session naming."
 affectedPaths:
-    - "src/tools/triage-report.js"
-    - "src/agent-definitions/router.md"
-    - "src/shared/interactive/chat-session.js"
-    - "src/cmd/registry.js"
-    - "src/cmd/name/index.js"
-    - "src/shared/ui/tui.js"
+  - "src/tools/triage-report.js"
+  - "src/agent-definitions/router.md"
+  - "src/shared/interactive/chat-session.js"
+  - "src/cmd/registry.js"
+  - "src/cmd/name/index.js"
+  - "src/shared/ui/tui.js"
 createdAt: "2026-06-24T13:51:44-04:00"
 updatedAt: "2026-06-24T18:47:12.854Z"
 status: "verified"
@@ -19,7 +20,6 @@ humanReviewMode: "ask"
 humanReviewDecision: "skipped"
 routingIntent: "FEATURE"
 ---
-
 # Automatic Session Names and Terminal Titles
 
 ## Context

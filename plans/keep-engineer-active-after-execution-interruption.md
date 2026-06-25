@@ -1,19 +1,16 @@
 ---
+planId: "2b3837d2-647b-4141-a8d5-743633cc0472"
 classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Modify the engineer execution flow to prevent bouncing back to the planner or ending the session when the engineer fails or stops without calling `task_completed`. Instead, output a notification and keep the engineer as the active agent so the user can continue the session."
 affectedPaths:
-    - "src/shared/workflow/workflow.js"
-    - "src/shared/workflow/orchestrator.js"
+  - "src/shared/workflow/workflow.js"
+  - "src/shared/workflow/orchestrator.js"
 createdAt: "2026-06-24T21:02:48-04:00"
 updatedAt: "2026-06-25T02:21:29.234Z"
 status: "verified"
 origin: "internal"
-failureReason: "git merge --no-ff runwield/worktree/keep-engineer-active-after-execution-interruptio-0652e268 failed: error: Your local changes to the following files would be overwritten by merge:
-    plans/keep-engineer-active-after-execution-interruption.md
-    Please commit your changes or stash them before you merge.
-    Aborting
-    Merge with strategy ort failed."
+failureReason: "git merge --no-ff runwield/worktree/keep-engineer-active-after-execution-interruptio-0652e268 failed: error: Your local changes to the following files would be overwritten by merge: plans/keep-engineer-active-after-execution-interruption.md Please commit your changes or stash them before you merge. Aborting Merge with strategy ort failed."
 implementedAt: "2026-06-25T01:57:09.144Z"
 verifiedAt: "2026-06-25T02:21:29.234Z"
 humanReviewMode: "ask"
@@ -21,7 +18,6 @@ humanReviewDecision: "skipped"
 routingIntent: "FEATURE"
 sessionName: "engineer session persistence"
 ---
-
 # Keep Engineer Active After Execution Interruption
 
 ## Context

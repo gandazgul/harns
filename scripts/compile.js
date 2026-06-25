@@ -22,23 +22,32 @@ const compile = await runCmd("deno", [
     "-A",
 
     "--include",
+    "src/ui/workspace/static/",
+
+    "--include",
     "src/agent-definitions",
+
     "--include",
     "src/agent-definitions/workflow-prompts",
-    "--include",
-    "src/agent-definitions/workflow-prompts/init-agent-prompt.md",
-    "--include",
-    "src/agent-definitions/workflow-prompts/slicer-prompt.md",
-    "--include",
-    "src/agent-definitions/workflow-prompts/reviewer-prompt.md",
+    // "--include",
+    // "src/agent-definitions/workflow-prompts/init-agent-prompt.md",
+    // "--include",
+    // "src/agent-definitions/workflow-prompts/slicer-prompt.md",
+    // "--include",
+    // "src/agent-definitions/workflow-prompts/reviewer-prompt.md",
+
     "--include",
     "src/prompt-templates",
+
     "--include",
     "src/shared/session/SYSTEM_PROMPT_TEMPLATE.md",
+
     "--include",
     "src/skills",
+
     "--include",
     "src/snip-filters",
+
     "--include",
     "src/shared/ui/catppuccin-mocha.json",
 

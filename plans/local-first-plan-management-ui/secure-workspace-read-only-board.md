@@ -1,4 +1,5 @@
 ---
+planId: "ea676be3-b2ec-4314-8159-a79437675b1b"
 classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Introduce `wld plans ui`, the local Fresh/Vite/Preact Workspace app, secure localhost launch, read-only REST APIs, and a first read-only Plan Board backed by canonical markdown Plans."
@@ -13,20 +14,17 @@ affectedPaths:
   - "deno.lock"
   - "README.md"
 createdAt: "2026-06-24T20:14:08.682Z"
-updatedAt: "2026-06-25T13:18:32.182Z"
-status: "implemented"
+updatedAt: "2026-06-25T13:19:53.170Z"
+status: "verified"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
   - "plan-resource-identity-and-hierarchy"
-failureReason: "git merge --no-ff runwield/worktree/local-first-plan-management-ui-secure-workspace--a7e221d5 failed: error: Your local changes to the following files would be overwritten by merge:
-	plans/local-first-plan-management-ui/secure-workspace-read-only-board.md
-Please commit your changes or stash them before you merge.
-Aborting
-Merge with strategy ort failed."
-worktreeStatus: "merge_conflict"
+verifiedAt: "2026-06-25T13:19:53.170Z"
+humanReviewMode: "ask"
+humanReviewDecision: "approved"
+humanReviewedAt: "2026-06-25T13:18:31.962Z"
 ---
-
 # Secure Workspace Read-Only Board
 
 ## Context
