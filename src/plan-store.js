@@ -368,14 +368,6 @@ function normalizeStringList(value) {
 }
 
 /**
- * @param {unknown} value
- * @returns {string | undefined}
- */
-function normalizePlanId(value) {
-    return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-}
-
-/**
  * @param {unknown} status
  * @returns {PlanFrontMatter["status"] | null | undefined}
  */
@@ -846,17 +838,6 @@ export async function updatePlanFrontMatter(
 }
 
 /**
- * Rewrite only front matter while preserving the parsed markdown body exactly.
- *
- * @param {PlanFrontMatter} attrs
- * @param {string} body
- * @returns {string}
- */
-function rewritePlanFrontMatter(attrs, body) {
-    return formatFrontMatter(attrs) + "\n" + body;
-}
-
-/**
  * @typedef {Object} PlanResourceEntry
  * @property {string} name - Canonical plan name relative to plans/ without .md.
  * @property {string} planName - Alias for name used by resource consumers.
@@ -867,202 +848,6 @@ function rewritePlanFrontMatter(attrs, body) {
  * @property {string} [body] - Parsed markdown body when loaded by identity helpers.
  * @property {string} [markdown] - Full markdown when loaded by identity helpers.
  */
-
-/**
- * @param {string} name
- * @returns {string}
- */
-function planRelativePath(name) {
-    return `${PLANS_DIR_NAME}/${name}.md`;
-}
-
-/**
- * @param {string} id
- * @returns {string}
- */
-function formatDuplicatePlanIdMessage(id) {
-    return `Duplicate planId "${id}" found in saved Plans. Repair one of the duplicate planId front matter values before using Plan resource URLs.`;
-}
-
-/**
- * @param {Array<{ name: string, path: string, attrs: PlanFrontMatter }>} plans
- */
-function assertNoDuplicateExistingPlanIds(plans) {
-    /** @type {Map<string, string[]>} */
-    const namesById = new Map();
-    for (const plan of plans) {
-        const id = normalizePlanId(plan.attrs.planId);
-        if (!id) continue;
-        const names = namesById.get(id) || [];
-        names.push(plan.name);
-        namesById.set(id, names);
-    }
-    for (const [id, names] of namesById) {
-        if (names.length > 1) {
-            throw new Error(`${formatDuplicatePlanIdMessage(id)} Duplicates: ${names.join(", ")}.`);
-        }
-    }
-}
-
-/**
- * @param {string} name
- * @returns {boolean}
- */
-function isHiddenPlanName(name) {
-    return HIDDEN_PLAN_DIRS.has(name.split("/")[0] || "");
-}
-
-/**
- * @param {Array<{ name: string, path: string, attrs: PlanFrontMatter }>} plans
- * @returns {Set<string>}
- */
-function collectExistingPlanIds(plans) {
-    /** @type {Set<string>} */
-    const usedIds = new Set();
-    for (const plan of plans) {
-        const id = normalizePlanId(plan.attrs.planId);
-        if (id) usedIds.add(id);
-    }
-    return usedIds;
-}
-
-/**
- * Ensure one Plan has a durable planId, preserving body markdown exactly when backfilling.
- *
- * @param {string} cwd
- * @param {string} planName
- * @param {{ __testGenerateId?: () => string }} [options]
- * @returns {Promise<PlanResourceEntry>}
- */
-export async function ensurePlanIdentity(cwd, planName, options = {}) {
-    const { name } = canonicalizeStoredPlanName(planName);
-    const plan = await loadPlan(cwd, name);
-    if (!plan) throw new Error(`Plan not found: ${planName}`);
-
-    if (isHiddenPlanName(name)) {
-        throw new Error(`Plan is archived or hidden and cannot be assigned a planId: ${name}`);
-    }
-
-    const plans = await listPlans(cwd);
-    assertNoDuplicateExistingPlanIds(plans);
-    const usedIds = collectExistingPlanIds(plans);
-
-    let attrs = plan.attrs;
-    let markdown = plan.markdown;
-    let planId = normalizePlanId(attrs.planId);
-
-    if (!planId) {
-        const generateId = options.__testGenerateId || crypto.randomUUID;
-        do {
-            planId = normalizePlanId(generateId());
-        } while (!planId || usedIds.has(planId));
-        attrs = { ...attrs, planId };
-        markdown = rewritePlanFrontMatter(attrs, plan.body);
-        await Deno.writeTextFile(plan.path, markdown);
-        attrs = parsePlanFrontMatter(markdown).attrs;
-    }
-
-    return {
-        name,
-        planName: name,
-        relativePath: planRelativePath(name),
-        path: plan.path,
-        planId,
-        attrs,
-        body: plan.body,
-        markdown,
-    };
-}
-
-/**
- * List non-archived Plans as durable resources, optionally backfilling missing IDs.
- *
- * @param {string} cwd
- * @param {{ backfillMissing?: boolean, __testGenerateId?: () => string }} [options]
- * @returns {Promise<PlanResourceEntry[]>}
- */
-export async function listPlanResources(cwd, options = {}) {
-    const backfillMissing = options.backfillMissing !== false;
-    const plans = await listPlans(cwd);
-    assertNoDuplicateExistingPlanIds(plans);
-
-    const usedIds = collectExistingPlanIds(plans);
-    /** @type {PlanResourceEntry[]} */
-    const resources = [];
-    const generateId = options.__testGenerateId || crypto.randomUUID;
-
-    for (const plan of plans) {
-        let attrs = plan.attrs;
-        let planId = normalizePlanId(attrs.planId);
-        let markdown;
-        let body;
-
-        if (!planId && backfillMissing) {
-            const loaded = await loadPlan(cwd, plan.name);
-            if (!loaded) continue;
-            body = loaded.body;
-            markdown = loaded.markdown;
-            do {
-                planId = normalizePlanId(generateId());
-            } while (!planId || usedIds.has(planId));
-            usedIds.add(planId);
-            attrs = { ...loaded.attrs, planId };
-            markdown = rewritePlanFrontMatter(attrs, loaded.body);
-            await Deno.writeTextFile(loaded.path, markdown);
-            attrs = parsePlanFrontMatter(markdown).attrs;
-            resources.push({
-                name: plan.name,
-                planName: plan.name,
-                relativePath: planRelativePath(plan.name),
-                path: loaded.path,
-                planId,
-                attrs,
-                body,
-                markdown,
-            });
-            continue;
-        }
-
-        if (!planId) continue;
-        usedIds.add(planId);
-        resources.push({
-            name: plan.name,
-            planName: plan.name,
-            relativePath: planRelativePath(plan.name),
-            path: plan.path,
-            planId,
-            attrs,
-        });
-    }
-
-    return resources;
-}
-
-/**
- * Find a non-archived Plan by durable planId.
- *
- * @param {string} cwd
- * @param {string} planId
- * @returns {Promise<PlanResourceEntry>}
- */
-export async function findPlanById(cwd, planId) {
-    const id = normalizePlanId(planId);
-    if (!id) throw new Error("Plan ID cannot be empty");
-    const resources = await listPlanResources(cwd, { backfillMissing: true });
-    const matches = resources.filter((resource) => resource.planId === id);
-    if (matches.length > 1) throw new Error(formatDuplicatePlanIdMessage(id));
-    if (matches.length === 0) throw new Error(`Plan not found for planId "${id}".`);
-
-    const found = matches[0];
-    const loaded = await loadPlan(cwd, found.name);
-    if (!loaded) throw new Error(`Plan not found: ${found.name}`);
-    return {
-        ...found,
-        attrs: loaded.attrs,
-        body: loaded.body,
-        markdown: loaded.markdown,
-    };
-}
 
 /**
  * @param {string} dir
@@ -1106,6 +891,14 @@ export async function listPlans(cwd) {
         // plans dir doesn't exist yet
     }
     return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isHiddenPlanName(name) {
+    return HIDDEN_PLAN_DIRS.has(name.split("/")[0] || "");
 }
 
 /**
@@ -1164,16 +957,25 @@ function assertNoDuplicatePlanIds(byId) {
  *
  * @param {string} cwd
  * @param {string} planName
- * @param {{ idGenerator?: () => string, reservedPlanIds?: Set<string> }} [options]
+ * @param {{ idGenerator?: () => string, __testGenerateId?: () => string, reservedPlanIds?: Set<string> }} [options]
  * @returns {Promise<PlanResource>}
  */
 export async function ensurePlanIdentity(cwd, planName, options = {}) {
     const { name } = canonicalizeStoredPlanName(planName);
     const plan = await loadPlan(cwd, name);
     if (!plan) throw new Error(`Plan not found: ${planName}`);
+    if (isHiddenPlanName(name)) {
+        throw new Error(`Plan is archived or hidden and cannot be assigned a planId: ${name}`);
+    }
 
-    const reservedPlanIds = options.reservedPlanIds || new Set();
-    const idGenerator = options.idGenerator || (() => crypto.randomUUID());
+    let reservedPlanIds = options.reservedPlanIds;
+    if (!reservedPlanIds) {
+        const plans = await listPlans(cwd);
+        const byId = groupExistingPlanIds(plans);
+        assertNoDuplicatePlanIds(byId);
+        reservedPlanIds = new Set(byId.keys());
+    }
+    const idGenerator = options.idGenerator || options.__testGenerateId || (() => crypto.randomUUID());
     let planId = normalizePlanId(plan.attrs.planId);
     let markdown = plan.markdown;
     let attrs = { ...plan.attrs, planId };
@@ -1203,7 +1005,7 @@ export async function ensurePlanIdentity(cwd, planName, options = {}) {
  * List non-archived Plans as durable resources, optionally backfilling missing IDs.
  *
  * @param {string} cwd
- * @param {{ backfillMissing?: boolean, idGenerator?: () => string }} [options]
+ * @param {{ backfillMissing?: boolean, idGenerator?: () => string, __testGenerateId?: () => string }} [options]
  * @returns {Promise<PlanResource[]>}
  */
 export async function listPlanResources(cwd, options = {}) {
@@ -1233,7 +1035,7 @@ export async function listPlanResources(cwd, options = {}) {
         }
 
         const resource = await ensurePlanIdentity(cwd, plan.name, {
-            idGenerator: options.idGenerator,
+            idGenerator: options.idGenerator || options.__testGenerateId,
             reservedPlanIds,
         });
         reservedPlanIds.add(resource.planId);
@@ -1260,70 +1062,6 @@ export async function findPlanById(cwd, planId) {
     }
     if (matches.length === 0) throw new Error(`Plan not found for planId: ${normalized}`);
     return matches[0];
-}
-
-/**
- * @param {{ attrs: PlanFrontMatter }} plan
- * @returns {boolean}
- */
-export function isChildFeaturePlan(plan) {
-    return plan.attrs.classification === "FEATURE" && typeof plan.attrs.parentPlan === "string" &&
-        plan.attrs.parentPlan.trim().length > 0;
-}
-
-/**
- * Keep in sync with lifecycle Epic semantics without importing lifecycle here.
- * @param {PlanFrontMatter} attrs
- * @returns {boolean}
- */
-export function isEpicPlan(attrs) {
-    return attrs?.classification === "PROJECT" && attrs?.type === "epic";
-}
-
-/**
- * @param {Array<{ name: string, attrs: PlanFrontMatter }>} plans
- * @returns {{ epics: any[], childrenByParent: Map<string, any[]>, standalone: any[], orphanChildren: any[] }}
- */
-export function groupPlanHierarchy(plans) {
-    const epics = plans.filter((plan) => isEpicPlan(plan.attrs));
-    const epicNames = new Set(epics.map((plan) => plan.name));
-    const childrenByParent = new Map();
-    const standalone = [];
-    const orphanChildren = [];
-
-    for (const plan of plans) {
-        if (isEpicPlan(plan.attrs)) continue;
-
-        if (isChildFeaturePlan(plan)) {
-            const parentPlan = plan.attrs.parentPlan || "";
-            if (epicNames.has(parentPlan)) {
-                const children = childrenByParent.get(parentPlan) || [];
-                children.push(plan);
-                childrenByParent.set(parentPlan, children);
-            } else {
-                orphanChildren.push(plan);
-            }
-            continue;
-        }
-
-        standalone.push(plan);
-    }
-
-    return { epics, childrenByParent, standalone, orphanChildren };
-}
-
-/**
- * @param {Array<{ attrs: PlanFrontMatter }>} children
- * @returns {{ verified: number, active: number, failed: number, remaining: number, total: number }}
- */
-export function countChildPlanProgress(children) {
-    const verified = children.filter((child) => child.attrs.status === "verified").length;
-    const active =
-        children.filter((child) => child.attrs.status === "in_progress" || child.attrs.status === "implemented")
-            .length;
-    const failed = children.filter((child) => child.attrs.status === "failed").length;
-    const total = children.length;
-    return { verified, active, failed, remaining: total - verified - active - failed, total };
 }
 
 /**
