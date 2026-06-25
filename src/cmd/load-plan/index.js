@@ -39,6 +39,7 @@ import {
 import {
     createExecutionWorktree as createExecutionWorktreeFn,
     getWorktreeStatus as getWorktreeStatusFn,
+    inspectExecutionWorktreeMergeRisk as inspectExecutionWorktreeMergeRiskFn,
     mergeExecutionWorktree as mergeExecutionWorktreeFn,
     removeExecutionWorktree as removeExecutionWorktreeFn,
 } from "../../shared/worktree.js";
@@ -100,6 +101,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof updateWorktreeRegistryEntryFn} [updateWorktreeRegistryEntry]
  * @property {typeof getWorktreeStatusFn} [getWorktreeStatus]
  * @property {typeof createExecutionWorktreeFn} [createExecutionWorktree]
+ * @property {typeof inspectExecutionWorktreeMergeRiskFn} [inspectExecutionWorktreeMergeRisk]
  * @property {typeof mergeExecutionWorktreeFn} [mergeExecutionWorktree]
  * @property {typeof removeExecutionWorktreeFn} [removeExecutionWorktree]
  * @property {typeof removeWorktreeRegistryEntryFn} [removeWorktreeRegistryEntry]
@@ -194,7 +196,7 @@ async function stripTasksFromPlanFile(plan) {
  * Build a compact summary view of a plan: front matter highlights plus the
  * Context and Objective sections (when present).
  *
- * @param {{ attrs: import('../../plan-store.js').PlanFrontMatter, body: string, markdown: string }} plan
+ * @param {{ attrs: import('../../plan-store.js').PlanFrontMatter, body: string, markdown?: string }} plan
  * @returns {string}
  */
 function buildPlanSummary(plan) {
@@ -339,6 +341,385 @@ async function confirmAffectedPathChangesBeforeExecution({
     if (answer === "proceed") return true;
     uiAPI.appendSystemMessage("Execution canceled.", false, "RunWield");
     return false;
+}
+
+/**
+ * @param {string | undefined} status
+ * @returns {boolean}
+ */
+function isHoldableStatus(status) {
+    return Boolean(status) && status !== "verified" && status !== "closed_without_verification" && status !== "on_hold";
+}
+
+/**
+ * @param {Partial<import('../../plan-store.js').PlanFrontMatter>} attrs
+ * @returns {string | undefined}
+ */
+function getHoldStalenessBaseline(attrs) {
+    return attrs.updatedAt || attrs.implementedAt || attrs.failedAt || attrs.createdAt || undefined;
+}
+
+/**
+ * @param {Partial<import('../../plan-store.js').PlanFrontMatter>} attrs
+ * @returns {boolean}
+ */
+function hasRecordedWorktreeMetadata(attrs) {
+    return Boolean(attrs.worktreeId || attrs.worktreePath || attrs.worktreeBranch || attrs.worktreeStatus);
+}
+
+/**
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} uiAPI
+ * @param {string} message
+ * @returns {Promise<boolean>}
+ */
+async function confirmHoldWarning(uiAPI, message) {
+    uiAPI.appendSystemMessage(message, true, "RunWield");
+    const answer = await uiAPI.promptSelect("Put on hold?", [
+        { value: "confirm", label: "Put on hold" },
+        { value: "cancel", label: "Cancel" },
+    ]);
+    return answer === "confirm";
+}
+
+/**
+ * @param {Object} opts
+ * @param {{ planName: string, attrs: import('../../plan-store.js').PlanFrontMatter }} opts.plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof recordPlanEventFn} opts.recordPlanEvent
+ * @param {typeof findPlansByParentFn} opts.findPlansByParent
+ * @returns {Promise<boolean>}
+ */
+async function putPlanOnHold({ plan, uiAPI, recordPlanEvent, findPlansByParent }) {
+    if (!isHoldableStatus(plan.attrs.status)) {
+        uiAPI.appendSystemMessage(`Plans with status ${plan.attrs.status} cannot be put on hold.`, true, "RunWield");
+        return false;
+    }
+
+    if (isEpicPlan(plan.attrs)) {
+        const children = await findPlansByParent(CWD, plan.planName);
+        const childSummary = children.length > 0 ? `\n\n${formatEpicProgressSummary(children)}` : "";
+        const confirmed = await confirmHoldWarning(
+            uiAPI,
+            `Child FEATURE Plans will be hidden/blocked while this Epic is on hold. Their statuses will not change.${childSummary}`,
+        );
+        if (!confirmed) return false;
+    } else if (plan.attrs.parentPlan) {
+        const confirmed = await confirmHoldWarning(
+            uiAPI,
+            "Only this child FEATURE will be held. The parent Epic and sibling FEATURE Plans stay active.",
+        );
+        if (!confirmed) return false;
+    }
+
+    let holdReason = "";
+    if (typeof uiAPI.promptText === "function") {
+        holdReason = String(await uiAPI.promptText("Optional hold reason:") || "").trim();
+    }
+
+    const updatedAttrs = await recordPlanEvent({
+        cwd: CWD,
+        planName: plan.planName,
+        event: "plan_held",
+        currentStatus: plan.attrs.status,
+        details: {
+            triageMeta: plan.attrs,
+            holdReason: holdReason || undefined,
+            holdStalenessBaseline: getHoldStalenessBaseline(plan.attrs),
+        },
+    });
+    plan.attrs = { ...plan.attrs, ...updatedAttrs };
+    uiAPI.appendSystemMessage(
+        `Plan put on hold. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
+        false,
+        "RunWield",
+    );
+    return true;
+}
+
+/**
+ * @param {Object} opts
+ * @param {{ planName: string, attrs: import('../../plan-store.js').PlanFrontMatter }} opts.plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof listCommitsTouchingPathsSinceFn} opts.listCommitsTouchingPathsSince
+ * @param {typeof findWorktreeByIdFn} opts.findWorktreeById
+ * @param {typeof findWorktreeByPlanNameFn} opts.findWorktreeByPlanName
+ * @param {typeof getWorktreeStatusFn} opts.getWorktreeStatus
+ * @param {typeof inspectExecutionWorktreeMergeRiskFn} opts.inspectExecutionWorktreeMergeRisk
+ * @returns {Promise<{ status: "pass" | "warn" | "fail", messages: string[] }>}
+ */
+async function runResumeCheck({
+    plan,
+    uiAPI: _uiAPI,
+    listCommitsTouchingPathsSince,
+    findWorktreeById,
+    findWorktreeByPlanName,
+    getWorktreeStatus,
+    inspectExecutionWorktreeMergeRisk,
+}) {
+    const warnings = [];
+    const failures = [];
+    const worktreeContext = await resolveRecoveryWorktree(plan, { findWorktreeById, findWorktreeByPlanName });
+
+    if (hasRecordedWorktreeMetadata(plan.attrs)) {
+        if (!worktreeContext?.path) {
+            failures.push("Recorded worktree metadata exists, but no worktree path could be resolved.");
+        } else {
+            try {
+                const status = await getWorktreeStatus({
+                    projectRoot: CWD,
+                    path: worktreeContext.path,
+                    branch: worktreeContext.branch,
+                    baseTree: plan.attrs.executionBaselineTree || worktreeContext.baseTree,
+                });
+                if (!status.exists) failures.push(`Recorded worktree is missing: ${worktreeContext.path}`);
+                if (
+                    status.exists && worktreeContext.branch && status.branch && status.branch !== worktreeContext.branch
+                ) {
+                    failures.push(
+                        `Recorded branch mismatch: expected ${worktreeContext.branch}, found ${status.branch}.`,
+                    );
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                failures.push(`Could not inspect recorded worktree: ${message}`);
+            }
+        }
+
+        if (worktreeContext?.branch) {
+            try {
+                /** @type {string[]} */
+                const allowedDirtyPaths = [
+                    `plans/${plan.planName}.md`,
+                    ".wld/",
+                    ".wld/worktrees.json",
+                    ".wld/worktrees.lock",
+                ];
+                const risk = await inspectExecutionWorktreeMergeRisk({
+                    projectRoot: CWD,
+                    branch: worktreeContext.branch,
+                    allowedDirtyPaths,
+                });
+                warnings.push(...risk.warnings);
+                failures.push(...risk.failures);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                warnings.push(`Could not inspect merge risk against primary checkout: ${message}`);
+            }
+        }
+    }
+
+    const affectedPaths = Array.isArray(plan.attrs.affectedPaths) ? plan.attrs.affectedPaths : [];
+    const baseline = plan.attrs.holdStalenessBaseline || plan.attrs.updatedAt || plan.attrs.createdAt;
+    if (baseline && affectedPaths.length > 0) {
+        try {
+            const commits = await listCommitsTouchingPathsSince(CWD, baseline, affectedPaths);
+            if (commits.length > 0) {
+                warnings.push([
+                    `${commits.length} commit(s) touched affected paths since the Resume Check baseline (${baseline}).`,
+                    ...formatCommitHeadsUp(commits),
+                ].join("\n"));
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            warnings.push(`Could not check affected path history for Resume Check: ${message}`);
+        }
+    }
+
+    if (failures.length > 0) return { status: "fail", messages: failures };
+    if (warnings.length > 0) return { status: "warn", messages: warnings };
+    return { status: "pass", messages: ["Resume Check passed."] };
+}
+
+/**
+ * @param {Object} opts
+ * @param {{ planName: string, attrs: import('../../plan-store.js').PlanFrontMatter }} opts.plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof recordPlanEventFn} opts.recordPlanEvent
+ * @param {typeof findWorktreeByIdFn} opts.findWorktreeById
+ * @param {typeof findWorktreeByPlanNameFn} opts.findWorktreeByPlanName
+ * @param {typeof updateWorktreeRegistryEntryFn} opts.updateWorktreeRegistryEntry
+ * @param {typeof removeExecutionWorktreeFn} opts.removeExecutionWorktree
+ * @returns {Promise<boolean>}
+ */
+async function resetHeldPlanToDraft({
+    plan,
+    uiAPI,
+    recordPlanEvent,
+    findWorktreeById,
+    findWorktreeByPlanName,
+    updateWorktreeRegistryEntry,
+    removeExecutionWorktree,
+}) {
+    const worktreeContext = await resolveRecoveryWorktree(plan, { findWorktreeById, findWorktreeByPlanName });
+    let action = "reset_keep";
+    if (hasWorktreeContext(worktreeContext)) {
+        action = String(
+            await uiAPI.promptSelect("Reset status to draft and handle the recorded worktree:", [
+                { value: "reset_keep", label: "Reset metadata and keep worktree for manual rescue" },
+                { value: "reset_delete", label: "Delete worktree and reset metadata" },
+                { value: "cancel", label: "Cancel" },
+            ]) || "cancel",
+        );
+        if (action === "cancel") return false;
+        if (action === "reset_delete") {
+            const confirmed = await confirmWorktreeAction(
+                plan.planName,
+                uiAPI,
+                "Delete worktree and reset status to draft",
+            );
+            if (!confirmed) return false;
+            if (worktreeContext?.path) {
+                await removeExecutionWorktree({
+                    projectRoot: CWD,
+                    path: worktreeContext.path,
+                    branch: worktreeContext.branch,
+                    force: true,
+                });
+            }
+            if (worktreeContext?.id) {
+                await updateWorktreeRegistryEntry(CWD, worktreeContext.id, { status: "abandoned" });
+            }
+        }
+    } else {
+        const confirmed = await uiAPI.promptSelect("Reset status to draft?", [
+            { value: "confirm", label: "Reset status to draft" },
+            { value: "cancel", label: "Cancel" },
+        ]);
+        if (confirmed !== "confirm") return false;
+    }
+
+    const updatedAttrs = await recordPlanEvent({
+        cwd: CWD,
+        planName: plan.planName,
+        event: "hold_reset_to_draft",
+        currentStatus: "on_hold",
+        details: { triageMeta: plan.attrs },
+    });
+    plan.attrs = { ...plan.attrs, ...updatedAttrs };
+    uiAPI.appendSystemMessage(
+        action === "reset_delete"
+            ? "Plan reset to draft and recorded worktree deleted."
+            : "Plan reset to draft. Recorded worktree was left untouched for manual rescue if present.",
+        false,
+        "RunWield",
+    );
+    return true;
+}
+
+/**
+ * @param {Object} opts
+ * @param {{ planName: string, attrs: import('../../plan-store.js').PlanFrontMatter, body: string, markdown?: string }} opts.plan
+ * @param {import('../../shared/workflow/workflow.js').UiAPI} opts.uiAPI
+ * @param {typeof listCommitsTouchingPathsSinceFn} opts.listCommitsTouchingPathsSince
+ * @param {typeof recordPlanEventFn} opts.recordPlanEvent
+ * @param {typeof findPlansByParentFn} opts.findPlansByParent
+ * @param {typeof findWorktreeByIdFn} opts.findWorktreeById
+ * @param {typeof findWorktreeByPlanNameFn} opts.findWorktreeByPlanName
+ * @param {typeof updateWorktreeRegistryEntryFn} opts.updateWorktreeRegistryEntry
+ * @param {typeof getWorktreeStatusFn} opts.getWorktreeStatus
+ * @param {typeof inspectExecutionWorktreeMergeRiskFn} opts.inspectExecutionWorktreeMergeRisk
+ * @param {typeof removeExecutionWorktreeFn} opts.removeExecutionWorktree
+ * @returns {Promise<"resume" | "handled">}
+ */
+async function handleOnHoldPlan({
+    plan,
+    uiAPI,
+    listCommitsTouchingPathsSince,
+    recordPlanEvent,
+    findPlansByParent,
+    findWorktreeById,
+    findWorktreeByPlanName,
+    updateWorktreeRegistryEntry,
+    getWorktreeStatus,
+    inspectExecutionWorktreeMergeRisk,
+    removeExecutionWorktree,
+}) {
+    while (plan.attrs.status === "on_hold") {
+        const answer = await uiAPI.promptSelect("This plan is on hold. What would you like to do?", [
+            { value: "resume", label: "Resume from hold" },
+            { value: "view", label: "View plan details" },
+            { value: "reset", label: "Reset status to draft" },
+            { value: "cancel", label: "Keep on hold" },
+        ]);
+        if (!answer || answer === "cancel") return "handled";
+
+        if (answer === "view") {
+            uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
+            continue;
+        }
+
+        if (answer === "reset") {
+            const reset = await resetHeldPlanToDraft({
+                plan,
+                uiAPI,
+                recordPlanEvent,
+                findWorktreeById,
+                findWorktreeByPlanName,
+                updateWorktreeRegistryEntry,
+                removeExecutionWorktree,
+            });
+            if (reset) return "resume";
+            continue;
+        }
+
+        if (answer === "resume") {
+            if (!plan.attrs.heldFromStatus) {
+                uiAPI.appendSystemMessage(
+                    "Cannot resume from hold because heldFromStatus is missing. Use Reset status to draft or repair the plan metadata.",
+                    true,
+                    "RunWield",
+                );
+                continue;
+            }
+            const check = await runResumeCheck({
+                plan,
+                uiAPI,
+                listCommitsTouchingPathsSince,
+                findWorktreeById,
+                findWorktreeByPlanName,
+                getWorktreeStatus,
+                inspectExecutionWorktreeMergeRisk,
+            });
+            uiAPI.appendSystemMessage(
+                ["Resume Check:", ...check.messages.map((message) => `- ${message}`)].join("\n"),
+                check.status !== "pass",
+                "RunWield",
+            );
+            if (check.status === "fail") {
+                uiAPI.appendSystemMessage(
+                    "Resume Check failed. The Plan will stay on hold until you choose recovery.",
+                    true,
+                    "RunWield",
+                );
+                continue;
+            }
+            if (check.status === "warn") {
+                const proceed = await uiAPI.promptSelect("Resume Check found warnings. What would you like to do?", [
+                    { value: "proceed", label: "Proceed with resume" },
+                    { value: "keep", label: "Keep on hold" },
+                ]);
+                if (proceed !== "proceed") continue;
+            }
+            const restoredStatus = plan.attrs.heldFromStatus;
+            const updatedAttrs = await recordPlanEvent({
+                cwd: CWD,
+                planName: plan.planName,
+                event: "hold_resumed",
+                currentStatus: "on_hold",
+                details: { triageMeta: plan.attrs, heldFromStatus: restoredStatus },
+            });
+            plan.attrs = { ...plan.attrs, ...updatedAttrs };
+            uiAPI.appendSystemMessage(`Resumed from hold. Restored status: ${plan.attrs.status}.`, false, "RunWield");
+            if (isEpicPlan(plan.attrs)) {
+                const children = await findPlansByParent(CWD, plan.planName);
+                if (children.length > 0) {
+                    uiAPI.appendSystemMessage(formatEpicProgressSummary(children), false, "RunWield");
+                }
+            }
+            return "resume";
+        }
+    }
+    return "resume";
 }
 
 /**
@@ -959,6 +1340,7 @@ async function confirmRecoveryWorktreeAvailable(planName, worktreeContext, uiAPI
  * @param {typeof shouldCleanupMergedWorktreesFn} opts.shouldCleanupMergedWorktrees
  * @param {typeof setActiveAgentFn} opts.setActiveAgent
  * @param {typeof createAgentHandlerFn} opts.createAgentHandler
+ * @param {typeof findPlansByParentFn} opts.findPlansByParent
  * @returns {Promise<"handled" | "review">}
  */
 async function handlePlanRecovery({
@@ -987,6 +1369,7 @@ async function handlePlanRecovery({
     shouldCleanupMergedWorktrees,
     setActiveAgent,
     createAgentHandler,
+    findPlansByParent,
 }) {
     let worktreeContext = await resolveRecoveryWorktree(plan, { findWorktreeById, findWorktreeByPlanName });
     while (true) {
@@ -1003,6 +1386,7 @@ async function handlePlanRecovery({
                 },
                 ...(hasWorktree ? [{ value: "abandon", label: "Delete/abandon worktree" }] : []),
                 { value: "review", label: "Re-open for review" },
+                { value: "hold", label: "Put on hold" },
                 { value: "cancel", label: "Cancel" },
             ]
             : [
@@ -1014,11 +1398,17 @@ async function handlePlanRecovery({
                 },
                 ...(hasWorktree ? [{ value: "abandon", label: "Delete/abandon worktree" }] : []),
                 { value: "review", label: "Re-open for review" },
+                { value: "hold", label: "Put on hold" },
                 { value: "cancel", label: "Cancel" },
             ];
 
         const answer = await uiAPI.promptSelect(`Plan recovery (${plan.attrs.status}):`, options);
         if (!answer || answer === "cancel") return "handled";
+
+        if (answer === "hold") {
+            await putPlanOnHold({ plan, uiAPI, recordPlanEvent, findPlansByParent });
+            return "handled";
+        }
 
         if (answer === "inspect") {
             worktreeContext = await resolveRecoveryWorktree(plan, { findWorktreeById, findWorktreeByPlanName });
@@ -1324,15 +1714,17 @@ function formatChildPlanLabel(child) {
 
 /**
  * @param {Array<{ attrs: import('../../plan-store.js').PlanFrontMatter }>} children
- * @returns {{ total: number, verified: number, active: number, remaining: number, failed: number }}
+ * @returns {{ total: number, verified: number, active: number, remaining: number, failed: number, onHold: number }}
  */
 function countEpicChildStatuses(children) {
-    const counts = { total: children.length, verified: 0, active: 0, remaining: 0, failed: 0 };
+    /** @type {{ total: number, verified: number, active: number, remaining: number, failed: number, onHold: number }} */
+    const counts = { total: children.length, verified: 0, active: 0, remaining: 0, failed: 0, onHold: 0 };
     for (const child of children) {
         const status = child.attrs.status;
         if (status === "verified") counts.verified += 1;
         else if (status === "in_progress" || status === "implemented") counts.active += 1;
         else if (status === "failed") counts.failed += 1;
+        else if (status === "on_hold") counts.onHold += 1;
         else if (["draft", "approved", "ready_for_work", "ready_for_decomposition", "feedback"].includes(status)) {
             counts.remaining += 1;
         }
@@ -1352,6 +1744,7 @@ function formatEpicProgressSummary(children) {
         `${counts.active} active/implemented`,
         `${counts.remaining} remaining`,
     ];
+    if (counts.onHold > 0) parts.push(`${counts.onHold} on hold`);
     if (counts.failed > 0) parts.push(`${counts.failed} failed`);
     return parts.join(" — ");
 }
@@ -1500,6 +1893,9 @@ async function handleEpicPlan({
         if (canPickChild) {
             epicOptions.splice(1, 0, { value: "pick_child", label: "Pick a child FEATURE plan" });
         }
+        if (isHoldableStatus(plan.attrs.status)) {
+            epicOptions.splice(epicOptions.length - 1, 0, { value: "hold", label: "Put Epic on hold" });
+        }
         if (hasChildren && plan.attrs.status === "ready_for_work") {
             epicOptions.splice(canPickChild ? 2 : 1, 0, {
                 value: "done_enough",
@@ -1513,6 +1909,11 @@ async function handleEpicPlan({
         if (answer === "view") {
             uiAPI.appendSystemMessage(buildEpicPlanSummary(plan, children), false, "Plan");
             continue;
+        }
+
+        if (answer === "hold") {
+            await putPlanOnHold({ plan, uiAPI, recordPlanEvent, findPlansByParent });
+            return "handled";
         }
 
         if (answer === "slicer") {
@@ -1648,6 +2049,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         updateWorktreeRegistryEntry: updateWorktreeRegistryEntryDep,
         getWorktreeStatus: getWorktreeStatusDep,
         createExecutionWorktree: createExecutionWorktreeDep,
+        inspectExecutionWorktreeMergeRisk: inspectExecutionWorktreeMergeRiskDep,
         mergeExecutionWorktree: mergeExecutionWorktreeDep,
         removeExecutionWorktree: removeExecutionWorktreeDep,
         removeWorktreeRegistryEntry: removeWorktreeRegistryEntryDep,
@@ -1685,6 +2087,8 @@ export async function runLoadPlanCommand(argv, options = {}) {
     const updateWorktreeRegistryEntry = updateWorktreeRegistryEntryDep || updateWorktreeRegistryEntryFn;
     const getWorktreeStatus = getWorktreeStatusDep || getWorktreeStatusFn;
     const createExecutionWorktree = createExecutionWorktreeDep || createExecutionWorktreeFn;
+    const inspectExecutionWorktreeMergeRisk = inspectExecutionWorktreeMergeRiskDep ||
+        inspectExecutionWorktreeMergeRiskFn;
     const mergeExecutionWorktree = mergeExecutionWorktreeDep || mergeExecutionWorktreeFn;
     const removeExecutionWorktree = removeExecutionWorktreeDep || removeExecutionWorktreeFn;
     const removeWorktreeRegistryEntry = removeWorktreeRegistryEntryDep || removeWorktreeRegistryEntryFn;
@@ -1774,6 +2178,69 @@ export async function runLoadPlanCommand(argv, options = {}) {
         const triageMeta = plan.attrs;
         const agentName = triageMeta.classification === "PROJECT" ? AGENTS.ARCHITECT : AGENTS.PLANNER;
         const planFlowRestoreAgent = selectPlanFlowRestoreAgent(initialAgentName, agentName);
+        /** @param {string} targetPlanName */
+        const loadAnotherPlan = async (targetPlanName) => {
+            skipRouterRestore = true;
+            await runLoadPlanCommand([targetPlanName], {
+                ...options,
+                __testDeps: {
+                    ...deps,
+                    parseArgs: /** @type {any} */ ((/** @type {readonly string[]} */ childArgv) => ({
+                        help: false,
+                        _: [...childArgv],
+                    })),
+                },
+            });
+        };
+
+        if (plan.attrs.parentPlan) {
+            try {
+                const parentPlan = await resolvePlan(CWD, plan.attrs.parentPlan);
+                if (parentPlan.attrs.status === "on_hold") {
+                    uiAPI.appendSystemMessage(
+                        `Parent Epic "${parentPlan.planName}" is on hold. Resume the parent before working on child FEATURE "${plan.planName}".`,
+                        true,
+                        "RunWield",
+                    );
+                    while (true) {
+                        const answer = await uiAPI.promptSelect("Parent Epic is on hold. What would you like to do?", [
+                            { value: "resume_parent", label: "Resume from hold" },
+                            { value: "view", label: "View plan details" },
+                            { value: "cancel", label: "Keep on hold" },
+                        ]);
+                        if (!answer || answer === "cancel") return;
+                        if (answer === "view") {
+                            uiAPI.appendSystemMessage(buildPlanSummary(parentPlan), false, "Plan");
+                            continue;
+                        }
+                        if (answer === "resume_parent") {
+                            await loadAnotherPlan(parentPlan.planName);
+                            return;
+                        }
+                    }
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                uiAPI.appendSystemMessage(`Could not inspect parent Epic hold status: ${message}`, true, "RunWield");
+            }
+        }
+
+        if (plan.attrs.status === "on_hold") {
+            const result = await handleOnHoldPlan({
+                plan,
+                uiAPI,
+                listCommitsTouchingPathsSince,
+                recordPlanEvent,
+                findPlansByParent,
+                findWorktreeById,
+                findWorktreeByPlanName,
+                updateWorktreeRegistryEntry,
+                getWorktreeStatus,
+                inspectExecutionWorktreeMergeRisk,
+                removeExecutionWorktree,
+            });
+            if (result === "handled") return;
+        }
 
         if (["in_progress", "failed", "implemented"].includes(plan.attrs.status)) {
             restoreAgentName = planFlowRestoreAgent;
@@ -1803,6 +2270,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 shouldCleanupMergedWorktrees,
                 setActiveAgent,
                 createAgentHandler,
+                findPlansByParent,
             });
             if (result === "handled") return;
         }
@@ -1814,19 +2282,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
             runSlicerAgent,
             recordPlanEvent,
             resolvePlan,
-            loadChildPlan: async (childPlanName) => {
-                skipRouterRestore = true;
-                await runLoadPlanCommand([childPlanName], {
-                    ...options,
-                    __testDeps: {
-                        ...deps,
-                        parseArgs: /** @type {any} */ ((/** @type {readonly string[]} */ childArgv) => ({
-                            help: false,
-                            _: [...childArgv],
-                        })),
-                    },
-                });
-            },
+            loadChildPlan: loadAnotherPlan,
         });
         if (epicResult === "handled") {
             skipRouterRestore = true;
@@ -1883,10 +2339,17 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 const answer = await uiAPI.promptSelect("What would you like to do?", [
                     { value: "proceed", label: "Proceed with execution" },
                     { value: "review", label: "Re-open for review (edit/annotate)" },
+                    { value: "hold", label: "Put on hold" },
                     { value: "view", label: "View plan details" },
+                    { value: "cancel", label: "Cancel" },
                 ]);
 
-                if (!answer) return;
+                if (!answer || answer === "cancel") return;
+
+                if (answer === "hold") {
+                    await putPlanOnHold({ plan, uiAPI, recordPlanEvent, findPlansByParent });
+                    return;
+                }
 
                 if (answer === "proceed") {
                     restoreAgentName = planFlowRestoreAgent;
@@ -2033,7 +2496,26 @@ export async function runLoadPlanCommand(argv, options = {}) {
             }
         }
 
-        // Not approved — kick off the planning agent. plan_written handles review/save/execute.
+        // Not approved — show a first-action menu before kicking off the planning agent.
+        while (true) {
+            const answer = await uiAPI.promptSelect("What would you like to do?", [
+                { value: "resume", label: "Resume planning" },
+                ...(isHoldableStatus(plan.attrs.status) ? [{ value: "hold", label: "Put on hold" }] : []),
+                { value: "view", label: "View plan details" },
+                { value: "cancel", label: "Cancel" },
+            ]);
+            if (!answer || answer === "cancel") return;
+            if (answer === "view") {
+                uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
+                continue;
+            }
+            if (answer === "hold") {
+                await putPlanOnHold({ plan, uiAPI, recordPlanEvent, findPlansByParent });
+                return;
+            }
+            if (answer === "resume") break;
+        }
+
         uiAPI.appendSystemMessage(buildPlanSummary(plan), false, "Plan");
         restoreAgentName = planFlowRestoreAgent;
         setActiveAgent(agentName, createAgentHandler(agentName), uiAPI);
@@ -2041,7 +2523,7 @@ export async function runLoadPlanCommand(argv, options = {}) {
         const outcome = await runPlanningAgent({
             agentName,
             initialRequest: buildResumeRequest(plan.planName, plan.attrs),
-            triageMeta,
+            triageMeta: plan.attrs,
             uiAPI,
         });
 
