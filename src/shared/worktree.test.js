@@ -238,20 +238,31 @@ Deno.test("mergeExecutionWorktree continues an in-progress resolved merge", asyn
 Deno.test("inspectExecutionWorktreeMergeRisk reports clean branch as safe without mutating", async () => {
     const projectRoot = await makeRepo();
     const worktreeRoot = await Deno.makeTempDir();
+    /** @type {Awaited<ReturnType<typeof createExecutionWorktree>> | undefined} */
+    let worktree;
     try {
-        const worktree = await createExecutionWorktree({ projectRoot, planName: "risk-clean", worktreeRoot });
+        worktree = await createExecutionWorktree({ projectRoot, planName: "Clean Risk", worktreeRoot });
         await Deno.writeTextFile(`${worktree.path}/feature.txt`, "feature\n");
-        await git(worktree.path, ["add", "feature.txt"]);
+        await git(worktree.path, ["add", "."]);
         await git(worktree.path, ["commit", "-m", "feature"]);
 
-        const risk = await inspectExecutionWorktreeMergeRisk({ projectRoot, branch: worktree.branch });
+        const beforeHead = await git(projectRoot, ["rev-parse", "HEAD"]);
+        const beforeStatus = await git(projectRoot, ["status", "--porcelain"]);
+        const result = await inspectExecutionWorktreeMergeRisk({ projectRoot, branch: worktree.branch });
 
-        assertEquals(risk.ok, true);
-        assertEquals(risk.failures, []);
-        assertEquals(risk.warnings, []);
-        await assertRejects(() => Deno.stat(`${projectRoot}/feature.txt`), Deno.errors.NotFound);
+        assertEquals(result, { ok: true, warnings: [], failures: [] });
+        assertEquals(await git(projectRoot, ["rev-parse", "HEAD"]), beforeHead);
+        assertEquals(await git(projectRoot, ["status", "--porcelain"]), beforeStatus);
     } finally {
-        await Deno.remove(projectRoot, { recursive: true }).catch(() => {});
+        if (worktree) {
+            await removeExecutionWorktree({
+                projectRoot,
+                path: worktree.path,
+                branch: worktree.branch,
+                force: true,
+            });
+        }
+        await Deno.remove(projectRoot, { recursive: true });
         await Deno.remove(worktreeRoot, { recursive: true }).catch(() => {});
     }
 });
@@ -259,23 +270,35 @@ Deno.test("inspectExecutionWorktreeMergeRisk reports clean branch as safe withou
 Deno.test("inspectExecutionWorktreeMergeRisk warns on overlapping dirty primary changes", async () => {
     const projectRoot = await makeRepo();
     const worktreeRoot = await Deno.makeTempDir();
+    /** @type {Awaited<ReturnType<typeof createExecutionWorktree>> | undefined} */
+    let worktree;
     try {
-        const worktree = await createExecutionWorktree({ projectRoot, planName: "risk-dirty", worktreeRoot });
-        await Deno.writeTextFile(`${worktree.path}/README.md`, "branch change\n");
-        await git(worktree.path, ["add", "README.md"]);
-        await git(worktree.path, ["commit", "-m", "branch change"]);
-        await Deno.writeTextFile(`${projectRoot}/README.md`, "dirty primary\n");
+        worktree = await createExecutionWorktree({ projectRoot, planName: "Dirty Risk", worktreeRoot });
+        await Deno.writeTextFile(`${worktree.path}/README.md`, "base\nfeature\n");
+        await git(worktree.path, ["add", "."]);
+        await git(worktree.path, ["commit", "-m", "feature"]);
+        await Deno.writeTextFile(`${projectRoot}/README.md`, "base\nprimary scratch\n");
 
-        const risk = await inspectExecutionWorktreeMergeRisk({ projectRoot, branch: worktree.branch });
+        const result = await inspectExecutionWorktreeMergeRisk({ projectRoot, branch: worktree.branch });
 
-        assertEquals(risk.ok, true);
-        assertEquals(risk.failures, []);
+        assertEquals(result.ok, true);
         assertEquals(
-            risk.warnings.some((warning) => warning.includes("overlap execution worktree changes")),
+            result.warnings.some((warning) =>
+                warning.includes("overlap execution worktree changes") && warning.includes("README.md")
+            ),
             true,
         );
+        assertEquals(await Deno.readTextFile(`${projectRoot}/README.md`), "base\nprimary scratch\n");
     } finally {
-        await Deno.remove(projectRoot, { recursive: true }).catch(() => {});
+        if (worktree) {
+            await removeExecutionWorktree({
+                projectRoot,
+                path: worktree.path,
+                branch: worktree.branch,
+                force: true,
+            });
+        }
+        await Deno.remove(projectRoot, { recursive: true });
         await Deno.remove(worktreeRoot, { recursive: true }).catch(() => {});
     }
 });
@@ -283,11 +306,15 @@ Deno.test("inspectExecutionWorktreeMergeRisk warns on overlapping dirty primary 
 Deno.test("inspectExecutionWorktreeMergeRisk fails on missing branch", async () => {
     const projectRoot = await makeRepo();
     try {
-        const risk = await inspectExecutionWorktreeMergeRisk({ projectRoot, branch: "missing-branch" });
+        const result = await inspectExecutionWorktreeMergeRisk({ projectRoot, branch: "missing-branch" });
 
-        assertEquals(risk.ok, false);
-        assertEquals(risk.failures.some((failure) => failure.includes("not available")), true);
+        assertEquals(result.ok, false);
+        assertEquals(result.warnings, []);
+        assertEquals(
+            result.failures.some((failure) => failure.includes("Recorded worktree branch is not available")),
+            true,
+        );
     } finally {
-        await Deno.remove(projectRoot, { recursive: true }).catch(() => {});
+        await Deno.remove(projectRoot, { recursive: true });
     }
 });
