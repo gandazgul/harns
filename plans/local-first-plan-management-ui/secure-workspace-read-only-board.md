@@ -1,11 +1,10 @@
 ---
 classification: "FEATURE"
 complexity: "MEDIUM"
-summary: "Introduce `wld plans ui`, the local Fresh/Vite/Preact Workspace app, secure localhost launch, SSR-first read-only routes, minimal REST APIs, and a first read-only Plan Board backed by non-archived canonical markdown Plans."
+summary: "Introduce `wld plans ui`, the local Fresh/Vite/Preact Workspace app, secure localhost launch, read-only REST APIs, and a first read-only Plan Board backed by canonical markdown Plans."
 affectedPaths:
   - "src/cmd/plans/index.js"
   - "src/cmd/plans/ui.js"
-  - "src/cmd/plans/ui.test.js"
   - "src/cmd/plans/index.test.js"
   - "src/cmd/registry.js"
   - "src/constants.js"
@@ -14,13 +13,19 @@ affectedPaths:
   - "deno.lock"
   - "README.md"
 createdAt: "2026-06-24T20:14:08.682Z"
-updatedAt: "2026-06-24T22:20:34-04:00"} 戬 kod_OUTPUT? Wait I malformed JSON? Need send valid. Let's correct.       (Oops)
-status: "draft"
+updatedAt: "2026-06-25T02:27:44.158Z"
+status: "in_progress"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
   - "plan-resource-identity-and-hierarchy"
-  - "lifecycle-board-semantics"
+humanReviewMode: null
+humanReviewDecision: null
+executionBaselineTree: "580678ddd51d174e1de51123d692ea3220a54468"
+worktreeId: "a7e221d5"
+worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-harns--/harns-runwield-local-first-plan-management-ui-secure-workspace--a7e221d5"
+worktreeBranch: "runwield/worktree/local-first-plan-management-ui-secure-workspace--a7e221d5"
+worktreeStatus: "active"
 ---
 # Secure Workspace Read-Only Board
 
