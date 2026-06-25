@@ -1,12 +1,8 @@
 ---
+planId: "c31f62a7-aec3-4830-94c6-6bc7b65f9aeb"
 classification: "FEATURE"
 complexity: "MEDIUM"
-summary: "Improve the Epic execution experience in `load-plan`.
-    1. Hide child FEATURE plans from the main `load-plan` menu.
-    2. Implement a nested menu for child plans when an Epic is selected.
-    3. Add an 'order' field to child plan front-matter (via Slicer) and sort the child menu by this order.
-    4. Add a 'Next non-verified plan' shortcut in the child menu.
-    5. Improve child plan labels in the menu to show more than just the filename."
+summary: "Improve the Epic execution experience in `load-plan`. 1. Hide child FEATURE plans from the main `load-plan` menu. 2. Implement a nested menu for child plans when an Epic is selected. 3. Add an 'order' field to child plan front-matter (via Slicer) and sort the child menu by this order. 4. Add a 'Next non-verified plan' shortcut in the child menu. 5. Improve child plan labels in the menu to show more than just the filename."
 affectedPaths:
     - "src/cmd/load-plan/index.js"
     - "src/shared/workflow/workflow-slicer.js"
