@@ -14,8 +14,9 @@
 
 - [ ] Implement plan archival/search so completed or stale plans stop crowding the active list:
       [plans/implementing-plan-archival.md](plans/implementing-plan-archival.md).
-- [ ] Implement first-class deferred work with `on_hold` status:
-      [docs/prd/on-hold-plan-status.md](docs/prd/on-hold-plan-status.md).
+- [x] Implement first-class deferred work with `on_hold` status:
+      [docs/prd/on-hold-plan-status.md](docs/prd/on-hold-plan-status.md),
+      [plans/implement-on-hold-plan-status.md](plans/implement-on-hold-plan-status.md).
 - [ ] Keep completed PRDs in [docs/prd/done/](docs/prd/done/) and completed plans in [plans/archived/](plans/archived/).
       This is the current convention for marking roadmap artifacts done without renaming every file.
 
@@ -34,15 +35,15 @@
 
 ### P2 - Extension and Package Ecosystem
 
-- [ ] Allow explicitly RunWield-compatible Pi-shaped code extensions:
-      [plans/allow-runwield-compatible-pi-extensions.md](plans/allow-runwield-compatible-pi-extensions.md).
-- [ ] Allow installed Pi packages to contribute passive slash prompt templates:
-      [plans/allow-runwield-compatible-extension-prompts.md](plans/allow-runwield-compatible-extension-prompts.md).
-- [ ] Improve install output for ignored package skills:
-      [plans/message-for-ignored-pi-package-skills.md](plans/message-for-ignored-pi-package-skills.md).
+- [x] Allow explicitly RunWield-compatible Pi-shaped code extensions:
+      [plans/archived/allow-wld-compatible-pi-extensions.md](plans/archived/allow-wld-compatible-pi-extensions.md).
+- [x] Allow installed Pi packages to contribute passive slash prompt templates:
+      [plans/archived/allow-wld-compatible-extension-prompts.md](plans/archived/allow-wld-compatible-extension-prompts.md).
+- [x] Improve install output for ignored package skills:
+      [plans/archived/message-for-ignored-pi-package-skills.md](plans/archived/message-for-ignored-pi-package-skills.md).
 - [ ] Build the optional Colgrep semantic search extension:
       [plans/colgrep-semantic-search-extension.md](plans/colgrep-semantic-search-extension.md).
-- [ ] Continue to document that `~/.agents/skills` is the preferred skill-install path instead of implementing native
+- [x] Continue to document that `~/.agents/skills` is the preferred skill-install path instead of implementing native
       RunWield skill installation.
 
 ### P3 - Search, Memory, and Metrics

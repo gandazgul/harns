@@ -1,4 +1,5 @@
 ---
+planId: "2a5bea91-b8e6-4c4c-9319-c53787daded3"
 classification: "FEATURE"
 complexity: "MEDIUM"
 summary: "Implement the 'on_hold' Plan Status as described in the PRD. This involves updating the plan store to handle hold metadata, modifying the `load-plan` command to include hold/resume/reset options and the Resume Check logic, and updating the `wld plans` command to display held plans in a separate section."
