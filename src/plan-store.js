@@ -84,6 +84,7 @@ function getStoredPlanLocation(cwd, planName) {
 
 /**
  * @typedef {Object} PlanFrontMatter
+ * @property {string} [planId] - Durable project-scoped resource identity for URL/addressable Plan lookup
  * @property {"QUICK_FIX"|"FEATURE"|"PROJECT"} classification
  * @property {"LOW"|"MEDIUM"|"HIGH"} complexity
  * @property {string} summary - Brief description of what the plan addresses
@@ -159,6 +160,7 @@ const DEFAULT_FRONT_MATTER = {
 };
 
 const KNOWN_FRONT_MATTER_KEYS = new Set([
+    "planId",
     "classification",
     "complexity",
     "summary",
@@ -248,6 +250,7 @@ function appendYamlField(lines, key, value) {
  */
 function formatFrontMatter(fm) {
     const lines = ["---"];
+    appendYamlField(lines, "planId", fm.planId);
     appendYamlField(lines, "classification", fm.classification);
     appendYamlField(lines, "complexity", fm.complexity);
     appendYamlField(lines, "summary", fm.summary);
@@ -354,6 +357,14 @@ function normalizeStringList(value) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+function normalizePlanId(value) {
+    return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+/**
  * @param {unknown} status
  * @returns {PlanFrontMatter["status"] | null | undefined}
  */
@@ -429,6 +440,9 @@ export function injectFrontMatter(markdown, overrides = {}) {
     const fm = {
         ...existingFm,
         ...overrides,
+        planId: Object.hasOwn(overrides, "planId")
+            ? normalizePlanId(overrides.planId)
+            : normalizePlanId(existingFm.planId),
         classification: overrides.classification ??
             existingFm.classification ??
             DEFAULT_FRONT_MATTER.classification,
@@ -512,6 +526,7 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
     return {
         attrs: {
             ...attrs,
+            planId: normalizePlanId(attrs.planId),
             classification: attrs.classification || DEFAULT_FRONT_MATTER.classification,
             complexity: attrs.complexity || DEFAULT_FRONT_MATTER.complexity,
             summary: attrs.summary || DEFAULT_FRONT_MATTER.summary,
@@ -861,6 +876,224 @@ export async function listPlans(cwd) {
         // plans dir doesn't exist yet
     }
     return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Rewrite only formatted front matter and concatenate the original parsed body exactly.
+ *
+ * @param {PlanFrontMatter} attrs
+ * @param {string} body
+ * @returns {string}
+ */
+function rewritePlanMetadata(attrs, body) {
+    return `${formatFrontMatter(attrs)}\n${body}`;
+}
+
+/**
+ * @param {Array<{ name: string, path: string, attrs: PlanFrontMatter }>} plans
+ * @returns {Map<string, Array<{ name: string, path: string, attrs: PlanFrontMatter }>>}
+ */
+function groupExistingPlanIds(plans) {
+    /** @type {Map<string, Array<{ name: string, path: string, attrs: PlanFrontMatter }>>} */
+    const byId = new Map();
+    for (const plan of plans) {
+        if (!plan.attrs.planId) continue;
+        const entries = byId.get(plan.attrs.planId) || [];
+        entries.push(plan);
+        byId.set(plan.attrs.planId, entries);
+    }
+    return byId;
+}
+
+/**
+ * @param {Map<string, Array<{ name: string }>>} byId
+ */
+function assertNoDuplicatePlanIds(byId) {
+    const duplicates = [...byId.entries()].filter(([, plans]) => plans.length > 1);
+    if (duplicates.length === 0) return;
+    const details = duplicates.map(([planId, plans]) => `${planId}: ${plans.map((plan) => plan.name).join(", ")}`).join(
+        "; ",
+    );
+    throw new Error(`Duplicate planId values found; repair plan front matter before continuing: ${details}`);
+}
+
+/**
+ * @typedef {Object} PlanResource
+ * @property {string} planName
+ * @property {string} name
+ * @property {string} relativePath
+ * @property {string} path
+ * @property {string} planId
+ * @property {PlanFrontMatter} attrs
+ * @property {string} body
+ * @property {string} markdown
+ */
+
+/**
+ * Ensure a single saved Plan has a durable planId.
+ *
+ * @param {string} cwd
+ * @param {string} planName
+ * @param {{ idGenerator?: () => string, reservedPlanIds?: Set<string> }} [options]
+ * @returns {Promise<PlanResource>}
+ */
+export async function ensurePlanIdentity(cwd, planName, options = {}) {
+    const { name } = canonicalizeStoredPlanName(planName);
+    const plan = await loadPlan(cwd, name);
+    if (!plan) throw new Error(`Plan not found: ${planName}`);
+
+    const reservedPlanIds = options.reservedPlanIds || new Set();
+    const idGenerator = options.idGenerator || (() => crypto.randomUUID());
+    let planId = normalizePlanId(plan.attrs.planId);
+    let markdown = plan.markdown;
+    let attrs = { ...plan.attrs, planId };
+
+    if (!planId) {
+        do {
+            planId = normalizePlanId(idGenerator());
+        } while (!planId || reservedPlanIds.has(planId));
+        attrs = { ...plan.attrs, planId };
+        markdown = rewritePlanMetadata(attrs, plan.body);
+        await Deno.writeTextFile(plan.path, markdown);
+    }
+
+    return {
+        planName: name,
+        name,
+        relativePath: `${PLANS_DIR_NAME}/${name}.md`,
+        path: plan.path,
+        planId,
+        attrs: /** @type {PlanFrontMatter} */ (attrs),
+        body: plan.body,
+        markdown,
+    };
+}
+
+/**
+ * List non-archived Plans as durable resources, optionally backfilling missing IDs.
+ *
+ * @param {string} cwd
+ * @param {{ backfillMissing?: boolean, idGenerator?: () => string }} [options]
+ * @returns {Promise<PlanResource[]>}
+ */
+export async function listPlanResources(cwd, options = {}) {
+    const backfillMissing = options.backfillMissing !== false;
+    const plans = await listPlans(cwd);
+    const byId = groupExistingPlanIds(plans);
+    assertNoDuplicatePlanIds(byId);
+    const reservedPlanIds = new Set(byId.keys());
+
+    /** @type {PlanResource[]} */
+    const resources = [];
+    for (const plan of plans) {
+        if (!plan.attrs.planId && !backfillMissing) {
+            const loaded = await loadPlan(cwd, plan.name);
+            if (!loaded) continue;
+            resources.push({
+                planName: plan.name,
+                name: plan.name,
+                relativePath: `${PLANS_DIR_NAME}/${plan.name}.md`,
+                path: loaded.path,
+                planId: "",
+                attrs: loaded.attrs,
+                body: loaded.body,
+                markdown: loaded.markdown,
+            });
+            continue;
+        }
+
+        const resource = await ensurePlanIdentity(cwd, plan.name, {
+            idGenerator: options.idGenerator,
+            reservedPlanIds,
+        });
+        reservedPlanIds.add(resource.planId);
+        resources.push(resource);
+    }
+
+    return resources.sort((a, b) => a.planName.localeCompare(b.planName));
+}
+
+/**
+ * Find a non-archived Plan resource by durable planId.
+ *
+ * @param {string} cwd
+ * @param {string} planId
+ * @returns {Promise<PlanResource>}
+ */
+export async function findPlanById(cwd, planId) {
+    const normalized = normalizePlanId(planId);
+    if (!normalized) throw new Error("Plan ID cannot be empty");
+    const resources = await listPlanResources(cwd);
+    const matches = resources.filter((resource) => resource.planId === normalized);
+    if (matches.length > 1) {
+        throw new Error(`Duplicate planId values found for ${normalized}; repair plan front matter before continuing.`);
+    }
+    if (matches.length === 0) throw new Error(`Plan not found for planId: ${normalized}`);
+    return matches[0];
+}
+
+/**
+ * @param {{ attrs: PlanFrontMatter }} plan
+ * @returns {boolean}
+ */
+export function isChildFeaturePlan(plan) {
+    return plan.attrs.classification === "FEATURE" && typeof plan.attrs.parentPlan === "string" &&
+        plan.attrs.parentPlan.trim().length > 0;
+}
+
+/**
+ * Keep in sync with lifecycle Epic semantics without importing lifecycle here.
+ * @param {PlanFrontMatter} attrs
+ * @returns {boolean}
+ */
+export function isEpicPlan(attrs) {
+    return attrs?.classification === "PROJECT" && attrs?.type === "epic";
+}
+
+/**
+ * @param {Array<{ name: string, attrs: PlanFrontMatter }>} plans
+ * @returns {{ epics: any[], childrenByParent: Map<string, any[]>, standalone: any[], orphanChildren: any[] }}
+ */
+export function groupPlanHierarchy(plans) {
+    const epics = plans.filter((plan) => isEpicPlan(plan.attrs));
+    const epicNames = new Set(epics.map((plan) => plan.name));
+    const childrenByParent = new Map();
+    const standalone = [];
+    const orphanChildren = [];
+
+    for (const plan of plans) {
+        if (isEpicPlan(plan.attrs)) continue;
+
+        if (isChildFeaturePlan(plan)) {
+            const parentPlan = plan.attrs.parentPlan || "";
+            if (epicNames.has(parentPlan)) {
+                const children = childrenByParent.get(parentPlan) || [];
+                children.push(plan);
+                childrenByParent.set(parentPlan, children);
+            } else {
+                orphanChildren.push(plan);
+            }
+            continue;
+        }
+
+        standalone.push(plan);
+    }
+
+    return { epics, childrenByParent, standalone, orphanChildren };
+}
+
+/**
+ * @param {Array<{ attrs: PlanFrontMatter }>} children
+ * @returns {{ verified: number, active: number, failed: number, remaining: number, total: number }}
+ */
+export function countChildPlanProgress(children) {
+    const verified = children.filter((child) => child.attrs.status === "verified").length;
+    const active =
+        children.filter((child) => child.attrs.status === "in_progress" || child.attrs.status === "implemented")
+            .length;
+    const failed = children.filter((child) => child.attrs.status === "failed").length;
+    const total = children.length;
+    return { verified, active, failed, remaining: total - verified - active - failed, total };
 }
 
 /**
