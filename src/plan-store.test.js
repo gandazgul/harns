@@ -1,8 +1,13 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import {
+    countChildPlanProgress,
+    ensurePlanIdentity,
+    findPlanById,
     findPlansByParent,
     getPlansDir,
+    groupPlanHierarchy,
     injectFrontMatter,
+    listPlanResources,
     listPlans,
     loadExternalPlan,
     loadPlan,
@@ -113,6 +118,114 @@ Deno.test("injectFrontMatter preserves human review metadata", () => {
             withFm.indexOf("humanReviewedAt:") < withFm.indexOf("executionBaselineTree:"),
         true,
     );
+});
+
+Deno.test("planId round trips and blank values normalize away", () => {
+    const withId = injectFrontMatter("## Plan", { planId: "plan-123" });
+    assertEquals(parsePlanFrontMatter(withId).attrs.planId, "plan-123");
+
+    const blank = injectFrontMatter("## Plan", { planId: "" });
+    assertEquals(parsePlanFrontMatter(blank).attrs.planId, undefined);
+    assertEquals(blank.includes("planId:"), false);
+});
+
+testWithFs("ensurePlanIdentity backfills missing planId while preserving body exactly", async () => {
+    const cwd = await Deno.makeTempDir();
+    try {
+        await savePlan(cwd, "missing-id", "\n\n# Title\n\nBody\n", { summary: "Missing ID" });
+        const before = await loadPlan(cwd, "missing-id");
+        const resource = await ensurePlanIdentity(cwd, "missing-id", { idGenerator: () => "generated-id" });
+        const after = await loadPlan(cwd, "missing-id");
+
+        assertEquals(resource.planId, "generated-id");
+        assertEquals(after?.attrs.planId, "generated-id");
+        assertEquals(after?.body, before?.body);
+        assertEquals(resource.relativePath, "plans/missing-id.md");
+    } finally {
+        await Deno.remove(cwd, { recursive: true });
+    }
+});
+
+testWithFs(
+    "listPlanResources preserves existing IDs, hides archived plans, and retries generated collisions",
+    async () => {
+        const cwd = await Deno.makeTempDir();
+        try {
+            await savePlan(cwd, "existing", "# Existing", { planId: "existing-id" });
+            await savePlan(cwd, "missing", "# Missing");
+            await savePlan(cwd, "archived/hidden", "# Hidden");
+            const ids = ["existing-id", "new-id"];
+
+            const resources = await listPlanResources(cwd, { idGenerator: () => ids.shift() || "fallback-id" });
+
+            assertEquals(resources.map((resource) => resource.planName), ["existing", "missing"]);
+            assertEquals(resources.map((resource) => resource.planId), ["existing-id", "new-id"]);
+        } finally {
+            await Deno.remove(cwd, { recursive: true });
+        }
+    },
+);
+
+testWithFs("listPlanResources throws repair-oriented duplicate planId errors before backfill", async () => {
+    const cwd = await Deno.makeTempDir();
+    try {
+        await savePlan(cwd, "a", "# A", { planId: "dup" });
+        await savePlan(cwd, "b", "# B", { planId: "dup" });
+        await savePlan(cwd, "missing", "# Missing");
+
+        await assertRejects(
+            () => listPlanResources(cwd, { idGenerator: () => "new" }),
+            Error,
+            "Duplicate planId values found",
+        );
+        assertEquals((await loadPlan(cwd, "missing"))?.attrs.planId, undefined);
+    } finally {
+        await Deno.remove(cwd, { recursive: true });
+    }
+});
+
+testWithFs("findPlanById resolves non-archived plan resources", async () => {
+    const cwd = await Deno.makeTempDir();
+    try {
+        await savePlan(cwd, "lookup", "# Lookup", { planId: "lookup-id" });
+        const resource = await findPlanById(cwd, "lookup-id");
+        assertEquals(resource.planName, "lookup");
+        assertEquals(resource.relativePath, "plans/lookup.md");
+
+        await assertRejects(() => findPlanById(cwd, "missing-id"), Error, "Plan not found for planId");
+    } finally {
+        await Deno.remove(cwd, { recursive: true });
+    }
+});
+
+Deno.test("groupPlanHierarchy groups Epics, nested children, standalone, and orphaned children", () => {
+    const plans = [
+        { name: "epic", path: "plans/epic.md", attrs: { classification: "PROJECT", type: "epic", status: "draft" } },
+        {
+            name: "epic/child",
+            path: "plans/epic/child.md",
+            attrs: { classification: "FEATURE", parentPlan: "epic", status: "verified" },
+        },
+        { name: "solo", path: "plans/solo.md", attrs: { classification: "FEATURE", status: "draft" } },
+        {
+            name: "orphan/child",
+            path: "plans/orphan/child.md",
+            attrs: { classification: "FEATURE", parentPlan: "missing", status: "failed" },
+        },
+    ];
+
+    const grouped = groupPlanHierarchy(/** @type {any} */ (plans));
+    assertEquals(grouped.epics.map((plan) => plan.name), ["epic"]);
+    assertEquals((grouped.childrenByParent.get("epic") || []).map((plan) => plan.name), ["epic/child"]);
+    assertEquals(grouped.standalone.map((plan) => plan.name), ["solo"]);
+    assertEquals(grouped.orphanChildren.map((plan) => plan.name), ["orphan/child"]);
+    assertEquals(countChildPlanProgress(/** @type {any} */ (plans.slice(1, 4))), {
+        verified: 1,
+        active: 0,
+        failed: 1,
+        remaining: 1,
+        total: 3,
+    });
 });
 
 testWithFs("updatePlanStatus self-heals malformed front matter using recovery attrs", async () => {

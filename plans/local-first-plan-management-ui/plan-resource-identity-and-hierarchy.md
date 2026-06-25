@@ -8,19 +8,15 @@ affectedPaths:
     - "src/cmd/plans/index.js"
     - "src/cmd/plans/index.test.js"
 createdAt: "2026-06-24T20:14:08.681Z"
-updatedAt: "2026-06-24T22:52:21.553Z"
-status: "in_progress"
+updatedAt: "2026-06-25T00:48:00.854Z"
+status: "failed"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
     []
-humanReviewMode: null
-humanReviewDecision: null
-executionBaselineTree: "e6e1715e74adc595dbcdbda4a2d4918c80e0391e"
-worktreeId: "4f0966ab"
-worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-harns--/harns-runwield-local-first-plan-management-ui-plan-resource-ide-4f0966ab"
-worktreeBranch: "runwield/worktree/local-first-plan-management-ui-plan-resource-ide-4f0966ab"
-worktreeStatus: "active"
+failureReason: "Engineer stopped without task_completed."
+failedAt: "2026-06-25T00:48:00.854Z"
+worktreeStatus: "execution_failed"
 ---
 
 # Plan Resource Identity and Hierarchy
