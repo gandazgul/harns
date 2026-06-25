@@ -279,14 +279,19 @@ export const commandRegistry = {
     [COMMAND_NAMES.PLANS]: {
         name: COMMAND_NAMES.PLANS,
         displayName: "Plans",
-        description: "List or manage plans",
-        summary: "List saved plans.",
+        description: "List plans or launch the local Plans Workspace",
+        summary: "List saved plans or start the read-only local browser Workspace.",
         usage: [
             `${bin("plans")}`,
+            `${bin("plans ui [--bind <host>|--host <host>] [--port <port>] [--no-open]")}`,
             `${bin("plans --help")}`,
+            `${bin("plans ui --help")}`,
         ],
         notes: [
-            "Shows status, classification, complexity, summary, and creation time.",
+            "Default behavior lists status, classification, complexity, summary, and creation time.",
+            "The Workspace binds to 127.0.0.1 and a random available port by default.",
+            "Use --bind/--host only for explicit non-loopback exposure; RunWield prints a plaintext Plan-content warning.",
+            "Workspace HTML and APIs require the per-server token in the launch URL or x-runwield-workspace-token header.",
         ],
         execute: runPlansCommand,
         surfaces: ["cli"],
