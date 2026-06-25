@@ -6,9 +6,18 @@ affectedPaths:
   - "src/shared/workflow/workflow.js"
   - "src/shared/workflow/orchestrator.js"
 createdAt: "2026-06-24T21:02:48-04:00"
-updatedAt: "2026-06-25T01:09:02.198Z"
-status: "draft"
+updatedAt: "2026-06-25T01:31:57.113Z"
+status: "in_progress"
 origin: "internal"
+humanReviewMode: null
+humanReviewDecision: null
+executionBaselineTree: "9beaefd23ea7ae0631426395b0cb7b7d8b22c6b1"
+worktreeId: "0652e268"
+worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-harns--/harns-runwield-keep-engineer-active-after-execution-interruptio-0652e268"
+worktreeBranch: "runwield/worktree/keep-engineer-active-after-execution-interruptio-0652e268"
+worktreeStatus: "active"
+routingIntent: "FEATURE"
+sessionName: "engineer session persistence"
 ---
 # Keep Engineer Active After Execution Interruption
 
