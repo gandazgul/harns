@@ -1,6 +1,9 @@
 {
     "compilerOptions": {
-        "checkJs": true
+        "checkJs": true,
+        "jsx": "react-jsx",
+        "jsxImportSource": "preact",
+        "types": ["vite/client"]
     },
     "imports": {
         "chalk": "npm:chalk@^5.6.2",
@@ -19,7 +22,13 @@
         "@gandazgul/plannotator-pi-extension-compiled/assets": "npm:@gandazgul/plannotator-pi-extension-compiled@^0.21.1/assets",
         "strip-ansi": "npm:strip-ansi@^7.2.0",
         "quikdown/ast": "npm:quikdown@^1.2.12/ast",
-        "proper-lockfile": "npm:proper-lockfile@^4.1.2"
+        "proper-lockfile": "npm:proper-lockfile@^4.1.2",
+        "fresh": "jsr:@fresh/core@^2.3.3",
+        "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.1.2",
+        "preact": "npm:preact@^10.26.6",
+        "@preact/signals": "npm:@preact/signals@^2.5.1",
+        "vite": "npm:vite@^7.2.7",
+        "unocss": "npm:unocss@^66.5.9"
     },
     "tasks": {
         "ci": "deno task -q check && deno task -q lint && deno task -q fmt:check && deno task -q test",
@@ -27,7 +36,9 @@
         "test": "snip run -- deno test -A",
         "lint": "snip run -- deno lint",
         "fmt:check": "snip run -- deno fmt --check",
-        "check": "snip run -- deno check --doc src/**/*.js",
+        "check": "snip run -- deno check --doc src/**/*.js && deno task -q workspace:check",
+        "workspace:check": "deno check src/ui/workspace/**/*.js src/ui/workspace/**/*.jsx",
+        "workspace:test": "deno test -A src/ui/workspace src/cmd/plans/ui.test.js",
         "compile": "deno run -A ./scripts/compile.js",
         "prototype:plan-ui": "deno task -c prototypes/fresh-plan-ui/deno.json dev"
     },
