@@ -16,7 +16,7 @@ Deno.test("runSleepCommand help path", async () => {
     assertEquals(helped, "sleep");
 });
 
-Deno.test("runSleepCommand runs operator /sleep", async () => {
+Deno.test("runSleepCommand runs operator sleep prompt as an isolated session", async () => {
     let invoked = "";
     /** @type {boolean | undefined} */
     let useRootSession;
@@ -25,6 +25,7 @@ Deno.test("runSleepCommand runs operator /sleep", async () => {
         __testDeps: /** @type {any} */ ({
             parseArgs: () => ({ help: false }),
             ensureMnemosyneBinary: () => Promise.resolve(),
+            readTextFile: () => Promise.resolve("# Test Sleep\n\nOptimize memories."),
             runAgentSession: (
                 /** @type {{agentName: string, userRequest: string, useRootSession?: boolean}} */ opts,
             ) => {
@@ -35,6 +36,6 @@ Deno.test("runSleepCommand runs operator /sleep", async () => {
         }),
     });
 
-    assertEquals(invoked, "operator:/sleep");
+    assertEquals(invoked, "operator:# Test Sleep\n\nOptimize memories.");
     assertEquals(useRootSession, false);
 });

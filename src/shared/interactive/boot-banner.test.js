@@ -27,7 +27,6 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
                 path: "/packages/prompts/theme.md",
                 packageSource: "npm:@example/prompts",
             },
-            { name: "sleep", source: "bundled" },
         ],
         chatPromptAgentName: "operator",
         __deps: {
@@ -68,7 +67,6 @@ Deno.test("renderBootBanner reports prompt templates, skills, theme, and blocked
         ),
         true,
     );
-    assertEquals(messages.some((message) => message.text.includes("sleep.md command can't be invoked")), false);
 });
 
 Deno.test("renderBootBanner reports no prompt templates when none are invokable", async () => {

@@ -16,6 +16,7 @@ function makeContext(overrides = {}) {
         swaps: 0,
         activeAgents: /** @type {any[]} */ ([]),
         runs: /** @type {any[]} */ ([]),
+        expandedDispatches: /** @type {any[]} */ ([]),
         expandedTemplates: /** @type {any[]} */ ([]),
         expandedSkills: /** @type {any[]} */ ([]),
         aborted: 0,
@@ -51,6 +52,13 @@ function makeContext(overrides = {}) {
             records.swaps++;
             return Promise.resolve();
         },
+        dispatchExpandedUserRequest: (
+            /** @type {string} */ text,
+            /** @type {Array<{ base64: string, mimeType: string }>} */ images,
+        ) => {
+            records.expandedDispatches.push({ text, images });
+            return Promise.resolve();
+        },
         generationGuard: {
             bump: () => {
                 records.bumps++;
@@ -83,11 +91,6 @@ function makeContext(overrides = {}) {
                 records.expandedSkills.push({ name, additionalInstructions });
                 return Promise.resolve(`skill:${name}:${additionalInstructions || ""}`);
             },
-            runAgentSession: (/** @type {unknown} */ opts) => {
-                records.runs.push(opts);
-                return Promise.resolve([]);
-            },
-            createAgentHandler: (/** @type {string} */ agentName) => () => Promise.resolve(agentName),
             getRootSessionManager: () => ({ id: "session" }),
         },
         records,
@@ -159,7 +162,7 @@ Deno.test("handleSlashCommand reports built-in command errors only for current g
     assertEquals(stale.records.systemMessages, []);
 });
 
-Deno.test("handleSlashCommand dispatches prompt templates with images and optional model", async () => {
+Deno.test("handleSlashCommand dispatches prompt templates as expanded root input", async () => {
     const ctx = makeContext({ userRequest: "/review make it sharp" });
     ctx.promptTemplateByName.set("review", {
         name: "review",
@@ -173,26 +176,33 @@ Deno.test("handleSlashCommand dispatches prompt templates with images and option
         path: "/tmp/review.md",
         additionalInstructions: "make it sharp",
     }]);
-    assertEquals(ctx.records.userMessages, ["/review make it sharp"]);
-    assertEquals(ctx.records.images, [{ base64: "img", mimeType: "image/png" }]);
-    assertEquals(ctx.records.activeAgents[0].agentName, "operator");
-    assertEquals(ctx.records.activeAgents[0].model, "test/model");
-    assertEquals(ctx.records.swaps, 1);
-    assertEquals(ctx.records.runs[0].agentName, "operator");
-    assertEquals(ctx.records.runs[0].modelOverride, "test/model");
-    assertEquals(ctx.records.runs[0].userRequest, "expanded:/tmp/review.md:make it sharp");
-    assertEquals(ctx.records.runs[0].useRootSession, true);
+    assertEquals(ctx.records.expandedDispatches, [{
+        text: "expanded:/tmp/review.md:make it sharp",
+        images: [{ base64: "img", mimeType: "image/png" }],
+    }]);
+    assertEquals(ctx.records.userMessages, []);
+    assertEquals(ctx.records.images, []);
+    assertEquals(ctx.records.activeAgents, []);
+    assertEquals(ctx.records.swaps, 0);
+    assertEquals(ctx.records.runs, []);
 });
 
-Deno.test("handleSlashCommand rejects invalid template model before expanding", async () => {
+Deno.test("handleSlashCommand ignores template model metadata during macro expansion", async () => {
     const ctx = makeContext({ userRequest: "/review" });
     ctx.promptTemplateByName.set("review", { name: "review", path: "/tmp/review.md", model: "bad/model" });
     ctx.resolveTemplateModel = () => ({ ok: false });
 
     assertEquals(await handleSlashCommand(ctx), true);
 
-    assertEquals(ctx.records.systemMessages, ["Invalid template model. Use /model to switch."]);
-    assertEquals(ctx.records.expandedTemplates, []);
+    assertEquals(ctx.records.systemMessages, []);
+    assertEquals(ctx.records.expandedTemplates, [{
+        path: "/tmp/review.md",
+        additionalInstructions: undefined,
+    }]);
+    assertEquals(ctx.records.expandedDispatches, [{
+        text: "expanded:/tmp/review.md:",
+        images: [{ base64: "img", mimeType: "image/png" }],
+    }]);
     assertEquals(ctx.records.runs, []);
 });
 
@@ -202,10 +212,10 @@ Deno.test("handleSlashCommand uses template fallback text when path is missing",
 
     assertEquals(await handleSlashCommand(ctx), true);
 
-    assertEquals(ctx.records.runs[0].userRequest, "/tiny extra");
+    assertEquals(ctx.records.expandedDispatches[0].text, "/tiny extra");
 });
 
-Deno.test("handleSlashCommand reports template expansion and run errors", async () => {
+Deno.test("handleSlashCommand reports template expansion and dispatch errors", async () => {
     const expandError = makeContext({ userRequest: "/review" });
     expandError.promptTemplateByName.set("review", { name: "review", path: "/tmp/review.md" });
     expandError.__deps.expandPromptTemplate = () => Promise.reject(new Error("cannot read"));
@@ -215,7 +225,7 @@ Deno.test("handleSlashCommand reports template expansion and run errors", async 
 
     const runError = makeContext({ userRequest: "/review" });
     runError.promptTemplateByName.set("review", { name: "review", path: "/tmp/review.md" });
-    runError.__deps.runAgentSession = () => Promise.reject(new Error("model failed"));
+    runError.dispatchExpandedUserRequest = () => Promise.reject(new Error("model failed"));
 
     assertEquals(await handleSlashCommand(runError), true);
     assertEquals(runError.records.systemMessages, ["Error: model failed"]);
@@ -231,12 +241,15 @@ Deno.test("handleSlashCommand dispatches skills and reports skill errors", async
         name: "diagnose",
         additionalInstructions: "flaky test",
     }]);
-    assertEquals(ctx.records.userMessages, ["/skill:diagnose flaky test"]);
-    assertEquals(ctx.records.images, [{ base64: "img", mimeType: "image/png" }]);
-    assertEquals(ctx.records.activeAgents[0].agentName, "operator");
-    assertEquals(ctx.records.swaps, 1);
-    assertEquals(ctx.records.runs[0].userRequest, "skill:diagnose:flaky test");
-    assertEquals(ctx.records.runs[0].useRootSession, true);
+    assertEquals(ctx.records.expandedDispatches, [{
+        text: "skill:diagnose:flaky test",
+        images: [{ base64: "img", mimeType: "image/png" }],
+    }]);
+    assertEquals(ctx.records.userMessages, []);
+    assertEquals(ctx.records.images, []);
+    assertEquals(ctx.records.activeAgents, []);
+    assertEquals(ctx.records.swaps, 0);
+    assertEquals(ctx.records.runs, []);
 
     const errorCtx = makeContext({ userRequest: "/skill:diagnose" });
     errorCtx.skills = ctx.skills;

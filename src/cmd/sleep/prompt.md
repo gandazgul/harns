@@ -1,7 +1,3 @@
----
-description: Optimize long-term memory quality
----
-
 # Sleep
 
 You are running RunWield sleep mode to optimize long-term memory quality.
@@ -14,7 +10,7 @@ You are running RunWield sleep mode to optimize long-term memory quality.
 
 ## Process
 
-1. Use \`mnemosyne export --no-embeddings\` to export all memories and core memories to a file ([project name].jsonl in
+1. Use `mnemosyne export --no-embeddings` to export all memories and core memories to a file ([project name].jsonl in
    the root directory).
 2. Analyze the memories for relevance, redundancy, and importance. Optimize the memories by deleting irrelevant or
    redundant ones, and consolidating important but similar memories. Focus on keeping the most relevant and important
@@ -23,4 +19,4 @@ You are running RunWield sleep mode to optimize long-term memory quality.
    reserved for the most critical and frequently accessed information, while regular memories can be used for less
    critical or less frequently accessed information.
 
-Delete with \`mnemosyne delete [memory id]\` and add with \`mnemosyne add [memory content] --tag tag1 --tag tag2\`.
+Delete with `mnemosyne delete [memory id]` and add with `mnemosyne add [memory content] --tag tag1 --tag tag2`.

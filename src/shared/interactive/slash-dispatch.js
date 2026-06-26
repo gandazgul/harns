@@ -3,16 +3,15 @@
  *
  * Routes a `/command` user submission to either:
  * - a built-in command from cmd/registry.js, or
- * - a user-defined prompt template, dispatched through the operator agent.
+ * - a user-defined prompt template / skill macro.
  *
  * Built-in commands receive the full TUI context (editor, ui, tui, sessionManager).
- * Templates set the active Agent and run on the root Agent Session, optionally
- * with a template-declared model.
+ * Templates and skills are input macros: expand the text, then submit it through
+ * the same active root path as if the user typed the expanded prompt directly.
  */
 
-import { abortActiveSession, expandPromptTemplate, expandSkillCommand, runAgentSession } from "../session/session.js";
-import { createAgentHandler } from "../session/agent-handler.js";
-import { getRootSessionManager } from "../session/session-state.js";
+import { abortActiveSession, expandPromptTemplate, expandSkillCommand } from "../session/session.js";
+import { getActiveOnMessage, getRootSessionManager } from "../session/session-state.js";
 import { setTerminalTitleForName } from "../ui/terminal-title.js";
 
 /**
@@ -53,15 +52,15 @@ function maybeUpdateTitleForSlashCommand(command) {
  * @property {(templateModel: string) => ({ ok: true, provider: string, id: string } | { ok: false })} resolveTemplateModel
  * @property {(agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string) => void} setActiveAgent
  * @property {(uiAPI: import('../ui/types.js').UiAPI) => Promise<void>} applyPendingRootSwap
+ * @property {(text: string, images: import('../session/types.js').ImageAttachment[]) => Promise<void>} [dispatchExpandedUserRequest]
  * @property {import('./generation-guard.js').GenerationGuard} generationGuard
  * @property {(cancel: (() => void) | null) => void} registerOperationCancel
  * @property {{
  *   abortActiveSession?: typeof abortActiveSession,
  *   expandPromptTemplate?: typeof expandPromptTemplate,
  *   expandSkillCommand?: typeof expandSkillCommand,
- *   runAgentSession?: typeof runAgentSession,
- *   createAgentHandler?: typeof createAgentHandler,
  *   getRootSessionManager?: typeof getRootSessionManager,
+ *   getActiveOnMessage?: typeof getActiveOnMessage,
  *   commandRegistry?: Record<string, { execute: (args: string[], deps: object) => Promise<void> | void }>,
  *   getSlashCommandDefinition?: (name: string) => { name: string } | undefined,
  * }} [__deps]
@@ -166,12 +165,38 @@ async function dispatchBuiltin(ctx, command, args, commandRegistry, thisGen) {
         }
     } finally {
         registerOperationCancel(null);
-        // Slash commands run between turns, so any swap they queued (e.g.
-        // `/agent architect` → setActiveAgent) can be applied immediately.
-        // This keeps the footer in lock-step with the live session: the
-        // user sees the new agent name only after its session is built.
         await applyPendingRootSwap(uiAPI);
     }
+}
+
+/**
+ * Submit expanded slash macro text through the active root input path.
+ *
+ * @param {SlashContext} ctx
+ * @param {string} expandedText
+ * @param {import('../session/types.js').ImageAttachment[]} images
+ */
+async function dispatchExpandedInput(ctx, expandedText, images) {
+    if (ctx.dispatchExpandedUserRequest) {
+        await ctx.dispatchExpandedUserRequest(expandedText, images);
+        return;
+    }
+
+    const deps = ctx.__deps || {};
+    const getActiveOnMessageImpl = deps.getActiveOnMessage || getActiveOnMessage;
+    const getRootSessionManagerImpl = deps.getRootSessionManager || getRootSessionManager;
+    const activeOnMessage = getActiveOnMessageImpl();
+    const rootSessionManager = getRootSessionManagerImpl();
+    if (!activeOnMessage || !rootSessionManager) {
+        ctx.uiAPI.appendSystemMessage("Error: No active agent handler or session manager.");
+        return;
+    }
+
+    ctx.uiAPI.appendUserMessage?.(expandedText);
+    images.forEach((img) => {
+        if (ctx.uiAPI.appendImage) ctx.uiAPI.appendImage(img.base64, img.mimeType);
+    });
+    await activeOnMessage(expandedText, images, ctx.uiAPI, rootSessionManager);
 }
 
 /**
@@ -184,40 +209,15 @@ async function dispatchSkill(ctx, skill, additionalInstructions, thisGen) {
     const {
         uiAPI,
         savedImages,
-        chatPromptAgentName,
-        setActiveAgent,
-        applyPendingRootSwap,
         generationGuard,
     } = ctx;
     const deps = ctx.__deps || {};
     const expandSkillCommandImpl = deps.expandSkillCommand || expandSkillCommand;
-    const runAgentSessionImpl = deps.runAgentSession || runAgentSession;
-    const createAgentHandlerImpl = deps.createAgentHandler || createAgentHandler;
-    const getRootSessionManagerImpl = deps.getRootSessionManager || getRootSessionManager;
 
     try {
         const expandedText = await expandSkillCommandImpl(skill.name, additionalInstructions || undefined);
 
-        uiAPI.appendUserMessage?.(ctx.userRequest);
-        savedImages.forEach((img) => {
-            if (uiAPI.appendImage) uiAPI.appendImage(img.base64, img.mimeType);
-        });
-
-        setActiveAgent(
-            chatPromptAgentName,
-            createAgentHandlerImpl(chatPromptAgentName),
-            uiAPI,
-        );
-        await applyPendingRootSwap(uiAPI);
-
-        await runAgentSessionImpl({
-            agentName: chatPromptAgentName,
-            userRequest: expandedText,
-            images: savedImages,
-            uiAPI,
-            sessionManager: getRootSessionManagerImpl() || undefined,
-            useRootSession: true,
-        });
+        await dispatchExpandedInput(ctx, expandedText, savedImages);
     } catch (err) {
         if (generationGuard.isCurrent(thisGen)) {
             uiAPI.appendSystemMessage(
@@ -237,26 +237,10 @@ async function dispatchTemplate(ctx, template, additionalInstructions, thisGen) 
     const {
         uiAPI,
         savedImages,
-        chatPromptAgentName,
-        resolveTemplateModel,
-        setActiveAgent,
         generationGuard,
     } = ctx;
     const deps = ctx.__deps || {};
     const expandPromptTemplateImpl = deps.expandPromptTemplate || expandPromptTemplate;
-    const runAgentSessionImpl = deps.runAgentSession || runAgentSession;
-    const createAgentHandlerImpl = deps.createAgentHandler || createAgentHandler;
-    const getRootSessionManagerImpl = deps.getRootSessionManager || getRootSessionManager;
-
-    let resolvedTemplateModel = null;
-    if (template.model) {
-        const resolution = resolveTemplateModel(template.model);
-        if (!resolution.ok) {
-            uiAPI.appendSystemMessage("Invalid template model. Use /model to switch.");
-            return;
-        }
-        resolvedTemplateModel = resolution;
-    }
 
     const images = savedImages;
 
@@ -275,33 +259,8 @@ async function dispatchTemplate(ctx, template, additionalInstructions, thisGen) 
         return;
     }
 
-    uiAPI.appendUserMessage?.(ctx.userRequest);
-    images.forEach((/** @type {import('../session/types.js').ImageAttachment} */ img) => {
-        if (uiAPI.appendImage) uiAPI.appendImage(img.base64, img.mimeType);
-    });
-
-    const templateModelValue = resolvedTemplateModel?.ok
-        ? `${resolvedTemplateModel.provider}/${resolvedTemplateModel.id}`
-        : undefined;
-
-    setActiveAgent(
-        chatPromptAgentName,
-        createAgentHandlerImpl(chatPromptAgentName),
-        uiAPI,
-        templateModelValue,
-    );
-
     try {
-        await ctx.applyPendingRootSwap(uiAPI);
-        await runAgentSessionImpl({
-            agentName: chatPromptAgentName,
-            modelOverride: templateModelValue,
-            userRequest: expandedText,
-            images,
-            uiAPI,
-            sessionManager: getRootSessionManagerImpl() || undefined,
-            useRootSession: true,
-        });
+        await dispatchExpandedInput(ctx, expandedText, images);
     } catch (err) {
         if (generationGuard.isCurrent(thisGen)) {
             uiAPI.appendSystemMessage(
