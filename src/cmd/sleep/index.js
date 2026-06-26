@@ -4,10 +4,14 @@
  */
 
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
+import { dirname, fromFileUrl, join } from "@std/path";
 import { COMMAND_NAMES } from "../../constants.js";
 import { runAgentSession as runAgentSessionFn } from "../../shared/session/session.js";
 import { printCommandHelp as printCommandHelpFn } from "../help/index.js";
 import { ensureMnemosyneBinary as ensureMnemosyneBinaryFn } from "../../shared/runtime-preflight.js";
+
+export const __dirname = dirname(fromFileUrl(import.meta.url));
+const SLEEP_PROMPT_FILE = "prompt.md";
 
 /**
  * @typedef {Object} CommandDependencies
@@ -15,6 +19,7 @@ import { ensureMnemosyneBinary as ensureMnemosyneBinaryFn } from "../../shared/r
  * @property {typeof printCommandHelpFn} [printCommandHelp]
  * @property {typeof ensureMnemosyneBinaryFn} [ensureMnemosyneBinary]
  * @property {typeof runAgentSessionFn} [runAgentSession]
+ * @property {typeof Deno.readTextFile} [readTextFile]
  */
 
 /**
@@ -30,12 +35,14 @@ export async function runSleepCommand(argv, options = {}) {
         printCommandHelp: printCommandHelpDep,
         ensureMnemosyneBinary: ensureMnemosyneBinaryDep,
         runAgentSession: runAgentSessionDep,
+        readTextFile: readTextFileDep,
     } = deps;
 
     const parseArgs = parseArgsDep || parseArgsFn;
     const printCommandHelp = printCommandHelpDep || printCommandHelpFn;
     const ensureMnemosyneBinary = ensureMnemosyneBinaryDep || ensureMnemosyneBinaryFn;
     const runAgentSession = runAgentSessionDep || runAgentSessionFn;
+    const readTextFile = readTextFileDep || Deno.readTextFile.bind(Deno);
 
     const parsed = parseArgs(argv, {
         boolean: ["help"],
@@ -62,10 +69,13 @@ export async function runSleepCommand(argv, options = {}) {
 
     notify("[RunWield] Running sleep mode (memory optimization)...");
 
-    // Route through the /sleep prompt template using the operator agent
+    const sleepPrompt = await readTextFile(join(__dirname, SLEEP_PROMPT_FILE));
+
+    // Sleep is command-owned rather than a prompt template so memory-system
+    // maintenance cannot be shadowed by local/home prompt-template overrides.
     await runAgentSession({
         agentName: "operator",
-        userRequest: "/sleep",
+        userRequest: sleepPrompt,
         useRootSession: false,
     });
 

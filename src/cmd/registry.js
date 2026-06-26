@@ -300,14 +300,14 @@ export const commandRegistry = {
         name: COMMAND_NAMES.SLEEP,
         displayName: "Sleep",
         description: "Let the model consolidate context",
-        summary: "Run /sleep prompt template (via operator) for memory optimization/cleanup.",
+        summary: "Run command-owned memory optimization/cleanup via an isolated operator session.",
         usage: [
             `${bin("sleep")}`,
             `${bin("sleep --help")}`,
         ],
         notes: [
             "Requires mnemosyne binary in PATH.",
-            "Invokes bundled /sleep prompt template via operator.",
+            "Invokes a built-in sleep prompt via operator.",
             "You can also run /sleep directly inside the interactive TUI.",
         ],
         execute: runSleepCommand,

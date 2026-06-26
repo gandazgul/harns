@@ -1098,6 +1098,28 @@ export async function assembleFinalSystemPrompt(agentDef, tools, finalCustomTool
     }
     finalSystemPrompt = finalSystemPrompt.replace("{{SKILLS}}", skillsBlock);
 
+    // Conditionally include the Image Attachments section only when see_image is available
+    // (i.e. the active model is text-only with a vision fallback configured).
+    const imageAttachmentsSection = tools.includes("see_image")
+        ? [
+            "## Image Attachments",
+            "",
+            "When the user pastes an image and your current model cannot receive images directly, the image is stored as a session",
+            "artifact and a text marker is placed in the conversation instead:",
+            "",
+            "```",
+            "[Image attached: attachment:<uuid> <mimeType>]",
+            "```",
+            "",
+            "If `see_image` is listed in your available tools, use it to inspect these markers. Call `see_image` with",
+            '`imageRef: "attachment:<uuid>"` (the full reference from the marker) to get a textual description of the image from the',
+            "configured vision fallback model. You can also pass an optional `question` parameter to ask about a specific aspect of",
+            "the image.",
+        ].join("\n")
+        : "";
+
+    finalSystemPrompt = finalSystemPrompt.replace("{{IMAGE_ATTACHMENTS_SECTION}}", imageAttachmentsSection);
+
     // Resolve the bundled agent definitions path (extracted cache or fallback)
     const bundledAgentDefsPath = await getBundledAgentDefsPath();
     finalSystemPrompt = finalSystemPrompt.replace("{{BUNDLED_AGENT_DEFS_DIR}}", bundledAgentDefsPath);
@@ -2056,6 +2078,29 @@ export async function runRootTurn({
 }
 
 /**
+ * @param {Record<string, unknown>} opts
+ * @param {string | null} rootAgentName
+ * @returns {boolean}
+ */
+export function shouldReuseExistingRootSession(opts, rootAgentName) {
+    if (opts.useRootSession === false) return false;
+    if (!rootAgentName || rootAgentName !== opts.agentName) return false;
+
+    const rootChangingKeys = [
+        "toolNames",
+        "customTools",
+        "modelOverride",
+        "triageMeta",
+        "_agentDefOverride",
+        "allowReturnToRouter",
+        "cwd",
+        "debugLogPath",
+        "includeEditFallback",
+    ];
+    return !rootChangingKeys.some((key) => Object.hasOwn(opts, key) && opts[key] !== undefined);
+}
+
+/**
  * Run a single Agent invocation. By default this uses the root AgentSession so
  * the turn remains in follow-up context; callers that intentionally need a
  * disposable one-off session must pass `useRootSession: false`.
@@ -2081,6 +2126,16 @@ export async function runRootTurn({
  */
 export async function runAgentSession(opts) {
     if (opts.useRootSession !== false) {
+        if (shouldReuseExistingRootSession(opts, getRootAgentName())) {
+            return await runRootTurn({
+                agentName: opts.agentName,
+                userRequest: opts.userRequest,
+                images: opts.images,
+                uiAPI: opts.uiAPI,
+                sessionManager: opts.sessionManager,
+            });
+        }
+
         await ensureRootAgentSession({
             ...opts,
             allowReturnToRouter: opts.allowReturnToRouter ?? false,
