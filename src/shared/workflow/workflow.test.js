@@ -595,6 +595,8 @@ Deno.test("executeProjectTasks passes successful dependency output to dependent 
     ];
     /** @type {string[]} */
     const requests = [];
+    /** @type {boolean[]} */
+    const rootModes = [];
     /** @type {string[]} */
     const rootEntries = [];
     const uiAPI = /** @type {any} */ ({
@@ -620,6 +622,7 @@ Deno.test("executeProjectTasks passes successful dependency output to dependent 
             undefined,
             /** @type {any} */ ((/** @type {any} */ opts) => {
                 requests.push(opts.userRequest);
+                rootModes.push(opts.useRootSession);
                 return Promise.resolve([
                     {
                         role: "assistant",
@@ -636,6 +639,7 @@ Deno.test("executeProjectTasks passes successful dependency output to dependent 
 
         assertEquals(result.failedTasks, []);
         assertEquals(rootEntries.length, 2);
+        assertEquals(rootModes, [false, false]);
         assertStringIncludes(requests[1], "### Dependency Outputs");
         assertStringIncludes(requests[1], rootEntries[0]);
     } finally {

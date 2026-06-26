@@ -1,7 +1,13 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { AGENTS } from "../../constants.js";
-import { applyAttentionNudge, getGlobalAgentMdPaths, readGlobalAgentMd, runPrompt } from "./session.js";
+import {
+    applyAttentionNudge,
+    getGlobalAgentMdPaths,
+    readGlobalAgentMd,
+    runPrompt,
+    shouldReuseExistingRootSession,
+} from "./session.js";
 
 Deno.test("readGlobalAgentMd falls back from ~/.wld/RUNWEILD.md to ~/.wld/AGENTS.md", async () => {
     const tempHome = await Deno.makeTempDir({ prefix: "runwield-agents-md-" });
@@ -87,6 +93,37 @@ Deno.test("applyAttentionNudge only injects scheduled long-lived agent nudges", 
             "",
             "User asks",
         ].join("\n"),
+    );
+});
+
+Deno.test("shouldReuseExistingRootSession ignores undefined optional overrides", () => {
+    assertEquals(
+        shouldReuseExistingRootSession({
+            agentName: AGENTS.OPERATOR,
+            userRequest: "commit",
+            modelOverride: undefined,
+            useRootSession: true,
+        }, AGENTS.OPERATOR),
+        true,
+    );
+
+    assertEquals(
+        shouldReuseExistingRootSession({
+            agentName: AGENTS.OPERATOR,
+            userRequest: "commit",
+            modelOverride: "test/model",
+            useRootSession: true,
+        }, AGENTS.OPERATOR),
+        false,
+    );
+
+    assertEquals(
+        shouldReuseExistingRootSession({
+            agentName: AGENTS.OPERATOR,
+            userRequest: "sleep",
+            useRootSession: false,
+        }, AGENTS.OPERATOR),
+        false,
     );
 });
 

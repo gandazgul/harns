@@ -1135,38 +1135,10 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
 
     // Handle Editor events
     /**
-     * @param {string} text
+     * @param {string} userRequest
      * @param {import('../session/types.js').ImageAttachment[]} savedImages
      */
-    async function executeUserRequest(text, savedImages) {
-        const userRequest = text.trim();
-        if (!userRequest) return;
-
-        editor.addToHistory?.(userRequest);
-
-        // Slash commands (`/builtin` or `/template`)
-        const handledSlash = await handleSlashCommand({
-            userRequest,
-            savedImages,
-            uiAPI,
-            editor,
-            tui,
-            sessionStartedAt,
-            originalHandleInput,
-            builtinNames: CHAT_BUILTIN_SLASH_NAMES,
-            promptTemplateByName,
-            skills,
-            chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
-            resolveTemplateModel,
-            setActiveAgent,
-            applyPendingRootSwap,
-            generationGuard,
-            registerOperationCancel: (cancel) => {
-                activeOperationCancel = cancel;
-            },
-        });
-        if (handledSlash) return;
-
+    async function submitToActiveRoot(userRequest, savedImages) {
         // Generation gating
         const thisGen = generationGuard.bump();
 
@@ -1228,6 +1200,43 @@ export async function startInteractiveSession(initialUserRequest, onMessage, opt
             // case where the agent queued a swap but didn't call return_to_router).
             await applyPendingRootSwap(uiAPI);
         }
+    }
+
+    /**
+     * @param {string} text
+     * @param {import('../session/types.js').ImageAttachment[]} savedImages
+     */
+    async function executeUserRequest(text, savedImages) {
+        const userRequest = text.trim();
+        if (!userRequest) return;
+
+        editor.addToHistory?.(userRequest);
+
+        // Slash commands (`/builtin` or `/template`)
+        const handledSlash = await handleSlashCommand({
+            userRequest,
+            savedImages,
+            uiAPI,
+            editor,
+            tui,
+            sessionStartedAt,
+            originalHandleInput,
+            builtinNames: CHAT_BUILTIN_SLASH_NAMES,
+            promptTemplateByName,
+            skills,
+            chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,
+            resolveTemplateModel,
+            setActiveAgent,
+            applyPendingRootSwap,
+            dispatchExpandedUserRequest: submitToActiveRoot,
+            generationGuard,
+            registerOperationCancel: (cancel) => {
+                activeOperationCancel = cancel;
+            },
+        });
+        if (handledSlash) return;
+
+        await submitToActiveRoot(userRequest, savedImages);
     }
 
     editor.onSubmit = async (text) => {

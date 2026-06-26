@@ -200,6 +200,7 @@ export async function executeProjectTasks(
                     uiAPI: createFooterOnlyUiApi(uiAPI),
                     cwd: options.executionCwd,
                     debugLogPath: taskDebugLogPath,
+                    useRootSession: false,
                 });
 
                 const outputText = extractAssistantOutput(sessionMessages);
