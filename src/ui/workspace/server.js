@@ -25,12 +25,13 @@ export function hasWorkspaceToken(request, expectedToken) {
 }
 
 /**
- * @param {{ cwd: string, token: string }} options
+ * @param {{ cwd: string, token: string, skipTokenCheck?: boolean }} options
  */
-export function createWorkspaceApp({ cwd, token }) {
+export function createWorkspaceApp({ cwd, token, skipTokenCheck = false }) {
     const app = new App();
     app.use(async (ctx) => {
         ctx.state.cwd = cwd;
+        if (skipTokenCheck) return await ctx.next();
         if (ctx.url.pathname === "/styles.css") return await ctx.next();
         if (!hasWorkspaceToken(ctx.req, token)) {
             return new Response("Workspace token required.", { status: 401 });
