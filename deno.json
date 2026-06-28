@@ -7,6 +7,7 @@
             "vite/client"
         ]
     },
+    "nodeModulesDir": "auto",
     "imports": {
         "chalk": "npm:chalk@^5.6.2",
         "@earendil-works/pi-tui": "npm:@earendil-works/pi-tui@^0.79.9",
@@ -31,6 +32,7 @@
         "preact": "npm:preact@^10.26.6",
         "@preact/signals": "npm:@preact/signals@^2.5.1",
         "vite": "npm:vite@^7.2.7",
+        "esbuild": "npm:esbuild@^0.25.12",
         "unocss": "npm:unocss@^66.5.9",
         "codemirror": "npm:codemirror@^6.0.2",
         "@codemirror/lang-markdown": "npm:@codemirror/lang-markdown@^6.3.4"
