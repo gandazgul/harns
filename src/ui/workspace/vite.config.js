@@ -8,6 +8,7 @@ export default defineConfig({
             serverEntry: "src/ui/workspace/dev.js",
             clientEntry: "src/ui/workspace/client.js",
             staticDir: ["src/ui/workspace/static"],
+            islandsDir: "src/ui/workspace/islands",
         }),
         UnoCSS(),
     ],

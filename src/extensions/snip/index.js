@@ -33,7 +33,21 @@ const SHELL_BUILTINS = new Set([
 ]);
 
 /** Commands (by prefix) that should never be wrapped with `snip run --`. */
-const NO_REWRITE_PREFIXES = ["git diff"];
+const NO_REWRITE_PREFIXES = [
+    "git diff",
+    "npm view",
+    "npm info",
+    "npm search",
+    "yarn info",
+    "yarn npm info",
+    "yarn search",
+    "pnpm view",
+    "pnpm info",
+    "pnpm search",
+    "deno info",
+    "deno doc",
+    "bun pm view",
+];
 
 /**
  * @param {string} command
