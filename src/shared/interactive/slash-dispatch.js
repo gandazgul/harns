@@ -6,13 +6,15 @@
  * - a user-defined prompt template / skill macro.
  *
  * Built-in commands receive the full TUI context (editor, ui, tui, sessionManager).
- * Templates and skills are input macros: expand the text, then submit it through
- * the same active root path as if the user typed the expanded prompt directly.
+ * Templates switch to Operator, expand the text, then submit it through the
+ * active root path. Skills expand in the current active agent context.
  */
 
 import { abortActiveSession, expandPromptTemplate, expandSkillCommand } from "../session/session.js";
 import { getActiveOnMessage, getRootSessionManager } from "../session/session-state.js";
 import { setTerminalTitleForName } from "../ui/terminal-title.js";
+
+const OPERATOR_AGENT = "operator";
 
 /**
  * If the current session has no display name, update the terminal title to
@@ -62,6 +64,7 @@ function maybeUpdateTitleForSlashCommand(command) {
  *   expandSkillCommand?: typeof expandSkillCommand,
  *   getRootSessionManager?: typeof getRootSessionManager,
  *   getActiveOnMessage?: typeof getActiveOnMessage,
+ *   createAgentHandler?: (agentName: string) => import('../session/types.js').AgentMessageHandler,
  *   commandRegistry?: Record<string, { execute: (args: string[], deps: object) => Promise<void> | void }>,
  *   getSlashCommandDefinition?: (name: string) => { name: string } | undefined,
  * }} [__deps]
@@ -229,6 +232,22 @@ async function dispatchSkill(ctx, skill, additionalInstructions, thisGen) {
 }
 
 /**
+ * Queue Operator as the target for the next expanded prompt-template turn.
+ *
+ * @param {SlashContext} ctx
+ */
+async function switchToOperatorForTemplate(ctx) {
+    const deps = ctx.__deps || {};
+    let createAgentHandlerImpl = deps.createAgentHandler;
+    if (!createAgentHandlerImpl) {
+        const agentHandlerModule = await import("../session/agent-handler.js");
+        createAgentHandlerImpl = agentHandlerModule.createAgentHandler;
+    }
+
+    ctx.setActiveAgent(OPERATOR_AGENT, createAgentHandlerImpl(OPERATOR_AGENT), ctx.uiAPI);
+}
+
+/**
  * @param {SlashContext} ctx
  * @param {{ name: string, model?: string, path?: string }} template
  * @param {string} additionalInstructions
@@ -261,6 +280,7 @@ async function dispatchTemplate(ctx, template, additionalInstructions, thisGen) 
     }
 
     try {
+        await switchToOperatorForTemplate(ctx);
         await dispatchExpandedInput(ctx, expandedText, images);
     } catch (err) {
         if (generationGuard.isCurrent(thisGen)) {
