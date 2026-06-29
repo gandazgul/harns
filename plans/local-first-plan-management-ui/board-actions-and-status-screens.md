@@ -9,14 +9,16 @@ affectedPaths:
     - "src/shared/workflow/plan-lifecycle.test.js"
     - "docs/plan-lifecycle.md"
 createdAt: "2026-06-24T20:14:08.683Z"
-updatedAt: "2026-06-29T14:31:04.822Z"
-status: "ready_for_work"
+updatedAt: "2026-06-29T15:18:21.369Z"
+status: "implemented"
 origin: "internal"
 parentPlan: "local-first-plan-management-ui"
 dependencies:
     - "lifecycle-board-semantics"
     - "secure-workspace-read-only-board"
     - "correct-workspace-design-foundation"
+implementedAt: "2026-06-29T15:18:21.369Z"
+worktreeStatus: "completed"
 ---
 
 # Board Actions and Status Screens
