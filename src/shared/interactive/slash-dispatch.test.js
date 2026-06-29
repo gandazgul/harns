@@ -91,6 +91,7 @@ function makeContext(overrides = {}) {
                 records.expandedSkills.push({ name, additionalInstructions });
                 return Promise.resolve(`skill:${name}:${additionalInstructions || ""}`);
             },
+            createAgentHandler: (/** @type {string} */ agentName) => `handler:${agentName}`,
             getRootSessionManager: () => ({ id: "session" }),
         },
         records,
@@ -162,7 +163,7 @@ Deno.test("handleSlashCommand reports built-in command errors only for current g
     assertEquals(stale.records.systemMessages, []);
 });
 
-Deno.test("handleSlashCommand dispatches prompt templates as expanded root input", async () => {
+Deno.test("handleSlashCommand switches prompt templates to Operator before expanded root input", async () => {
     const ctx = makeContext({ userRequest: "/review make it sharp" });
     ctx.promptTemplateByName.set("review", {
         name: "review",
@@ -182,7 +183,12 @@ Deno.test("handleSlashCommand dispatches prompt templates as expanded root input
     }]);
     assertEquals(ctx.records.userMessages, []);
     assertEquals(ctx.records.images, []);
-    assertEquals(ctx.records.activeAgents, []);
+    assertEquals(ctx.records.activeAgents, [{
+        agentName: "operator",
+        handler: "handler:operator",
+        uiAPI: ctx.uiAPI,
+        model: undefined,
+    }]);
     assertEquals(ctx.records.swaps, 0);
     assertEquals(ctx.records.runs, []);
 });
