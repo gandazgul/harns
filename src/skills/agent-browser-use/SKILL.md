@@ -46,7 +46,7 @@ agent-browser install --with-deps
 2. Open the page in an isolated browser session:
 
 ```bash
-agent-browser --session ui-check open http://localhost:3000
+agent-browser --headed --session ui-check open http://localhost:3000
 ```
 
 3. Set the viewport or device that matches the bug report or acceptance target:
