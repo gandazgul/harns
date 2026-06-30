@@ -10,8 +10,11 @@ affectedPaths:
     - "extensions/colgrep/README.md"
     - "docs/settings.md"
 createdAt: "2026-06-16T16:46:54-04:00"
+updatedAt: "2026-06-30T02:29:43.504Z"
 status: "draft"
 origin: "internal"
+humanReviewMode: null
+humanReviewDecision: null
 ---
 
 # Colgrep Semantic Search Extension

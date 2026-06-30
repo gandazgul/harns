@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
 import UnoCSS from "unocss/vite";
+import tidewave from "tidewave/vite-plugin";
 
 export default defineConfig({
     plugins: [
@@ -11,5 +12,6 @@ export default defineConfig({
             islandsDir: "src/ui/workspace/islands",
         }),
         UnoCSS(),
+        tidewave(),
     ],
 });

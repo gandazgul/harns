@@ -638,9 +638,12 @@ button.primary-action:disabled {
     touch-action: manipulation;
 }
 
-.sr-only {
+.sr-only,
+.clickable-card > .sr-only {
     border: 0;
     clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    display: block;
     height: 1px;
     margin: -1px;
     overflow: hidden;
@@ -648,6 +651,7 @@ button.primary-action:disabled {
     position: absolute;
     white-space: nowrap;
     width: 1px;
+    z-index: 0;
 }
 
 .plan-card[data-draggable-plan-card="true"] {
@@ -739,25 +743,6 @@ button.primary-action:disabled {
 .board-column.drop-target-active .column-cards {
     outline: 2px dashed #93c5fd;
     outline-offset: 6px;
-}
-
-.plan-card.drop-rejected {
-    animation: invalid-drop-fly-back 0.42s ease-in-out;
-}
-
-@keyframes invalid-drop-fly-back {
-    0% {
-        transform: translateX(0) rotate(0);
-    }
-    25% {
-        transform: translateX(16px) rotate(1.5deg);
-    }
-    55% {
-        transform: translateX(-12px) rotate(-1.5deg);
-    }
-    100% {
-        transform: translateX(0) rotate(0);
-    }
 }
 
 .board-dnd-status {

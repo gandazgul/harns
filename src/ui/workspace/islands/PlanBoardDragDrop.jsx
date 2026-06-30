@@ -105,7 +105,10 @@ export function PlanBoardDragDrop({ boardId }) {
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("text/plain", planId);
             const dragImage = makeDragImage(card);
-            event.dataTransfer.setDragImage(dragImage, 24, 24);
+            const rect = card.getBoundingClientRect();
+            const dragImageOffsetX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+            const dragImageOffsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+            event.dataTransfer.setDragImage(dragImage, dragImageOffsetX, dragImageOffsetY);
             setTimeout(() => dragImage.remove(), 0);
             setMessage(`Moving ${planName}. Available columns: ${allowedStatusList(allowedTargetStatuses)}.`);
         }
