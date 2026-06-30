@@ -1,6 +1,9 @@
 import { assertEquals } from "@std/assert";
 import snipExtension from "./index.js";
 
+const SNIP_NO_FILTER_STDERR_FILTER =
+    `2> >(grep -vE '^snip: no filter for ".+", passing through -- you can run ".+" directly$' >&2)`;
+
 function setup() {
     /** @type {Map<string, (event: any, ctx: any) => any>} */
     const handlers = new Map();
@@ -27,7 +30,7 @@ Deno.test("snip extension rewrites bash tool calls in place", async () => {
     const event = { toolName: "bash", input: { command: "deno test" } };
     await handler(event, {});
 
-    assertEquals(event.input.command, "snip run -- deno test");
+    assertEquals(event.input.command, `snip run -- deno test ${SNIP_NO_FILTER_STDERR_FILTER}`);
 });
 
 Deno.test("snip extension ignores non-bash, empty, and already snip commands", async () => {
@@ -58,20 +61,20 @@ Deno.test("snip extension handles shell safety and env prefixes", async () => {
 
     const envEvent = { toolName: "bash", input: { command: "FOO=1 deno test" } };
     await handler(envEvent, {});
-    assertEquals(envEvent.input.command, "FOO=1 snip run -- deno test");
+    assertEquals(envEvent.input.command, `FOO=1 snip run -- deno test ${SNIP_NO_FILTER_STDERR_FILTER}`);
 
     const chainEvent = { toolName: "bash", input: { command: "deno test && echo done" } };
     await handler(chainEvent, {});
-    assertEquals(chainEvent.input.command, "snip run -- deno test && echo done");
+    assertEquals(chainEvent.input.command, `snip run -- deno test ${SNIP_NO_FILTER_STDERR_FILTER}&& echo done`);
 
     const extraEnvEvent = {
         toolName: "bash",
         input: { command: "BAR=/tmp/custom deno lint" },
     };
     await handler(extraEnvEvent, {});
-    assertEquals(extraEnvEvent.input.command, "BAR=/tmp/custom snip run -- deno lint");
+    assertEquals(extraEnvEvent.input.command, `BAR=/tmp/custom snip run -- deno lint ${SNIP_NO_FILTER_STDERR_FILTER}`);
 
     const snippetEvent = { toolName: "bash", input: { command: "snippets list" } };
     await handler(snippetEvent, {});
-    assertEquals(snippetEvent.input.command, "snip run -- snippets list");
+    assertEquals(snippetEvent.input.command, `snip run -- snippets list ${SNIP_NO_FILTER_STDERR_FILTER}`);
 });
