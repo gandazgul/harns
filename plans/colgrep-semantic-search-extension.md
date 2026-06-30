@@ -10,7 +10,7 @@ affectedPaths:
     - "extensions/colgrep/README.md"
     - "docs/settings.md"
 createdAt: "2026-06-16T16:46:54-04:00"
-updatedAt: "2026-06-30T02:29:43.504Z"
+updatedAt: "2026-06-30T03:09:03.322Z"
 status: "draft"
 origin: "internal"
 humanReviewMode: null

@@ -13,9 +13,11 @@ affectedPaths:
     - "src/cmd/plans/archive.js"
     - "README.md"
 createdAt: "2026-06-24T14:15:10-04:00"
-updatedAt: "2026-06-24T18:18:57.646Z"
+updatedAt: "2026-06-30T03:13:42.988Z"
 status: "draft"
 origin: "internal"
+humanReviewMode: null
+humanReviewDecision: null
 ---
 
 # Plan Archival and Retrieval
