@@ -9,7 +9,7 @@ function makeUi() {
     const messages = [];
     /** @type {Array<unknown>} */
     const selections = [];
-    /** @type {Array<{ prompt: string, options: Array<{ value: string, label: string }> }>} */
+    /** @type {Array<{ prompt: string, options: Array<{ value: string, label: string, description?: string }> }>} */
     const prompts = [];
 
     return {
@@ -23,7 +23,7 @@ function makeUi() {
             promptSelect: (prompt, options = []) => {
                 prompts.push({
                     prompt: String(prompt),
-                    options: /** @type {Array<{ value: string, label: string }>} */ (options),
+                    options: /** @type {Array<{ value: string, label: string, description?: string }>} */ (options),
                 });
                 return Promise.resolve(selections.shift() ?? null);
             },
@@ -107,6 +107,93 @@ Deno.test("runLoadPlanCommand prints help", async () => {
     });
 
     assertEquals(helped, "load-plan");
+});
+
+Deno.test("runLoadPlanCommand no-arg TUI menu excludes child plans and shows top-level summaries", async () => {
+    const { uiAPI, selections, prompts, messages } = makeUi();
+    const editor = /** @type {import('../../shared/ui/types.js').EditorAPI} */ ({
+        disableSubmit: true,
+        setText: () => {},
+        setAutocompleteProvider: () => {},
+        handleInput: () => {},
+    });
+    selections.push(null);
+
+    await runLoadPlanCommand([], {
+        uiAPI,
+        editor,
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: [] }),
+            listPlans: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-a/01-child",
+                        attrs: {
+                            classification: "FEATURE",
+                            status: "draft",
+                            summary: "Hidden child",
+                            parentPlan: "epic-a",
+                        },
+                    },
+                    {
+                        name: "epic-a",
+                        attrs: {
+                            classification: "PROJECT",
+                            type: "epic",
+                            status: "ready_for_work",
+                            summary: "Top Epic summary",
+                        },
+                    },
+                    {
+                        name: "standalone",
+                        attrs: {
+                            classification: "FEATURE",
+                            status: "approved",
+                            summary: "Standalone summary",
+                        },
+                    },
+                ]),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(messages.length, 0);
+    assertEquals(prompts[0].options.map((option) => option.value), ["epic-a", "standalone"]);
+    assertEquals(prompts[0].options[0].label.includes("Top Epic summary"), true);
+    assertEquals(prompts[0].options[0].label.includes("Epic / ready_for_work"), true);
+});
+
+Deno.test("runLoadPlanCommand no-arg TUI reports when only child plans exist", async () => {
+    const { uiAPI, messages } = makeUi();
+    const editor = /** @type {import('../../shared/ui/types.js').EditorAPI} */ ({
+        disableSubmit: true,
+        setText: () => {},
+        setAutocompleteProvider: () => {},
+        handleInput: () => {},
+    });
+
+    await runLoadPlanCommand([], {
+        uiAPI,
+        editor,
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: [] }),
+            listPlans: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-a/01-child",
+                        attrs: { classification: "FEATURE", status: "draft", parentPlan: "epic-a" },
+                    },
+                ]),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(
+        messages.includes("No top-level plans available. Load the parent Epic directly or create a plan."),
+        true,
+    );
 });
 
 Deno.test("runLoadPlanCommand empty plan list in TUI mode", async () => {
@@ -215,7 +302,7 @@ Deno.test("runLoadPlanCommand Epic with no children opens Slicer", async () => {
     assertEquals(executed, false);
 });
 
-Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", async () => {
+Deno.test("runLoadPlanCommand Epic with children shows ordered child labels, dependencies, and next shortcut", async () => {
     const { uiAPI, selections, prompts } = makeUi();
     selections.push("pick_child", null);
 
@@ -242,17 +329,6 @@ Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", as
             findPlansByParent: () =>
                 Promise.resolve([
                     {
-                        name: "epic-b/01-first",
-                        path: "plans/epic-b/01-first.md",
-                        attrs: {
-                            classification: "FEATURE",
-                            complexity: "LOW",
-                            summary: "First child",
-                            affectedPaths: [],
-                            status: "approved",
-                        },
-                    },
-                    {
                         name: "epic-b/02-second",
                         path: "plans/epic-b/02-second.md",
                         attrs: {
@@ -261,6 +337,20 @@ Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", as
                             summary: "Second child",
                             affectedPaths: [],
                             status: "draft",
+                            order: 2,
+                            dependencies: ["01-first"],
+                        },
+                    },
+                    {
+                        name: "epic-b/01-first",
+                        path: "plans/epic-b/01-first.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "First child",
+                            affectedPaths: [],
+                            status: "verified",
+                            order: 1,
                         },
                     },
                 ]),
@@ -272,8 +362,11 @@ Deno.test("runLoadPlanCommand Epic with children shows child FEATURE labels", as
 
     assertEquals(prompts[0].options.some((option) => option.value === "pick_child"), true);
     assertEquals(prompts[0].options.some((option) => option.value === "done_enough"), true);
-    assertEquals(prompts[1].options[0].label, "epic-b/01-first [approved] — First child");
-    assertEquals(prompts[1].options[1].label, "epic-b/02-second [draft] — Second child");
+    assertEquals(prompts[1].options[0].value, "__next_child__");
+    assertEquals(prompts[1].options[0].label, "Execute next non-verified child FEATURE: 02. Second child [draft]");
+    assertEquals(prompts[1].options[1].label, "01. epic-b/01-first [verified] — First child");
+    assertEquals(prompts[1].options[2].label, "02. epic-b/02-second [draft] — Second child — deps: 01-first");
+    assertEquals(prompts[1].options[2].description?.includes("Dependencies: 01-first"), true);
 });
 
 Deno.test("runLoadPlanCommand View Epic details includes child FEATURE labels and statuses", async () => {
@@ -775,6 +868,89 @@ Deno.test("runLoadPlanCommand Epic child selection delegates to FEATURE load beh
 
     assertEquals(resolved, ["epic-d", "epic-d/01-child"]);
     assertEquals(executedPlanName, "epic-d/01-child");
+});
+
+Deno.test("runLoadPlanCommand Epic next shortcut loads first ordered non-verified child", async () => {
+    const { uiAPI, selections } = makeUi();
+    selections.push("pick_child", "__next_child__", "proceed");
+    /** @type {string[]} */
+    const resolved = [];
+    let executedPlanName = "";
+
+    await runLoadPlanCommand(["epic-next"], {
+        uiAPI,
+        editor: /** @type {any} */ ({ disableSubmit: false, setText: () => {} }),
+        __testDeps: /** @type {any} */ ({
+            parseArgs: (/** @type {string[]} */ argv) => ({ help: false, _: argv }),
+            /** @param {string} _cwd @param {string} planName */
+            resolvePlan: (_cwd, planName) => {
+                resolved.push(planName);
+                if (planName === "epic-next/02-second") {
+                    return Promise.resolve({
+                        planName,
+                        path: "plans/epic-next/02-second.md",
+                        body: "child body",
+                        markdown: "child body",
+                        attrs: {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Second child",
+                            affectedPaths: [],
+                            status: "ready_for_work",
+                            parentPlan: "epic-next",
+                        },
+                    });
+                }
+                return Promise.resolve({
+                    planName: "epic-next",
+                    path: "plans/epic-next.md",
+                    body: "epic body",
+                    markdown: "epic body",
+                    attrs: {
+                        classification: "PROJECT",
+                        type: "epic",
+                        complexity: "HIGH",
+                        summary: "Epic summary",
+                        affectedPaths: [],
+                        status: "ready_for_work",
+                    },
+                });
+            },
+            findPlansByParent: () =>
+                Promise.resolve([
+                    {
+                        name: "epic-next/03-closed",
+                        path: "plans/epic-next/03-closed.md",
+                        attrs: { classification: "FEATURE", status: "closed_without_verification", order: 3 },
+                    },
+                    {
+                        name: "epic-next/02-second",
+                        path: "plans/epic-next/02-second.md",
+                        attrs: {
+                            classification: "FEATURE",
+                            status: "ready_for_work",
+                            summary: "Second child",
+                            order: 2,
+                        },
+                    },
+                    {
+                        name: "epic-next/01-first",
+                        path: "plans/epic-next/01-first.md",
+                        attrs: { classification: "FEATURE", status: "verified", order: 1 },
+                    },
+                ]),
+            executePlan: (/** @type {string} */ planName) => {
+                executedPlanName = planName;
+                return Promise.resolve(undefined);
+            },
+            createAgentHandler: () => () => Promise.resolve(),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(resolved, ["epic-next", "epic-next/02-second", "epic-next"]);
+    assertEquals(executedPlanName, "epic-next/02-second");
 });
 
 Deno.test("runLoadPlanCommand child FEATURE with verified dependencies executes without warning", async () => {
