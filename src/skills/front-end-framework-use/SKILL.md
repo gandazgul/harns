@@ -1,12 +1,13 @@
 ---
 name: front-end-framework-use
-description: Use this skill when implementing, fixing, or reviewing frontend UI work in JavaScript, HTML, or CSS with frameworks such as React, Vue, Svelte, Next.js, Vite, or TanStack.
+description: Convention-first frontend editing. Use this skill when implementing, fixing, or reviewing frontend UI work in JavaScript, HTML, or CSS with frameworks such as React, Vue, Svelte, Next.js, Vite, or TanStack.
 ---
 
 # Front-End Framework Use
 
-Use a code-first feedback loop for frontend work: inspect source, identify the framework/runtime, make the smallest UI
-change that fits the existing patterns, then verify in CI and a real browser.
+Convention-first frontend editing: discover what the project already does, continue that pattern, verify the result. The
+default instinct is to invent; this skill redirects to _match_ — match the styling system, the component structure, the
+data layer, the test style — and invent only when no convention exists to follow.
 
 ## General guidance
 
@@ -35,12 +36,13 @@ to the page as they happen. Do not use any other skills or tools to access or wo
    - Prefer screenshots over eval scripts for layout, spacing, responsive behavior, and visual styling.
    - Completion: the browser observation answers a question the source alone could not.
 
-5. Implement within existing frontend conventions.
+5. Implement convention-first.
    - Match the project's component structure, styling system, state management, data-loading pattern, accessibility
-     conventions, and test style.
+     conventions, and test style. Consult the reference sections below for domain-specific convention checks.
    - Do not restart dev servers for hot-reloading frameworks. If a restart is genuinely necessary, ask the user to do
      it.
-   - Completion: the change is localized and consistent with neighboring code.
+   - Completion: the change is localized and consistent with neighboring code; no new pattern introduced where an
+     existing convention covers the case.
 
 6. Verify before finishing.
    - Run the project's CI, lint, tests, type checks, or formatter as appropriate.
@@ -49,7 +51,12 @@ to the page as they happen. Do not use any other skills or tools to access or wo
    - Check browser console errors, failed network requests, final URL/title, and screenshots when relevant.
    - Completion: command output and browser evidence support the same conclusion.
 
-## Styling and CSS Systems
+## Convention-First Reference
+
+Consult these sections during step 5 (implement) and step 6 (verify). Each covers a domain where convention-first
+editing requires domain-specific checks.
+
+### Styling and CSS Systems
 
 Treat styling as part of the app's design system, even when the system is informal.
 
@@ -63,7 +70,7 @@ Treat styling as part of the app's design system, even when the system is inform
      states.
    - Do not introduce a new color, spacing value, breakpoint, z-index, shadow, or font size until existing options are
      ruled out.
-   - Completion: every new visual value is either reused from the system or intentionally introduced.
+   - Completion: every new visual value is either reused from the system or intentionally introduced with justification.
 
 3. Keep CSS organized by responsibility.
    - Put reusable decisions in tokens, variables, utilities, or shared components.
@@ -72,18 +79,19 @@ Treat styling as part of the app's design system, even when the system is inform
    - Completion: a future nearby component can reuse the shared part without copying the whole style block.
 
 4. Make responsive and state styling explicit.
-   - Check hover, focus, disabled, loading, empty, error, long-content, narrow-width, and dark/light modes when
-     relevant.
-   - Prefer resilient layout primitives over fixed pixel positioning.
+   - Check hover, focus, active, disabled, selected, loading, empty, error, long-content, narrow-width, and dark/light
+     modes when relevant.
+   - Prefer fluid layout primitives (flex, grid, clamp, min/max) over fixed pixel positioning.
    - Completion: the style works across the relevant viewport and UI states.
 
 5. Keep selectors boring.
    - Prefer low-specificity selectors, class names with clear ownership, and predictable cascade boundaries.
    - Avoid `!important`, deep descendant chains, and styling through incidental DOM structure unless the project already
      uses that pattern.
-   - Completion: the style can be overridden or extended without specificity fights.
+   - Completion: no new specificity level introduced beyond what neighboring styles use; the style can be overridden by
+     the same mechanisms the rest of the codebase uses.
 
-## Accessibility
+### Accessibility
 
 Build on browser semantics before adding custom behavior.
 
@@ -95,25 +103,25 @@ Build on browser semantics before adding custom behavior.
 - Completion: the changed UI has a semantic shape, keyboard path, and accessible names that match the visible
   experience.
 
-## Responsive Behavior
+### Responsive Behavior
 
 Design for content and containers, not one viewport.
 
 - Check realistic desktop and mobile widths when layout changes.
 - Account for long text, wrapping, overflow, sticky regions, modals, and scroll containers.
-- Prefer fluid layout primitives over fixed pixel positioning.
-- Completion: the layout remains usable at the relevant widths and with realistic content.
+- Completion: the layout does not clip, overlap, or hide content at the project's supported viewport widths, tested with
+  realistic-length strings.
 
-## Visual Quality
+### Visual Quality
 
-Match the product's existing visual language.
+Convention-first applies to aesthetics, not just code.
 
 - Compare nearby screens and components for spacing, rhythm, density, typography, icon use, and interaction patterns.
-- Include hover, focus, active, disabled, selected, loading, and error states when the component supports them.
+- Include all relevant interaction and UI states when the component supports them.
 - Capture before/after screenshots when the change is visual.
 - Completion: the change looks intentional beside adjacent UI, not merely functional in isolation.
 
-## Data and Async UX
+### Data and Async UX
 
 Make network and state transitions visible and stable.
 
@@ -123,7 +131,7 @@ Make network and state transitions visible and stable.
 - Guard duplicate submits or repeated actions while async work is pending.
 - Completion: the UI remains understandable while data is loading, updating, or failing.
 
-## Forms
+### Forms
 
 Treat forms as interaction design, not just inputs.
 
@@ -133,7 +141,7 @@ Treat forms as interaction design, not just inputs.
 - Keep validation errors actionable and preserve user input across failed submits.
 - Completion: a user can understand what each field needs, recover from errors, and submit without losing work.
 
-## Performance
+### Performance
 
 Avoid frontend changes that make the UI feel slower or heavier.
 
@@ -142,7 +150,7 @@ Avoid frontend changes that make the UI feel slower or heavier.
 - Use the app's existing data layer instead of fetching the same data repeatedly from multiple components.
 - Completion: the change does not introduce avoidable rendering, loading, or bundle-cost regressions.
 
-## Frontend Safety
+### Frontend Safety
 
 Preserve browser-side security boundaries.
 
