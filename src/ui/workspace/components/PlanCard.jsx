@@ -1,5 +1,4 @@
 import { PLAN_UI_TOKEN_QUERY } from "../constants.js";
-import { PlanLifecycleActions } from "../islands/PlanLifecycleActions.jsx";
 
 /**
  * @param {string} path
@@ -37,15 +36,24 @@ function holdMetadata(plan) {
     return metadata.length ? metadata.join("; ") : "No hold metadata provided.";
 }
 
-/** @param {{ plan: any, url: URL, compact?: boolean, roleLabel?: string }} props */
-export function PlanCard({ plan, url, compact = false, roleLabel = "Plan" }) {
+/** @param {{ plan: any, url: URL, compact?: boolean, roleLabel?: string, draggableCard?: boolean }} props */
+export function PlanCard({ plan, url, compact = false, roleLabel = "Plan", draggableCard = false }) {
     const isChildCard = plan.hierarchyRole === "child" || plan.hierarchyRole === "orphan-child";
     const href = detailHref(plan, url);
+    const allowedTargetStatuses =
+        (plan.actions?.dnd?.allowedTargetStatuses || plan.actions?.allowedManualTargetStatuses || [])
+            .join(" ");
+    const canDrag = draggableCard && Boolean(allowedTargetStatuses);
     return (
         <article
             class={compact ? "plan-card compact clickable-card" : "plan-card clickable-card"}
+            data-draggable-plan-card={canDrag ? "true" : undefined}
+            draggable={canDrag}
             data-plan-id={plan.planId}
+            data-plan-name={plan.planName}
             data-status={plan.status}
+            data-allowed-target-statuses={canDrag ? allowedTargetStatuses : undefined}
+            aria-describedby={canDrag ? `drag-help-${plan.planId}` : undefined}
         >
             <a class="card-hit-area" href={href} aria-label={`Open ${plan.planName} details`}></a>
             <div class="card-header">
@@ -56,10 +64,23 @@ export function PlanCard({ plan, url, compact = false, roleLabel = "Plan" }) {
                     </p>
                     <span class="card-title">{plan.planName}</span>
                 </div>
+                {canDrag
+                    ? (
+                        <span class="drag-grip" aria-hidden="true" title="Drag to move status">
+                            ⋮⋮
+                        </span>
+                    )
+                    : null}
             </div>
+            {canDrag
+                ? (
+                    <span id={`drag-help-${plan.planId}`} class="sr-only">
+                        Drag this Plan Card to an allowed status column: {allowedTargetStatuses.replaceAll(" ", ", ")}.
+                    </span>
+                )
+                : null}
             <p>{plan.summary || "No summary provided."}</p>
             {plan.status === "on_hold" ? <p class="hold-summary">{holdMetadata(plan)}</p> : null}
-            <PlanLifecycleActions plan={plan} compact />
             <div class="badge-row">
                 {plan.blockedByDependencies ? <span class="badge warning">Blocked by dependency</span> : null}
                 {plan.unverifiedDependencyCount

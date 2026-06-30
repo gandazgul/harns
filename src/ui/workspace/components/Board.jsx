@@ -1,3 +1,4 @@
+import { PlanBoardDragDrop } from "../islands/PlanBoardDragDrop.jsx";
 import { BoardColumn } from "./BoardColumn.jsx";
 import { PlanCard } from "./PlanCard.jsx";
 
@@ -36,14 +37,21 @@ export function PlanBoard({ board, view, url }) {
             total + column.cards.length + column.orphanChildren.length,
         0,
     );
+    const boardId = `status-board-${view}`;
     return (
         <section class="board-view" data-view={view}>
             {totalCards === 0 ? <EmptyState label={screen.title.toLowerCase()} /> : null}
-            <div class="status-board" aria-label={`${screen.title} status columns`}>
+            <div
+                id={boardId}
+                class="status-board"
+                data-plan-board="true"
+                aria-label={`${screen.title} status columns`}
+            >
                 {screen.columns.map(/** @param {any} column */ (column) => (
                     <BoardColumn key={column.status} column={column} url={url} />
                 ))}
             </div>
+            {screen.columns.length ? <PlanBoardDragDrop boardId={boardId} /> : null}
             <OrphanRepairSection screen={screen} url={url} />
         </section>
     );
