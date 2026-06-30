@@ -136,6 +136,24 @@ Deno.test("planId round trips and blank values normalize away", () => {
     assertEquals(blank.includes("planId:"), false);
 });
 
+Deno.test("order front matter round trips and numeric strings normalize", () => {
+    const withOrder = injectFrontMatter("## Plan", { parentPlan: "epic-a", order: 3 });
+    assertEquals(parsePlanFrontMatter(withOrder).attrs.order, 3);
+    assertEquals(withOrder.includes("parentPlan:"), true);
+    assertEquals(withOrder.indexOf("parentPlan:") < withOrder.indexOf("order:"), true);
+
+    const parsedString = parsePlanFrontMatter([
+        "---",
+        "classification: FEATURE",
+        "summary: child",
+        "parentPlan: epic-a",
+        'order: "4"',
+        "---",
+        "# Child",
+    ].join("\n"));
+    assertEquals(parsedString.attrs.order, 4);
+});
+
 testWithFs("ensurePlanIdentity backfills missing planId while preserving body exactly", async () => {
     const cwd = await Deno.makeTempDir();
     try {
@@ -522,12 +540,12 @@ testWithFs("listPlans hides archived plans", async () => {
     }
 });
 
-testWithFs("saveChildFeaturePlans creates draft child FEATURE plans with dependencies", async () => {
+testWithFs("saveChildFeaturePlans creates draft child FEATURE plans with order and legacy sequence alias", async () => {
     const cwd = await Deno.makeTempDir();
     try {
         const results = await saveChildFeaturePlans(cwd, "project-breakdown-epic", [
             {
-                sequence: 1,
+                order: 1,
                 title: "Preserve Epic and child metadata",
                 summary: "Keep parent-child links loadable",
                 affectedPaths: ["src/plan-store.js"],
@@ -552,6 +570,7 @@ testWithFs("saveChildFeaturePlans creates draft child FEATURE plans with depende
             classification: "FEATURE",
             status: "draft",
             parentPlan: "project-breakdown-epic",
+            order: 1,
             affectedPaths: ["src/plan-store.js"],
         });
 
@@ -560,9 +579,35 @@ testWithFs("saveChildFeaturePlans creates draft child FEATURE plans with depende
         assertEquals(first?.attrs.status, "draft");
         assertEquals(first?.attrs.parentPlan, "project-breakdown-epic");
         assertEquals(first?.attrs.summary, "Keep parent-child links loadable");
+        assertEquals(first?.attrs.order, 1);
 
         const second = await loadPlan(cwd, "project-breakdown-epic/02-load-child-features");
         assertEquals(second?.attrs.dependencies, ["project-breakdown-epic/01-preserve-epic-and-child-metadata"]);
+    } finally {
+        await Deno.remove(cwd, { recursive: true });
+    }
+});
+
+testWithFs("findPlansByParent sorts child plans by order before name", async () => {
+    const cwd = await Deno.makeTempDir();
+    try {
+        await savePlan(cwd, "epic-sort", "# Epic", {
+            classification: "PROJECT",
+            type: "epic",
+            status: "ready_for_work",
+        });
+        await savePlan(cwd, "epic-sort/03-third", "# Third", { parentPlan: "epic-sort", order: 3 });
+        await savePlan(cwd, "epic-sort/01-legacy", "# Legacy", { parentPlan: "epic-sort" });
+        await savePlan(cwd, "epic-sort/02-second", "# Second", { parentPlan: "epic-sort", order: 2 });
+        await savePlan(cwd, "epic-sort/04-also-second", "# Also Second", { parentPlan: "epic-sort", order: 2 });
+
+        const children = await findPlansByParent(cwd, "epic-sort");
+        assertEquals(children.map((child) => child.name), [
+            "epic-sort/02-second",
+            "epic-sort/04-also-second",
+            "epic-sort/03-third",
+            "epic-sort/01-legacy",
+        ]);
     } finally {
         await Deno.remove(cwd, { recursive: true });
     }
@@ -639,12 +684,12 @@ testWithFs("saveChildFeaturePlans rejects invalid child and parent names", async
         await assertRejects(
             () => saveChildFeaturePlans(cwd, "epic-a", [{ ...validChild, sequence: -1 }]),
             Error,
-            "Child plan sequence must be a non-negative integer",
+            "Child plan order must be a non-negative integer",
         );
         await assertRejects(
             () => saveChildFeaturePlans(cwd, "epic-a", [{ ...validChild, sequence: 1.5 }]),
             Error,
-            "Child plan sequence must be a non-negative integer",
+            "Child plan order must be a non-negative integer",
         );
         await assertRejects(
             () =>
