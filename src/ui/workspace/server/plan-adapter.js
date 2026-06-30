@@ -822,7 +822,7 @@ export function workspaceMetadata(cwd) {
             markdownView: true,
             mutations: true,
             lifecycleActions: true,
-            dragDrop: false,
+            dragDrop: true,
             bodyEditing: true,
         },
     };
