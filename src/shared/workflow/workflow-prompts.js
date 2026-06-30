@@ -11,6 +11,7 @@ import { extractTasks, parseTaskDependencies, validateProjectTasks } from "./tas
 /**
  * @typedef {Object} SlicerChildSummary
  * @property {string} name
+ * @property {number} [order]
  * @property {string} [status]
  * @property {string} [summary]
  * @property {string[]} [dependencies]
@@ -76,6 +77,7 @@ export function buildSlicerRequest(input, legacyTriageMeta) {
     } else {
         for (const child of children) {
             lines.push(`- ${child.name}`);
+            if (child.order !== undefined) lines.push(`  - Order: ${child.order}`);
             if (child.status) lines.push(`  - Status: ${child.status}`);
             if (child.summary) lines.push(`  - Summary: ${child.summary}`);
             if (child.dependencies?.length) lines.push(`  - Dependencies: ${child.dependencies.join(", ")}`);

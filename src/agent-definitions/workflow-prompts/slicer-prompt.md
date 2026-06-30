@@ -91,6 +91,8 @@ Notes. Put that information inside the planner-format sections instead.
 Each child descriptor must include:
 
 - `title` — concise user-facing FEATURE title.
+- `order` — stable 1-based integer execution order from the agreed slice sequence. Preserve existing `order` values when
+  updating drafts; only renumber when the user explicitly changes the sequence.
 - `summary` — one or two sentences explaining the child slice.
 - `dependencies` — durable sibling child plan identifiers when sequencing matters; otherwise an empty array. Use the
   canonical child plan name (`epic-name/child-slug`) or sibling child segment (`child-slug`), not human-readable titles.

@@ -8,6 +8,7 @@
 import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
 import { AGENTS, CLI_BIN, CWD } from "../../constants.js";
 import {
+    compareChildPlansByOrder,
     findPlansByParent as findPlansByParentFn,
     injectFrontMatter,
     loadPlan as loadPlanFn,
@@ -91,7 +92,7 @@ export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
  * @property {typeof createAgentHandlerFn} [createAgentHandler]
  * @property {typeof resetTuiStateFn} [resetTuiState]
  * @property {typeof getRootAgentNameFn} [getRootAgentName]
- * @property {(cwd: string) => Promise<Array<{name: string, attrs: {classification: string, status: string}}>>} [listPlans]
+ * @property {(cwd: string) => Promise<Array<{name: string, attrs: Partial<import('../../plan-store.js').PlanFrontMatter>}>>} [listPlans]
  * @property {typeof findPlansByParentFn} [findPlansByParent]
  * @property {typeof resolveSiblingChildPlanDependenciesFn} [resolveSiblingChildPlanDependencies]
  * @property {typeof recordPlanEventFn} [recordPlanEvent]
@@ -1708,8 +1709,59 @@ function isDecomposedEpicStatus(attrs) {
  * @returns {string}
  */
 function formatChildPlanLabel(child) {
+    const order = child.attrs.order !== undefined ? `${String(child.attrs.order).padStart(2, "0")}. ` : "";
     const summary = child.attrs.summary ? ` — ${child.attrs.summary}` : "";
-    return `${child.name} [${child.attrs.status}]${summary}`;
+    const dependencies = Array.isArray(child.attrs.dependencies) && child.attrs.dependencies.length > 0
+        ? ` — deps: ${child.attrs.dependencies.join(", ")}`
+        : "";
+    return `${order}${child.name} [${child.attrs.status}]${summary}${dependencies}`;
+}
+
+/**
+ * @param {{ name: string, attrs: import('../../plan-store.js').PlanFrontMatter }} child
+ * @returns {string | undefined}
+ */
+function formatChildPlanDescription(child) {
+    const parts = [];
+    if (child.attrs.summary) parts.push(child.attrs.summary);
+    if (Array.isArray(child.attrs.dependencies) && child.attrs.dependencies.length > 0) {
+        parts.push(`Dependencies: ${child.attrs.dependencies.join(", ")}`);
+    }
+    return parts.length > 0 ? parts.join(" | ") : undefined;
+}
+
+/**
+ * @param {{ name: string, attrs: import('../../plan-store.js').PlanFrontMatter }} child
+ * @returns {string}
+ */
+function formatNextChildLabel(child) {
+    const order = child.attrs.order !== undefined ? `${String(child.attrs.order).padStart(2, "0")}. ` : "";
+    const summary = child.attrs.summary || child.name;
+    return `Execute next non-verified child FEATURE: ${order}${summary} [${child.attrs.status}]`;
+}
+
+/**
+ * @param {{ attrs: import('../../plan-store.js').PlanFrontMatter }} child
+ * @returns {boolean}
+ */
+function isActionableNextChild(child) {
+    return child.attrs.status !== "verified" && child.attrs.status !== "closed_without_verification";
+}
+
+/**
+ * @param {{ name: string, attrs: Partial<import('../../plan-store.js').PlanFrontMatter> }} plan
+ * @returns {{ value: string, label: string, description: string }}
+ */
+function formatTopLevelPlanOption(plan) {
+    const summary = plan.attrs.summary ? ` — ${plan.attrs.summary}` : "";
+    const type = isEpicPlan(plan.attrs) ? "Epic" : plan.attrs.classification;
+    return {
+        value: plan.name,
+        label: `${plan.name} [${type} / ${plan.attrs.status}]${summary}`,
+        description: `${plan.attrs.classification}${
+            plan.attrs.type ? `:${plan.attrs.type}` : ""
+        } - ${plan.attrs.status}`,
+    };
 }
 
 /**
@@ -1857,7 +1909,7 @@ async function handleEpicPlan({
 
     const children = (await findPlansByParent(CWD, plan.planName)).filter((child) =>
         child.attrs.classification === "FEATURE"
-    );
+    ).sort(compareChildPlansByOrder);
     const hasChildren = children.length > 0;
     const canPickChild = hasChildren && isDecomposedEpicStatus(plan.attrs);
 
@@ -1965,12 +2017,28 @@ async function handleEpicPlan({
 
         if (answer === "pick_child") {
             while (true) {
-                const childOptions = children.map((child) => ({
-                    value: child.name,
-                    label: formatChildPlanLabel(child),
-                }));
+                const nextChild = children.find(isActionableNextChild);
+                const childOptions = [
+                    ...(nextChild
+                        ? [{
+                            value: "__next_child__",
+                            label: formatNextChildLabel(nextChild),
+                            description: formatChildPlanDescription(nextChild),
+                        }]
+                        : []),
+                    ...children.map((child) => ({
+                        value: child.name,
+                        label: formatChildPlanLabel(child),
+                        description: formatChildPlanDescription(child),
+                    })),
+                ];
                 const childPlanName = await uiAPI.promptSelect("Load child FEATURE plan:", childOptions);
                 if (!childPlanName) break;
+                if (childPlanName === "__next_child__") {
+                    if (!nextChild) break;
+                    await loadChildPlan(nextChild.name);
+                    return "handled";
+                }
 
                 while (true) {
                     const childAction = await uiAPI.promptSelect("What would you like to do with this FEATURE?", [
@@ -2119,14 +2187,20 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 return;
             }
 
-            const planOptions = plans.map((p) => ({
-                value: p.name,
-                label: p.name,
-                description: `${p.attrs.classification} - ${p.attrs.status}`,
-            }));
+            const topLevelPlans = plans.filter((plan) => !plan.attrs.parentPlan);
+            if (topLevelPlans.length === 0) {
+                options.uiAPI.appendSystemMessage(
+                    "No top-level plans available. Load the parent Epic directly or create a plan.",
+                );
+                options.editor.setText("");
+                options.editor.disableSubmit = false;
+                return;
+            }
+
+            const planOptions = topLevelPlans.map(formatTopLevelPlanOption);
 
             const chosen = await options.uiAPI.promptSelect("Load plan:", planOptions, {
-                layout: { maxPrimaryColumnWidth: 48 },
+                layout: { maxPrimaryColumnWidth: 72 },
             });
             if (!chosen) {
                 options.editor.setText("");

@@ -3,10 +3,34 @@ import {
     askRetryFailedTasks,
     buildDependencyOutputsContext,
     buildEngineerRequest,
+    buildSlicerRequest,
     buildTaskAssignmentRequest,
     buildTaskResultDisplay,
     reportExecutionSummary,
 } from "./workflow-prompts.js";
+
+Deno.test("buildSlicerRequest includes existing child order and dependencies", () => {
+    const request = buildSlicerRequest({
+        planName: "epic-a",
+        epicBody: "# Epic",
+        epicAttrs: { classification: "PROJECT", type: "epic", status: "ready_for_work" },
+        children: [
+            {
+                name: "epic-a/02-second",
+                order: 2,
+                status: "draft",
+                summary: "Second slice",
+                dependencies: ["01-first"],
+                affectedPaths: ["src/second.js"],
+            },
+        ],
+    });
+
+    assertStringIncludes(request, "- epic-a/02-second");
+    assertStringIncludes(request, "  - Order: 2");
+    assertStringIncludes(request, "  - Status: draft");
+    assertStringIncludes(request, "  - Dependencies: 01-first");
+});
 
 Deno.test("buildDependencyOutputsContext includes only successful dependency displays", () => {
     const context = buildDependencyOutputsContext(
