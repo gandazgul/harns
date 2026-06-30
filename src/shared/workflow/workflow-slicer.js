@@ -21,6 +21,7 @@ const SLICER_PROMPT_FILE = "slicer-prompt.md";
 
 const CHILD_DESCRIPTOR_SCHEMA = Type.Object({
     title: Type.String({ description: "Child FEATURE title." }),
+    order: Type.Number({ description: "1-based integer execution order from the agreed slice sequence." }),
     summary: Type.String({ description: "Brief child FEATURE summary." }),
     dependencies: Type.Array(Type.String(), { description: "Child plan dependencies, if any." }),
     affectedPaths: Type.Array(Type.String(), { description: "Expected affected paths." }),
@@ -167,11 +168,12 @@ export function createSlicerFinalizeTool({ planName, cwd = CWD, __deps }) {
 
 /**
  * @param {{ name: string, attrs: import('../../plan-store.js').PlanFrontMatter }} child
- * @returns {{ name: string, status: string | undefined, summary: string | undefined, dependencies: string[], affectedPaths: string[] }}
+ * @returns {{ name: string, order: number | undefined, status: string | undefined, summary: string | undefined, dependencies: string[], affectedPaths: string[] }}
  */
 function summarizeChild(child) {
     return {
         name: child.name,
+        order: child.attrs.order,
         status: child.attrs.status,
         summary: child.attrs.summary,
         dependencies: Array.isArray(child.attrs.dependencies) ? child.attrs.dependencies : [],

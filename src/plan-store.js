@@ -96,6 +96,7 @@ function getStoredPlanLocation(cwd, planName) {
  * @property {"internal"|"external"} [origin] - "internal" = created by a RunWield agent; "external" = a pre-existing markdown file loaded from an arbitrary path and resumed with RunWield
  * @property {string} [type] - Optional plan subtype, e.g. "epic" for PROJECT Epic containers
  * @property {string} [parentPlan] - Canonical parent plan name for child FEATURE plans
+ * @property {number} [order] - Epic child FEATURE execution order.
  * @property {string[]} [dependencies] - Sibling FEATURE plan identifiers that should be completed first
  * @property {string|null} [failureReason] - Concise durable failure detail for failed or unverified implemented plans
  * @property {string|null} [failedAt] - ISO timestamp when execution failed
@@ -131,7 +132,8 @@ function getStoredPlanLocation(cwd, planName) {
  * @property {string[]} affectedPaths - Files that the child FEATURE expects to touch.
  * @property {string[]} dependencies - Sibling child plan names or identifiers required first.
  * @property {string} content - Planner-format markdown body for the child FEATURE.
- * @property {number} [sequence] - Optional stable ordering number used in the file name.
+ * @property {number} [order] - Optional stable execution order used in front matter and the file name.
+ * @property {number} [sequence] - Deprecated alias for order.
  */
 
 /**
@@ -141,7 +143,7 @@ function getStoredPlanLocation(cwd, planName) {
  * @property {string} title - Human-readable child plan title.
  * @property {"created" | "updated"} action - Whether the derived file existed before this write.
  * @property {string[]} dependencies - Serialized child FEATURE dependencies.
- * @property {{ classification: "FEATURE", status: "draft", parentPlan: string, affectedPaths: string[] }} metadata - Front matter values owned by child materialization.
+ * @property {{ classification: "FEATURE", status: "draft", parentPlan: string, order?: number, affectedPaths: string[] }} metadata - Front matter values owned by child materialization.
  */
 
 /**
@@ -172,6 +174,7 @@ const KNOWN_FRONT_MATTER_KEYS = new Set([
     "origin",
     "type",
     "parentPlan",
+    "order",
     "dependencies",
     "failureReason",
     "failedAt",
@@ -262,6 +265,7 @@ function formatFrontMatter(fm) {
     appendYamlField(lines, "origin", fm.origin);
     appendYamlField(lines, "type", fm.type);
     appendYamlField(lines, "parentPlan", fm.parentPlan);
+    appendYamlField(lines, "order", fm.order);
     appendYamlField(lines, "dependencies", fm.dependencies);
     appendYamlField(lines, "failureReason", fm.failureReason);
     appendYamlField(lines, "failedAt", fm.failedAt);
@@ -368,6 +372,21 @@ function normalizeStringList(value) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {number | undefined}
+ */
+function normalizeNonNegativeInteger(value) {
+    if (typeof value === "number") {
+        return Number.isInteger(value) && value >= 0 ? value : undefined;
+    }
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (/^\d+$/.test(trimmed)) return Number(trimmed);
+    }
+    return undefined;
+}
+
+/**
  * @param {unknown} status
  * @returns {PlanFrontMatter["status"] | null | undefined}
  */
@@ -464,6 +483,9 @@ export function injectFrontMatter(markdown, overrides = {}) {
         origin: overrides.origin ?? existingFm.origin ?? "internal",
         type: optionalStringValue(overrides, existingFm, "type"),
         parentPlan: optionalStringValue(overrides, existingFm, "parentPlan"),
+        order: Object.hasOwn(overrides, "order")
+            ? normalizeNonNegativeInteger(overrides.order)
+            : normalizeNonNegativeInteger(existingFm.order),
         dependencies: Object.hasOwn(overrides, "dependencies")
             ? normalizeStringList(overrides.dependencies)
             : normalizeStringList(existingFm.dependencies),
@@ -540,6 +562,7 @@ export function parsePlanFrontMatter(markdown, opts = {}) {
             origin: attrs.origin || missingOrigin,
             type: typeof attrs.type === "string" ? attrs.type : undefined,
             parentPlan: typeof attrs.parentPlan === "string" ? attrs.parentPlan : undefined,
+            order: normalizeNonNegativeInteger(attrs.order),
             dependencies: normalizeStringList(attrs.dependencies),
             failureReason: attrs.failureReason,
             failedAt: attrs.failedAt,
@@ -666,6 +689,13 @@ function validateChildFeaturePlanDescriptor(child) {
     if (!Array.isArray(descriptor.dependencies)) throw new Error("Child plan dependencies must be an array");
     if (typeof descriptor.content !== "string") throw new Error("Child plan content must be a string");
 
+    const rawOrder = Object.hasOwn(descriptor, "order") ? descriptor.order : descriptor.sequence;
+    const order = normalizeNonNegativeInteger(rawOrder);
+    if (rawOrder !== undefined && order === undefined) {
+        throw new Error(`Child plan order must be a non-negative integer: ${rawOrder}`);
+    }
+    descriptor.order = order;
+
     return /** @type {ChildFeaturePlanDescriptor} */ (descriptor);
 }
 
@@ -676,7 +706,7 @@ function validateChildFeaturePlanDescriptor(child) {
 function buildChildPlanNameSegment(child) {
     const slug = slugifyPlanTitle(child.title);
     if (!slug) throw new Error(`Child plan title must produce a valid plan name: ${child.title}`);
-    return `${formatChildSequencePrefix(child.sequence)}${slug}`;
+    return `${formatChildSequencePrefix(child.order)}${slug}`;
 }
 
 /**
@@ -727,6 +757,7 @@ export async function saveChildFeaturePlans(cwd, epicPlanName, children) {
             classification: /** @type {const} */ ("FEATURE"),
             status: /** @type {const} */ ("draft"),
             parentPlan: parentPlanName,
+            order: child.order,
             affectedPaths,
         };
         const path = await savePlan(cwd, name, child.content, {
@@ -949,6 +980,23 @@ export async function listPlans(cwd) {
         // plans dir doesn't exist yet
     }
     return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Compare Epic child plans by explicit order first, then canonical name.
+ *
+ * @template {{ name: string, attrs: PlanFrontMatter }} T
+ * @param {T} a
+ * @param {T} b
+ * @returns {number}
+ */
+export function compareChildPlansByOrder(a, b) {
+    const aOrder = a.attrs.order;
+    const bOrder = b.attrs.order;
+    if (aOrder !== undefined && bOrder !== undefined && aOrder !== bOrder) return aOrder - bOrder;
+    if (aOrder !== undefined && bOrder === undefined) return -1;
+    if (aOrder === undefined && bOrder !== undefined) return 1;
+    return a.name.localeCompare(b.name);
 }
 
 /**
@@ -1186,7 +1234,7 @@ export async function savePlanBodyById(cwd, planId, newBody, expectedBodyHash) {
 export async function findPlansByParent(cwd, parentPlan) {
     const { name } = canonicalizeStoredPlanName(parentPlan);
     const plans = await listPlans(cwd);
-    return plans.filter((plan) => plan.attrs.parentPlan === name).sort((a, b) => a.name.localeCompare(b.name));
+    return plans.filter((plan) => plan.attrs.parentPlan === name).sort(compareChildPlansByOrder);
 }
 
 /**
@@ -1303,6 +1351,9 @@ export function groupPlanHierarchy(plans) {
 
         standalone.push(plan);
     }
+
+    for (const children of childrenByParent.values()) children.sort(compareChildPlansByOrder);
+    orphanChildren.sort(compareChildPlansByOrder);
 
     return { epics, childrenByParent, standalone, orphanChildren };
 }
