@@ -197,6 +197,9 @@ body {
     padding: 16px;
     box-shadow: 0 18px 50px #0004;
 }
+.detail {
+    margin-top: 22px;
+}
 .epic-card {
     border-color: var(--rw-accent);
     background: linear-gradient(
@@ -412,6 +415,7 @@ body {
 }
 .detail-header {
     border-bottom: 1px solid var(--rw-border);
+    margin: 0 0 24px;
     padding-bottom: 18px;
 }
 .detail-title-row {
@@ -422,6 +426,13 @@ body {
 }
 .detail-title-row h2 {
     overflow-wrap: anywhere;
+}
+.detail-title-group {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    min-width: 0;
 }
 .detail-back-link,
 .detail-close-link {
@@ -477,6 +488,22 @@ body {
 .header-actions .lifecycle-action-list {
     gap: 0.65rem;
     max-width: 100%;
+}
+.detail-sidebar-actions {
+    align-items: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-bottom: 1.25rem;
+}
+.detail-sidebar-actions .lifecycle-actions,
+.detail-sidebar-actions .lifecycle-action-list {
+    display: contents;
+}
+.detail-sidebar-actions .terminal-message,
+.detail-sidebar-actions .hold-message,
+.detail-sidebar-actions .lifecycle-message {
+    flex-basis: 100%;
 }
 .primary-action,
 button.primary-action,
@@ -735,7 +762,16 @@ button.danger-action:disabled {
 
 .lifecycle-actions.compact:not(.hold-action-only) .lifecycle-action-list button {
     font-size: 0.75rem;
-    padding: 0.25rem 0.45rem;
+    padding: 0.32rem 0.58rem;
+}
+
+.detail-sidebar-actions .detail-sidebar-edit {
+    font-size: 0.75rem;
+    padding: 0.32rem 0.58rem;
+}
+
+.detail-sidebar-actions .lifecycle-actions.compact .lifecycle-action-list button.secondary-action {
+    border-color: color-mix(in srgb, var(--rw-accent) 32%, var(--rw-border));
 }
 
 .header-actions .primary-action,

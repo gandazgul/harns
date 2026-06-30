@@ -144,29 +144,37 @@ export function PlanDetail({ plan, url, editIntent = false }) {
                 <div>
                     <div class="detail-title-row">
                         <a class="detail-back-link" href={closeHref}>{"< Back"}</a>
-                        <h2>{plan.planName}</h2>
+                        <div class="detail-title-group">
+                            <h2>{plan.planName}</h2>
+                            <span class={`status status-${plan.status}`}>{plan.status}</span>
+                        </div>
                         <a class="detail-close-link" href={closeHref} aria-label="Close plan detail">X</a>
                     </div>
                     <p>{plan.summary || "No summary provided."}</p>
                     {plan.status === "on_hold" ? <p class="notice muted">{holdMetadata(plan)}</p> : null}
-                    <div class="detail-actions" aria-label="Plan status">
-                        <span class={`status status-${plan.status}`}>{plan.status}</span>
-                        {plan.hierarchyRole === "orphan-child"
-                            ? <span class="badge warning">Missing parent Epic</span>
-                            : null}
-                        {plan.blockedByDependencies ? <span class="badge warning">Dependency blocked</span> : null}
-                    </div>
-                </div>
-                <div class="header-actions" aria-label="Plan detail actions">
-                    <PlanLifecycleActions plan={plan} />
-                    {editIntent ? null : <a class="primary-action" href={editHref}>Edit</a>}
+                    {plan.hierarchyRole === "orphan-child" || plan.blockedByDependencies
+                        ? (
+                            <div class="detail-actions" aria-label="Plan warnings">
+                                {plan.hierarchyRole === "orphan-child"
+                                    ? <span class="badge warning">Missing parent Epic</span>
+                                    : null}
+                                {plan.blockedByDependencies
+                                    ? <span class="badge warning">Dependency blocked</span>
+                                    : null}
+                            </div>
+                        )
+                        : null}
                 </div>
             </header>
             <section class="detail-grid">
                 <div>
                     <PlanBodyEditor plan={plan} initialEdit={editIntent} />
                 </div>
-                <aside>
+                <aside class="detail-sidebar">
+                    <div class="detail-sidebar-actions" aria-label="Plan detail actions">
+                        {editIntent ? null : <a class="primary-action detail-sidebar-edit" href={editHref}>Edit</a>}
+                        <PlanLifecycleActions plan={plan} compact />
+                    </div>
                     <h3>Metadata</h3>
                     <DetailMetadata plan={plan} />
                     <h3>Front matter summary</h3>
