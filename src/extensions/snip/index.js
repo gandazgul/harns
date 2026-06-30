@@ -49,6 +49,9 @@ const NO_REWRITE_PREFIXES = [
     "bun pm view",
 ];
 
+const SNIP_NO_FILTER_STDERR_FILTER =
+    '2> >(grep -vE \'^snip: no filter for ".+", passing through -- you can run ".+" directly$\' >&2)';
+
 /**
  * @param {string} command
  * @returns {number}
@@ -175,7 +178,7 @@ function rewriteCommand(originalCommand) {
     if (parsed.commandName === "snip" || SHELL_BUILTINS.has(parsed.commandName)) return null;
     if (NO_REWRITE_PREFIXES.some((prefix) => parsed.commandText.startsWith(prefix))) return null;
 
-    return `${parsed.envPrefix}snip run -- ${parsed.commandText}${rest}`;
+    return `${parsed.envPrefix}snip run -- ${parsed.commandText.trimEnd()} ${SNIP_NO_FILTER_STDERR_FILTER}${rest}`;
 }
 
 /**
