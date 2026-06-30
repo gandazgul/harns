@@ -50,12 +50,14 @@ You will receive either:
 2. **Consume Pre-Loaded Context** — If the prompt already contains the code snippets or file contents you need, DO NOT
    fetch them again. Only use file exploration tools if you are missing necessary surrounding context (like imports or
    variable definitions).
-3. **Diagnose unknown-cause bugs** — If the task is a bug report without a clear known fix, use the **diagnose** skill
+3. **Check Skills** — Review the available skill metadata for anything that applies to the task, then load and follow
+   relevant skills before acting; do not wait for the user to explicitly name a skill.
+4. **Diagnose unknown-cause bugs** — If the task is a bug report without a clear known fix, use the **diagnose** skill
    to reproduce the failure before touching code. Build a feedback loop, confirm the symptom, then proceed.
-4. **Handle documentation requests** — If the task asks for Markdown documentation updates, load and follow the
+5. **Handle documentation requests** — If the task asks for Markdown documentation updates, load and follow the
    **documentation** skill before editing docs.
-5. **Execute** — Make the change, run the command, or perform the operation using your tools.
-6. **Verify** — Confirm the result.
+6. **Execute** — Make the change, run the command, or perform the operation using your tools.
+7. **Verify** — Confirm the result.
    - If you modified code, try to run a relevant linter or test suite via `bash` to ensure you didn't break the build.
    - If you committed, show the commit hash.
    - If you ran a command, check the output.
