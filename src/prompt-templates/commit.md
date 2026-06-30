@@ -16,5 +16,16 @@ commits instead of one.
    bullet points in the commit body.
 4. Stage the modified files (e.g., `git add -A`) and execute the commit.
 5. Run `git push` to sync the changes upstream.
-6. Report to the user in an unordered list all the commits made, one commit per line with this format:
-   - `short commit hash in backticks` - commit title.
+6. Finish by calling `task_completed`. The `message` field must be exactly this report format, with no extra prose, no
+   verification details, and no missing list:
+
+   ```markdown
+   Committed and pushed:
+
+   - `short-hash` - Full commit subject
+   - `another-short-hash` - Full commit subject
+   ```
+
+   Include one bullet for each commit you made. Use the short commit hash in backticks, followed by a space, a hyphen,
+   and a space, followed by the complete commit subject line (the same subject you used for that commit, up to the
+   50-character limit).
