@@ -13,6 +13,7 @@ import {
 } from "./server/plan-adapter.js";
 import { renderMarkdown } from "./components/MarkdownView.jsx";
 import { draftRecoveryState, planBodyDraftKey, restoredDraftExpectedBodyHash } from "./islands/PlanBodyEditor.jsx";
+import { blockedDropMessage, isAllowedDropTarget, parseAllowedTargetStatuses } from "./islands/PlanBoardDragDrop.jsx";
 import {
     createMoveStatusIntent,
     createPutOnHoldIntent,
@@ -313,6 +314,12 @@ Deno.test("workspace adapter exposes Epic dependency health done-enough held and
     }
 });
 
+Deno.test("workspace metadata advertises real board drag/drop capability", () => {
+    const metadata = _workspaceMetadata("/tmp/example-project");
+    assertEquals(metadata.capabilities.lifecycleActions, true);
+    assertEquals(metadata.capabilities.dragDrop, true);
+});
+
 Deno.test("draft helpers scope recovery to workspace plan and hash", () => {
     assertEquals(planBodyDraftKey("workspace", "plan"), "runwield:workspace:workspace:plan:plan:bodyDraft");
     assertEquals(draftRecoveryState(null, "hash"), "none");
@@ -352,6 +359,16 @@ Deno.test("Fresh Workspace rejects missing token and SSR-renders status column b
         assertStringIncludes(html, "Ready for Work");
         assertStringIncludes(html, "workspace-card");
         assertStringIncludes(html, "SSR card");
+        assertStringIncludes(html, 'data-plan-board="true"');
+        assertStringIncludes(html, 'data-draggable-plan-card="true"');
+        assertStringIncludes(html, 'draggable="true"');
+        assertStringIncludes(
+            html,
+            'data-allowed-target-statuses="feedback approved ready_for_work in_progress implemented"',
+        );
+        assertStringIncludes(html, 'data-action-target-status="draft"');
+        assertStringIncludes(html, "Drag this Plan Card to an allowed status column");
+        assertEquals(html.includes("Move to Feedback"), false);
     } finally {
         await Deno.remove(cwd, { recursive: true });
     }
@@ -566,6 +583,24 @@ Deno.test("workspace lifecycle action metadata blocks protected status movement 
         holdReason: "",
     });
     assertEquals(createPutOnHoldIntent({ planId: "p1", fromStatus: "draft", holdReason: null }), null);
+
+    const allowed = parseAllowedTargetStatuses("feedback approved ready_for_work");
+    assertEquals(
+        isAllowedDropTarget({ fromStatus: "draft", targetStatus: "approved", allowedTargetStatuses: allowed }),
+        true,
+    );
+    assertEquals(
+        isAllowedDropTarget({ fromStatus: "draft", targetStatus: "draft", allowedTargetStatuses: allowed }),
+        false,
+    );
+    assertEquals(
+        isAllowedDropTarget({ fromStatus: "draft", targetStatus: "verified", allowedTargetStatuses: allowed }),
+        false,
+    );
+    assertEquals(
+        blockedDropMessage({ planName: "p1", targetStatus: "verified", allowedTargetStatuses: allowed }),
+        "p1 cannot move to verified. Available columns: feedback, approved, ready_for_work.",
+    );
 });
 
 Deno.test("Workspace lifecycle API mutates through lifecycle events and blocks invalid actions", async () => {

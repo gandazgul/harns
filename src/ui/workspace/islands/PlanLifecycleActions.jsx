@@ -84,8 +84,8 @@ export async function dispatchPlanLifecycleAction(intent) {
     return { response, payload };
 }
 
-/** @param {{ plan: any, compact?: boolean, epic?: boolean }} props */
-export function PlanLifecycleActions({ plan, compact = false, epic = false }) {
+/** @param {{ plan: any, compact?: boolean, epic?: boolean, showStatusMoves?: boolean }} props */
+export function PlanLifecycleActions({ plan, compact = false, epic = false, showStatusMoves = true }) {
     const actions = plan.actions || {};
     const [pending, setPending] = useState(false);
     const [message, setMessage] = useState("");
@@ -138,7 +138,8 @@ export function PlanLifecycleActions({ plan, compact = false, epic = false }) {
     const resumeFromHoldLabel = lifecycleActionLabel(actions, PLAN_LIFECYCLE_ACTIONS.RESUME_FROM_HOLD);
     const resetToDraftLabel = lifecycleActionLabel(actions, PLAN_LIFECYCLE_ACTIONS.RESET_TO_DRAFT);
 
-    const hasPrimaryControls = actions.manualTargetOptions?.length || actions.canCloseWithoutVerification ||
+    const hasStatusMoveControls = showStatusMoves && actions.manualTargetOptions?.length;
+    const hasPrimaryControls = hasStatusMoveControls || actions.canCloseWithoutVerification ||
         actions.canPutOnHold || actions.canResumeFromHold || actions.canResetToDraft;
 
     return (
@@ -148,23 +149,25 @@ export function PlanLifecycleActions({ plan, compact = false, epic = false }) {
             {hasPrimaryControls
                 ? (
                     <div class="lifecycle-action-list" aria-label="Plan lifecycle actions">
-                        {actions.manualTargetOptions?.map(/** @param {any} target */ (target) => (
-                            <button
-                                type="button"
-                                class="secondary-action lifecycle-action"
-                                disabled={disabled}
-                                data-action="move_status"
-                                data-action-target-status={target.status}
-                                onClick={() =>
-                                    submit(createMoveStatusIntent({
-                                        planId: plan.planId,
-                                        fromStatus: plan.status,
-                                        toStatus: target.status,
-                                    }))}
-                            >
-                                Move to {target.label}
-                            </button>
-                        ))}
+                        {showStatusMoves
+                            ? actions.manualTargetOptions?.map(/** @param {any} target */ (target) => (
+                                <button
+                                    type="button"
+                                    class="secondary-action lifecycle-action"
+                                    disabled={disabled}
+                                    data-action="move_status"
+                                    data-action-target-status={target.status}
+                                    onClick={() =>
+                                        submit(createMoveStatusIntent({
+                                            planId: plan.planId,
+                                            fromStatus: plan.status,
+                                            toStatus: target.status,
+                                        }))}
+                                >
+                                    Move to {target.label}
+                                </button>
+                            ))
+                            : null}
                         {actions.canPutOnHold
                             ? <button type="button" disabled={disabled} onClick={hold}>{putOnHoldLabel}</button>
                             : null}
