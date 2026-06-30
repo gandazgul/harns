@@ -195,11 +195,12 @@ body {
 .clickable-card {
     cursor: pointer;
     position: relative;
-    transition: border-color 0.15s ease, transform 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.18s ease, transform 0.15s ease;
 }
 .clickable-card:hover {
     border-color: #60a5fa;
-    transform: translateY(-1px);
+    box-shadow: 0 22px 60px #0007, 0 0 0 1px #60a5fa33;
+    transform: translateY(-2px);
 }
 .card-hit-area {
     border-radius: inherit;
@@ -635,6 +636,136 @@ button.primary-action:disabled {
 
 .plan-card[data-plan-id] {
     touch-action: manipulation;
+}
+
+.sr-only {
+    border: 0;
+    clip: rect(0 0 0 0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
+
+.plan-card[data-draggable-plan-card="true"] {
+    cursor: grab;
+    outline-offset: 4px;
+}
+
+.plan-card[data-draggable-plan-card="true"] .card-hit-area {
+    cursor: grab;
+}
+
+.plan-card[data-draggable-plan-card="true"]:active,
+.status-board.is-dragging-plan .plan-card[data-draggable-plan-card="true"] {
+    cursor: grabbing;
+}
+
+.drag-grip {
+    align-items: center;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 999px;
+    color: #bfdbfe;
+    display: inline-flex;
+    font-size: 1rem;
+    font-weight: 900;
+    height: 1.9rem;
+    justify-content: center;
+    letter-spacing: -0.2rem;
+    padding-right: 0.2rem;
+    width: 1.9rem;
+}
+
+.plan-card[data-draggable-plan-card="true"]:hover .drag-grip {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px #60a5fa22;
+}
+
+.status-board.is-dragging-plan .plan-card:not(.is-drag-source) {
+    opacity: 0.72;
+}
+
+.plan-card.is-drag-source {
+    border-color: #93c5fd;
+    box-shadow: 0 26px 70px #0008, 0 0 0 2px #60a5fa66;
+    opacity: 0.55;
+    transform: rotate(1deg) scale(1.015);
+}
+
+.drag-image-card {
+    box-shadow: 0 28px 90px #0009, 0 0 0 2px #93c5fd;
+    opacity: 0.96;
+    pointer-events: none;
+    transform: rotate(2deg);
+    z-index: 9999;
+}
+
+.board-column.drop-allowed {
+    background: linear-gradient(180deg, #0f2f2a, #0f172a 48%);
+    border-color: #22c55e;
+    box-shadow: inset 0 0 0 2px #22c55e66, 0 18px 45px #22c55e22;
+}
+
+.board-column.drop-blocked {
+    background: linear-gradient(180deg, #311313, #0f172a 48%);
+    border-color: #f97316;
+    box-shadow: inset 0 0 0 2px #f9731666, 0 18px 45px #f9731622;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.board-column.drop-blocked::after {
+    align-items: center;
+    background: #7f1d1dcc;
+    border: 1px solid #fb923c;
+    border-radius: 999px;
+    color: #fed7aa;
+    content: "⊘";
+    display: inline-flex;
+    font-size: 1.25rem;
+    font-weight: 900;
+    height: 2.25rem;
+    justify-content: center;
+    position: absolute;
+    right: 0.85rem;
+    top: 0.85rem;
+    width: 2.25rem;
+}
+
+.board-column.drop-target-active .column-cards {
+    outline: 2px dashed #93c5fd;
+    outline-offset: 6px;
+}
+
+.plan-card.drop-rejected {
+    animation: invalid-drop-fly-back 0.42s ease-in-out;
+}
+
+@keyframes invalid-drop-fly-back {
+    0% {
+        transform: translateX(0) rotate(0);
+    }
+    25% {
+        transform: translateX(16px) rotate(1.5deg);
+    }
+    55% {
+        transform: translateX(-12px) rotate(-1.5deg);
+    }
+    100% {
+        transform: translateX(0) rotate(0);
+    }
+}
+
+.board-dnd-status {
+    margin: 0.5rem 0 1rem;
+}
+
+.status-board.is-drop-pending {
+    cursor: progress;
 }
 
 .plan-card .lifecycle-actions button,
