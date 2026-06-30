@@ -20,6 +20,7 @@ import {
     lifecycleActionLabel,
 } from "./islands/PlanLifecycleActions.jsx";
 import { createWorkspaceApp, hasWorkspaceToken } from "./server.js";
+import { renderWorkspaceThemeCss } from "./server/theme-css.js";
 
 /**
  * @param {string} cwd
@@ -339,6 +340,32 @@ Deno.test("renderMarkdown renders links and escapes unsafe markdown input", () =
     assertStringIncludes(html, "<pre");
 });
 
+Deno.test("renderWorkspaceThemeCss maps agent theme tokens to workspace CSS variables", () => {
+    const css = renderWorkspaceThemeCss({
+        name: 'agent "theme"',
+        fgColors: {
+            accent: "#abcdef",
+            borderAccent: "#123456",
+            text: "",
+            muted: 244,
+            error: "#fedcba",
+        },
+        bgColors: {
+            toolPendingBg: "#010203",
+            selectedBg: "#111213",
+        },
+    });
+
+    assertStringIncludes(css, '--rw-theme-name: "agent \\"theme\\""');
+    assertStringIncludes(css, "--rw-page-bg: #010203;");
+    assertStringIncludes(css, "--rw-surface-raised: #111213;");
+    assertStringIncludes(css, "--rw-accent: #abcdef;");
+    assertStringIncludes(css, "--rw-accent-strong: #123456;");
+    assertStringIncludes(css, "--rw-error: #fedcba;");
+    assertStringIncludes(css, "--rw-text: #e2e8f0;");
+    assertStringIncludes(css, "--rw-text-muted: #cbd5e1;");
+});
+
 Deno.test("Fresh Workspace rejects missing token and SSR-renders status column board cards", async () => {
     const cwd = await Deno.makeTempDir();
     try {
@@ -351,10 +378,14 @@ Deno.test("Fresh Workspace rejects missing token and SSR-renders status column b
         const app = createWorkspaceApp({ cwd, token: "secret" }).handler();
         const rejected = await app(new Request("http://localhost/"));
         assertEquals(rejected.status, 401);
+        const themeCss = await app(new Request("http://localhost/theme.css"));
+        assertEquals(themeCss.status, 200);
+        assertStringIncludes(await themeCss.text(), "--rw-theme-name:");
 
         const accepted = await app(new Request("http://localhost/?token=secret"));
         assertEquals(accepted.status, 200);
         const html = await accepted.text();
+        assertStringIncludes(html, '<link rel="stylesheet" href="/theme.css"');
         assertStringIncludes(html, "Draft");
         assertStringIncludes(html, "Ready for Work");
         assertStringIncludes(html, "workspace-card");

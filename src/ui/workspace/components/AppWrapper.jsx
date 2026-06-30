@@ -7,6 +7,7 @@ export function AppWrapper({ Component }) {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>RunWield Workspace</title>
                 <link rel="stylesheet" href="/styles.css" />
+                <link rel="stylesheet" href="/theme.css" />
             </head>
             <body>
                 <Component />
