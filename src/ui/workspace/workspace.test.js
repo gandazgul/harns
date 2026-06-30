@@ -404,6 +404,9 @@ Deno.test("Workspace API and detail route return readable editable Plan body met
         assertStringIncludes(html, "Readable body");
         assertStringIncludes(html, 'href="https://runwield.dev"');
         assertStringIncludes(html, "RunWield");
+        assertStringIncludes(html, ">Put on hold</button>");
+        assertStringIncludes(html, 'class="danger-action lifecycle-action"');
+        assertStringIncludes(html, ">Close without verification</button>");
         assertStringIncludes(html, ">Edit</a>");
         assertStringIncludes(html, ">Close</a>");
         assertStringIncludes(html, "edit=body");
