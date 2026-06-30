@@ -366,6 +366,13 @@ Deno.test("renderWorkspaceThemeCss maps agent theme tokens to workspace CSS vari
     assertStringIncludes(css, "--rw-text-muted: #cbd5e1;");
 });
 
+Deno.test("workspace detail header CSS lets lifecycle actions wrap without squeezing summary", async () => {
+    const css = await Deno.readTextFile(new URL("./static/styles.css", import.meta.url));
+    assertStringIncludes(css, ".split-header {\n    align-items: flex-start;\n    display: grid;");
+    assertStringIncludes(css, "grid-template-columns: minmax(0, 1fr);");
+    assertStringIncludes(css, ".header-actions .lifecycle-actions {\n    flex: 1 1 100%;");
+});
+
 Deno.test("Fresh Workspace rejects missing token and SSR-renders status column board cards", async () => {
     const cwd = await Deno.makeTempDir();
     try {
