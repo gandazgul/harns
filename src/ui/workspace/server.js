@@ -17,6 +17,7 @@ import {
     plansApi,
     workspaceApi,
 } from "./routes/api/handlers.js";
+import { loadWorkspaceThemeCss } from "./server/theme-css.js";
 
 const WORKSPACE_DIR = dirname(fromFileUrl(import.meta.url));
 const STYLES_PATH = join(WORKSPACE_DIR, "static", "styles.css");
@@ -40,7 +41,13 @@ export function createWorkspaceApp({ cwd, token, skipTokenCheck = false }) {
     app.use(async (ctx) => {
         ctx.state.cwd = cwd;
         if (skipTokenCheck) return await ctx.next();
-        if (ctx.url.pathname === "/styles.css" || ctx.url.pathname === "/logo.svg") return await ctx.next();
+        if (
+            ctx.url.pathname === "/styles.css" ||
+            ctx.url.pathname === "/theme.css" ||
+            ctx.url.pathname === "/logo.svg"
+        ) {
+            return await ctx.next();
+        }
         if (!hasWorkspaceToken(ctx.req, token)) {
             return new Response("Workspace token required.", { status: 401 });
         }
@@ -48,6 +55,10 @@ export function createWorkspaceApp({ cwd, token, skipTokenCheck = false }) {
     });
     app.get("/styles.css", async () => {
         const css = await Deno.readTextFile(STYLES_PATH);
+        return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
+    });
+    app.get("/theme.css", async () => {
+        const css = await loadWorkspaceThemeCss();
         return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
     });
     app.get("/logo.svg", async () => {
