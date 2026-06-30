@@ -82,9 +82,9 @@ export function EpicDetail({ epic, url }) {
                             </p>
                         )
                         : null}
-                    <PlanLifecycleActions plan={epic} epic />
                 </div>
                 <div class="header-actions" aria-label="Epic detail actions">
+                    <PlanLifecycleActions plan={epic} epic />
                     <a class="secondary-action" href={closeHref}>Close</a>
                 </div>
             </header>

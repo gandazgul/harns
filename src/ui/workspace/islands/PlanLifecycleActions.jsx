@@ -84,8 +84,24 @@ export async function dispatchPlanLifecycleAction(intent) {
     return { response, payload };
 }
 
-/** @param {{ plan: any, compact?: boolean, epic?: boolean, showStatusMoves?: boolean }} props */
-export function PlanLifecycleActions({ plan, compact = false, epic = false, showStatusMoves = true }) {
+/**
+ * @param {{
+ *   plan: any,
+ *   compact?: boolean,
+ *   epic?: boolean,
+ *   showStatusMoves?: boolean,
+ *   showPutOnHold?: boolean,
+ *   putOnHoldOnly?: boolean,
+ * }} props
+ */
+export function PlanLifecycleActions({
+    plan,
+    compact = false,
+    epic = false,
+    showStatusMoves = true,
+    showPutOnHold = true,
+    putOnHoldOnly = false,
+}) {
     const actions = plan.actions || {};
     const [pending, setPending] = useState(false);
     const [message, setMessage] = useState("");
@@ -138,12 +154,23 @@ export function PlanLifecycleActions({ plan, compact = false, epic = false, show
     const resumeFromHoldLabel = lifecycleActionLabel(actions, PLAN_LIFECYCLE_ACTIONS.RESUME_FROM_HOLD);
     const resetToDraftLabel = lifecycleActionLabel(actions, PLAN_LIFECYCLE_ACTIONS.RESET_TO_DRAFT);
 
-    const hasStatusMoveControls = showStatusMoves && actions.manualTargetOptions?.length;
-    const hasPrimaryControls = hasStatusMoveControls || actions.canCloseWithoutVerification ||
-        actions.canPutOnHold || actions.canResumeFromHold || actions.canResetToDraft;
+    const canShowPutOnHold = showPutOnHold && actions.canPutOnHold;
+    const canShowCloseWithoutVerification = !putOnHoldOnly && actions.canCloseWithoutVerification;
+    const canShowResumeFromHold = !putOnHoldOnly && actions.canResumeFromHold;
+    const canShowResetToDraft = !putOnHoldOnly && actions.canResetToDraft;
+    const hasStatusMoveControls = !putOnHoldOnly && showStatusMoves && actions.manualTargetOptions?.length;
+    const hasPrimaryControls = hasStatusMoveControls || canShowCloseWithoutVerification ||
+        canShowPutOnHold || canShowResumeFromHold || canShowResetToDraft;
+
+    if (putOnHoldOnly && !canShowPutOnHold) return null;
 
     return (
-        <section class={compact ? "lifecycle-actions compact" : "lifecycle-actions"} data-plan-id={plan.planId}>
+        <section
+            class={`${compact ? "lifecycle-actions compact" : "lifecycle-actions"}${
+                putOnHoldOnly ? " hold-action-only" : ""
+            }`}
+            data-plan-id={plan.planId}
+        >
             {actions.terminalMessage ? <p class="terminal-message">{actions.terminalMessage}</p> : null}
             {plan.status === "on_hold" ? <p class="hold-message">{actions.holdMessage}</p> : null}
             {hasPrimaryControls
@@ -168,13 +195,23 @@ export function PlanLifecycleActions({ plan, compact = false, epic = false, show
                                 </button>
                             ))
                             : null}
-                        {actions.canPutOnHold
-                            ? <button type="button" disabled={disabled} onClick={hold}>{putOnHoldLabel}</button>
-                            : null}
-                        {actions.canCloseWithoutVerification
+                        {canShowPutOnHold
                             ? (
                                 <button
                                     type="button"
+                                    class="secondary-action lifecycle-action hold-action"
+                                    disabled={disabled}
+                                    onClick={hold}
+                                >
+                                    {putOnHoldLabel}
+                                </button>
+                            )
+                            : null}
+                        {canShowCloseWithoutVerification
+                            ? (
+                                <button
+                                    type="button"
+                                    class="danger-action lifecycle-action"
                                     disabled={disabled}
                                     onClick={() =>
                                         confirm(`${closeWithoutVerificationLabel}?`) && submit({
@@ -187,7 +224,7 @@ export function PlanLifecycleActions({ plan, compact = false, epic = false, show
                                 </button>
                             )
                             : null}
-                        {actions.canResumeFromHold
+                        {canShowResumeFromHold
                             ? (
                                 <button
                                     type="button"
@@ -204,10 +241,11 @@ export function PlanLifecycleActions({ plan, compact = false, epic = false, show
                                 </button>
                             )
                             : null}
-                        {actions.canResetToDraft
+                        {canShowResetToDraft
                             ? (
                                 <button
                                     type="button"
+                                    class="secondary-action lifecycle-action"
                                     disabled={disabled}
                                     onClick={() =>
                                         confirm(`${resetToDraftLabel}?`) && submit({

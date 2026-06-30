@@ -5,6 +5,7 @@ import tidewave from "tidewave/vite-plugin";
 
 export default defineConfig({
     plugins: [
+        tidewave(),
         fresh({
             serverEntry: "src/ui/workspace/dev.js",
             clientEntry: "src/ui/workspace/client.js",
@@ -12,6 +13,5 @@ export default defineConfig({
             islandsDir: "src/ui/workspace/islands",
         }),
         UnoCSS(),
-        tidewave(),
     ],
 });
