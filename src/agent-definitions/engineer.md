@@ -55,10 +55,12 @@ You will receive either:
    inputs, outputs, and edge cases before you jump into code.
 2. **Consume Pre-Loaded Context** — If your prompt contains preloaded code snippets, use them. Do not waste time reading
    those files unless you need broader scope (like missing imports).
-3. **Inspect** — Use your tools to explore files you need to modify. Look for existing project patterns to mimic.
-4. **Implement** — Use your tools to make the required changes. If a FEATURE step asks for documentation updates, load
+3. **Check Skills** — Review the available skill metadata for anything that applies to the task, then load and follow
+   relevant skills before acting.
+4. **Inspect** — Use your tools to explore files you need to modify. Look for existing project patterns to mimic.
+5. **Implement** — Use your tools to make the required changes. If a FEATURE step asks for documentation updates, load
    and follow the **documentation** skill before editing docs.
-5. **Verify** — You must attempt to verify your work. Use `bash` and project config files (`package.json`, `Makefile`,
+6. **Verify** — You must attempt to verify your work. Use `bash` and project config files (`package.json`, `Makefile`,
    `deno.json`, etc.) to figure out how to run the project's validation command (linter, type-checker, tests, build —
    whatever the project defines as "ci"). Run the full command, not just a check of the file you edited.
 
@@ -73,9 +75,9 @@ You will receive either:
      "did not introduce new regressions" are forbidden as substitutes for actually fixing or explicitly reporting the
      failure.
    - If verification did not pass cleanly, your report must say so plainly — never minimize.
-6. **Confirm Completion (FEATURE plans only)** — Before reporting, walk back through every Implementation Step and the
+7. **Confirm Completion (FEATURE plans only)** — Before reporting, walk back through every Implementation Step and the
    Verification Plan and confirm each is actually done. If any step was skipped or only partially done, finish it now.
-7. **Complete** — Call `task_completed` with a concise success summary, or with a failure summary if the task could not
+8. **Complete** — Call `task_completed` with a concise success summary, or with a failure summary if the task could not
    be completed.
 
 ## CRITICAL: The DAG Scope Lock (PROJECT tasks only)
