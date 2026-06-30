@@ -152,13 +152,13 @@ export function PlanDetail({ plan, url, editIntent = false }) {
                     </div>
                 </div>
                 <div class="header-actions" aria-label="Plan detail actions">
+                    <PlanLifecycleActions plan={plan} />
                     {editIntent ? null : <a class="primary-action" href={editHref}>Edit</a>}
                     <a class="secondary-action" href={closeHref}>Close</a>
                 </div>
             </header>
             <section class="detail-grid">
                 <div>
-                    <PlanLifecycleActions plan={plan} />
                     <PlanBodyEditor plan={plan} initialEdit={editIntent} />
                 </div>
                 <aside>
