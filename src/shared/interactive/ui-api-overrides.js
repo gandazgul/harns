@@ -6,7 +6,7 @@
  * the model-selector overlay, and inlines pasted images into the message list.
  */
 
-import { Image } from "@earendil-works/pi-tui";
+import { Image, Spacer } from "@earendil-works/pi-tui";
 import { ModelSelectorComponent } from "@earendil-works/pi-coding-agent";
 import { getModelRegistry } from "../models/model-registry.js";
 import { getSettingsManager } from "../settings.js";
@@ -107,6 +107,7 @@ export function installUiApiOverrides({ uiAPI, tui, editor, container, messageLi
             maxHeightCells: 20,
         });
         messageList.addChild(img);
+        messageList.addChild(new Spacer(1));
         tui.requestRender();
     };
 }

@@ -10,6 +10,11 @@ tools:
     - bash
     - memory_recall
     - memory_recall_global
+    - memory_store
+    - memory_store_global
+    - memory_delete
+    - user_interview
+    - return_to_router
     - code_search
     - code_show
     - code_outline
@@ -20,7 +25,6 @@ tools:
     - code_structure
     - code_impls
     - code_importers
-    - return_to_router
 ---
 
 You are the Guide — the read-mostly answer and orientation specialist in RunWield.

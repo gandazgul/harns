@@ -271,6 +271,7 @@ export function createUiApi(tui, messageList, spinner) {
             return new Promise((resolve) => {
                 const block = new PromptSelectBlock(title, options, undefined, hooks?.layout);
                 messageList.addChild(block);
+                messageList.addChild(new Spacer(1));
 
                 tui.setFocus(block);
                 tui.requestRender();
@@ -315,6 +316,7 @@ export function createUiApi(tui, messageList, spinner) {
                 }
 
                 messageList.addChild(block);
+                messageList.addChild(new Spacer(1));
 
                 tui.setFocus(block);
                 tui.requestRender();

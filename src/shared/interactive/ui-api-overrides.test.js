@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { Spacer } from "@earendil-works/pi-tui";
 import { installUiApiOverrides } from "./ui-api-overrides.js";
 
 class FakeImage {
@@ -120,13 +121,14 @@ Deno.test("installUiApiOverrides appends images unless output is suppressed", ()
     installUiApiOverrides({ ...harness, __deps: harness.deps });
 
     harness.uiAPI.appendImage("abc", "image/png");
-    assertEquals(harness.messageList.children.length, 1);
+    assertEquals(harness.messageList.children.length, 2);
     assertEquals(harness.messageList.children[0] instanceof FakeImage, true);
+    assertEquals(harness.messageList.children[1] instanceof Spacer, true);
     assertEquals(harness.stats.renders, 1);
 
     harness.uiAPI.isOutputSuppressed = () => true;
     harness.uiAPI.appendImage("hidden", "image/png");
-    assertEquals(harness.messageList.children.length, 1);
+    assertEquals(harness.messageList.children.length, 2);
 });
 
 Deno.test("installUiApiOverrides replaces editor with selector and restores after model select", async () => {
