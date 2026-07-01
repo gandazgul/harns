@@ -136,6 +136,7 @@ Deno.test("createUiApi promptSelect resolves selection, cancellation, and select
         onSelectionChange: (/** @type {string} */ value) => previews.push(value),
     });
     const selectBlock = focus();
+    assertEquals(messageList.children[1] instanceof Spacer, true);
     selectBlock.list.onSelectionChange({ value: "two" });
     selectBlock.list.onSelect({ value: "two" });
 
@@ -143,6 +144,7 @@ Deno.test("createUiApi promptSelect resolves selection, cancellation, and select
     assertEquals(previews, ["two"]);
 
     const cancelPromise = ui.promptSelect("Cancel", [{ value: "one", label: "One" }]);
+    assertEquals(messageList.children[3] instanceof Spacer, true);
     focus().list.onCancel();
     assertEquals(await cancelPromise, null);
 });
@@ -153,6 +155,7 @@ Deno.test("createUiApi promptText resolves submit, rejects empty required submit
 
     const textPromise = ui.promptText("Name", { defaultValue: "Ada", allowEmpty: false });
     const textBlock = focus();
+    assertEquals(messageList.children[1] instanceof Spacer, true);
     textBlock.input.onSubmit("");
     assertEquals(await textPromise, "Ada");
 
