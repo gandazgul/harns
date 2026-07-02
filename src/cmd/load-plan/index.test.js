@@ -9,7 +9,7 @@ function makeUi() {
     const messages = [];
     /** @type {Array<unknown>} */
     const selections = [];
-    /** @type {Array<{ prompt: string, options: Array<{ value: string, label: string, description?: string }> }>} */
+    /** @type {Array<{ prompt: string, options: Array<{ value: string, label: string, description?: string }>, config?: unknown }>} */
     const prompts = [];
 
     return {
@@ -20,10 +20,11 @@ function makeUi() {
             appendSystemMessage: (msg) => messages.push(String(msg)),
             appendAgentMessageStart: () => ({ appendText: () => {} }),
             requestRender: () => {},
-            promptSelect: (prompt, options = []) => {
+            promptSelect: (prompt, options = [], config) => {
                 prompts.push({
                     prompt: String(prompt),
                     options: /** @type {Array<{ value: string, label: string, description?: string }>} */ (options),
+                    config,
                 });
                 return Promise.resolve(selections.shift() ?? null);
             },
@@ -162,6 +163,58 @@ Deno.test("runLoadPlanCommand no-arg TUI menu excludes child plans and shows top
     assertEquals(prompts[0].options.map((option) => option.value), ["epic-a", "standalone"]);
     assertEquals(prompts[0].options[0].label.includes("Top Epic summary"), true);
     assertEquals(prompts[0].options[0].label.includes("Epic / ready_for_work"), true);
+    assertEquals(prompts[0].options[0].description, "PROJECT - ready_for_work");
+    assertEquals(
+        /** @type {{ layout?: { maxPrimaryColumnWidth?: number } }} */ (prompts[0].config).layout
+            ?.maxPrimaryColumnWidth,
+        96,
+    );
+});
+
+Deno.test("runLoadPlanCommand no-arg TUI menu sorts by status then name with on_hold last", async () => {
+    const { uiAPI, selections, prompts } = makeUi();
+    const editor = /** @type {import('../../shared/ui/types.js').EditorAPI} */ ({
+        disableSubmit: true,
+        setText: () => {},
+        setAutocompleteProvider: () => {},
+        handleInput: () => {},
+    });
+    selections.push(null);
+
+    await runLoadPlanCommand([], {
+        uiAPI,
+        editor,
+        __testDeps: /** @type {any} */ ({
+            parseArgs: () => ({ help: false, _: [] }),
+            listPlans: () =>
+                Promise.resolve([
+                    { name: "z-draft", attrs: { classification: "FEATURE", status: "draft" } },
+                    { name: "b-on-hold", attrs: { classification: "FEATURE", status: "on_hold" } },
+                    { name: "b-ready", attrs: { classification: "FEATURE", status: "ready_for_work" } },
+                    { name: "a-ready", attrs: { classification: "FEATURE", status: "ready_for_work" } },
+                    {
+                        name: "c-decompose",
+                        attrs: { classification: "PROJECT", type: "epic", status: "ready_for_decomposition" },
+                    },
+                    { name: "a-implemented", attrs: { classification: "FEATURE", status: "implemented" } },
+                    { name: "a-draft", attrs: { classification: "FEATURE", status: "draft" } },
+                    { name: "a-on-hold", attrs: { classification: "FEATURE", status: "on_hold" } },
+                ]),
+            resetTuiState: () => {},
+            setActiveAgent: () => {},
+        }),
+    });
+
+    assertEquals(prompts[0].options.map((option) => option.value), [
+        "a-ready",
+        "b-ready",
+        "c-decompose",
+        "a-implemented",
+        "a-draft",
+        "z-draft",
+        "a-on-hold",
+        "b-on-hold",
+    ]);
 });
 
 Deno.test("runLoadPlanCommand no-arg TUI reports when only child plans exist", async () => {
