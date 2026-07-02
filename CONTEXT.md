@@ -170,7 +170,7 @@ binding, and behavioral policy. _Avoid_: Bot, assistant, model, skill
 **Router**: The default Agent Definition prompted to perform Triage and emit a Triage Report. _Avoid_: Dispatcher,
 orchestrator, classifier, triager
 
-**Operator**: The execution Agent for `QUICK_FIX` work. _Avoid_: Executor, fixer, worker
+**Operator**: The execution Agent for `OPERATION` work. _Avoid_: Executor, fixer, worker
 
 **Planner**: The planning Agent for `FEATURE` work. _Avoid_: Designer, strategist
 
@@ -247,8 +247,8 @@ Current PROJECT Epics do not use Task Dispatch. _Avoid_: Decomposition, child FE
 **Task Completion**: The `task_completed` signal an execution Agent emits when its assigned work is complete. _Avoid_:
 Done message, final response
 
-**Scope Escalation**: An execution-time discovery that a `QUICK_FIX` likely needs FEATURE or PROJECT workflow before
-continuing. _Avoid_: Surprise return, silent reroute
+**Scope Escalation**: An execution-time discovery that active work is larger than the current Routing Intent and must
+return to Router with context before continuing. _Avoid_: Surprise return, silent reroute
 
 **Integration Point**: The final tester-owned Task in a legacy non-Epic PROJECT Task graph that depends on every prior
 Task and checks cross-slice integration before Workflow Validation. _Avoid_: Final verification task, cross-slice
@@ -323,7 +323,7 @@ command definition, prompt command
   **Affected Paths**.
 - **Diagnostic Triage** is a read-only specialization of **Triage** used for unknown-cause broken behavior; it still
   emits a normal **Routing Intent** rather than a bug-specific intent.
-- A **QUICK_FIX** is executed directly by the **Operator** and creates no **Plan**.
+- An **OPERATION** is executed directly by the **Operator** and creates no **Plan**.
 - A **FEATURE** is planned by the **Planner**, reviewed through one **Review Loop**, and executed by the **Engineer**
   after approval.
 - A **PROJECT** is planned by the **Architect** as an **Epic**, decomposed by the **Slicer** into one or more **Child
@@ -361,10 +361,14 @@ command definition, prompt command
   FEATURE Plans; the Epic itself is a decomposition container.
 - `OPERATION` work is owned by the **Operator** and ends when the **Operator** emits **Task Completion** after any
   needed self-verification.
-- `QUICK_FIX` work is owned by the **Engineer** and runs **Mechanical Validation** after **Task Completion**; failures
-  are sent back to the **Engineer**, but no **Reviewer** runs because there is no **Plan**.
-- A **Scope Escalation** should present the larger-scope finding to the user and ask whether to continue via Router
-  rather than abruptly calling the **Return-to-Router Tool**.
+- Dependency updates may be `OPERATION` work only when the user explicitly asks for them and self-verification passes
+  without requiring code changes; CI failures or required code edits trigger **Scope Escalation** back to **Router**
+  with context.
+- `QUICK_FIX` work is owned by the **Engineer** and runs **Mechanical Validation** after **Task Completion**; CI
+  failures are sent back to the **Engineer** for up to three total repair attempts, but no **Reviewer** runs because
+  there is no **Plan**.
+- A **Scope Escalation** should call the **Return-to-Router Tool** with a concise summary and relevant paths for fresh
+  **Triage**, relying on the shared session history for detailed prior output rather than repeating full CI logs.
 - Every **Agent Session** loads exactly one **Agent Definition** after bundled, home, and local layers are merged.
 - An **Agent** owns work and may load one or more **Skills** to apply specialized techniques without changing the owning
   Agent Session.
@@ -416,3 +420,5 @@ command definition, prompt command
 - "approved" previously meant both user-approved and executable; resolved: only **Ready For Work** means executable.
 - "workflow outcome" sounded durable and overlapped with **Plan Event** and **Plan Status**; resolved: use **Workflow
   Decision** for ephemeral routing instructions after interpreting runtime results.
+- `QUICK_FIX` previously mixed operational work and small code changes; resolved: use **OPERATION** for direct non-code
+  operations and **QUICK_FIX** for bounded no-plan code implementation.
