@@ -161,8 +161,7 @@ Deno.test("runLoadPlanCommand no-arg TUI menu excludes child plans and shows top
 
     assertEquals(messages.length, 0);
     assertEquals(prompts[0].options.map((option) => option.value), ["epic-a", "standalone"]);
-    assertEquals(prompts[0].options[0].label.includes("Top Epic summary"), true);
-    assertEquals(prompts[0].options[0].label.includes("Epic / ready_for_work"), true);
+    assertEquals(prompts[0].options[0].label, "epic-a — Top Epic summary");
     assertEquals(prompts[0].options[0].description, "PROJECT - ready_for_work");
     assertEquals(
         /** @type {{ layout?: { maxPrimaryColumnWidth?: number } }} */ (prompts[0].config).layout
