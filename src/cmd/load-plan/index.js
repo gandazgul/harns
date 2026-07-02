@@ -1751,18 +1751,42 @@ function isActionableNextChild(child) {
 }
 
 /**
+ * @param {string | undefined} status
+ * @returns {number}
+ */
+function getLoadPlanMenuStatusRank(status) {
+    if (status === "ready_for_work") return 0;
+    if (status === "ready_for_decomposition") return 1;
+    if (status === "implemented") return 2;
+    if (status === "on_hold") return 4;
+    return 3;
+}
+
+/**
+ * @param {{ name: string, attrs: Partial<import('../../plan-store.js').PlanFrontMatter> }} left
+ * @param {{ name: string, attrs: Partial<import('../../plan-store.js').PlanFrontMatter> }} right
+ * @returns {number}
+ */
+function compareTopLevelPlansForMenu(left, right) {
+    const statusDelta = getLoadPlanMenuStatusRank(left.attrs.status) - getLoadPlanMenuStatusRank(right.attrs.status);
+    if (statusDelta !== 0) return statusDelta;
+    return left.name.localeCompare(right.name);
+}
+
+/**
  * @param {{ name: string, attrs: Partial<import('../../plan-store.js').PlanFrontMatter> }} plan
  * @returns {{ value: string, label: string, description: string }}
  */
 function formatTopLevelPlanOption(plan) {
     const summary = plan.attrs.summary ? ` — ${plan.attrs.summary}` : "";
     const type = isEpicPlan(plan.attrs) ? "Epic" : plan.attrs.classification;
+    const descriptionType = plan.attrs.classification === "PROJECT" || !plan.attrs.type
+        ? plan.attrs.classification
+        : `${plan.attrs.classification}:${plan.attrs.type}`;
     return {
         value: plan.name,
         label: `${plan.name} [${type} / ${plan.attrs.status}]${summary}`,
-        description: `${plan.attrs.classification}${
-            plan.attrs.type ? `:${plan.attrs.type}` : ""
-        } - ${plan.attrs.status}`,
+        description: `${descriptionType} - ${plan.attrs.status}`,
     };
 }
 
@@ -2201,10 +2225,10 @@ export async function runLoadPlanCommand(argv, options = {}) {
                 return;
             }
 
-            const planOptions = topLevelPlans.map(formatTopLevelPlanOption);
+            const planOptions = topLevelPlans.toSorted(compareTopLevelPlansForMenu).map(formatTopLevelPlanOption);
 
             const chosen = await options.uiAPI.promptSelect("Load plan:", planOptions, {
-                layout: { maxPrimaryColumnWidth: 72 },
+                layout: { maxPrimaryColumnWidth: 96 },
             });
             if (!chosen) {
                 options.editor.setText("");
