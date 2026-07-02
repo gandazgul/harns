@@ -1779,13 +1779,12 @@ function compareTopLevelPlansForMenu(left, right) {
  */
 function formatTopLevelPlanOption(plan) {
     const summary = plan.attrs.summary ? ` — ${plan.attrs.summary}` : "";
-    const type = isEpicPlan(plan.attrs) ? "Epic" : plan.attrs.classification;
     const descriptionType = plan.attrs.classification === "PROJECT" || !plan.attrs.type
         ? plan.attrs.classification
         : `${plan.attrs.classification}:${plan.attrs.type}`;
     return {
         value: plan.name,
-        label: `${plan.name} [${type} / ${plan.attrs.status}]${summary}`,
+        label: `${plan.name}${summary}`,
         description: `${descriptionType} - ${plan.attrs.status}`,
     };
 }
@@ -2262,8 +2261,6 @@ export async function runLoadPlanCommand(argv, options = {}) {
     let restoreAgentName = initialAgentName;
 
     try {
-        uiAPI.appendSystemMessage(`Loading plan: ${planArg}`, false, "RunWield");
-
         const plan = await resolvePlan(CWD, planArg);
         uiAPI.appendSystemMessage(`Plan loaded: ${plan.planName}`, false, "RunWield");
         uiAPI.appendSystemMessage(
@@ -2429,14 +2426,6 @@ export async function runLoadPlanCommand(argv, options = {}) {
         }
 
         if (plan.attrs.status === "approved" || isExecutablePlanStatus(plan.attrs.status)) {
-            uiAPI.appendSystemMessage(
-                plan.attrs.status === "approved"
-                    ? "This plan has been approved but is not ready for work yet."
-                    : "This plan is ready for work.",
-                false,
-                "RunWield",
-            );
-
             while (true) {
                 const answer = await uiAPI.promptSelect("What would you like to do?", [
                     { value: "proceed", label: "Proceed with execution" },
