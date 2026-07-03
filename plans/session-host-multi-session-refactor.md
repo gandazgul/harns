@@ -10,8 +10,8 @@ affectedPaths:
     - "docs/prd/runwield-acp-session-host-PRD.md"
 frontend: false
 createdAt: "2026-07-03T01:17:49-04:00"
-updatedAt: "2026-07-03T05:22:01.544Z"
-status: "ready_for_decomposition"
+updatedAt: "2026-07-03T05:36:00.000Z"
+status: "ready_for_work"
 origin: "internal"
 type: "epic"
 routingIntent: "PROJECT"
