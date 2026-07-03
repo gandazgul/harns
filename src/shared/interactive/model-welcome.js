@@ -1,16 +1,12 @@
 /**
  * @module shared/interactive/model-welcome
- * First-time no-model onboarding orchestration for the interactive TUI.
+ * No-model onboarding orchestration for the interactive TUI.
  */
 
 import { COMMAND_NAMES, commandRegistry as defaultCommandRegistry } from "../../cmd/registry.js";
 import { getModelRegistry as getModelRegistryFn } from "../models/model-registry.js";
 import { getSettingsManager as getSettingsManagerFn } from "../settings.js";
 import { theme } from "../ui/theme.js";
-import {
-    hasModelWelcomeBeenShown as hasModelWelcomeBeenShownFn,
-    recordModelWelcomeShown as recordModelWelcomeShownFn,
-} from "./model-welcome-state.js";
 
 /**
  * @typedef {Object} ModelAvailability
@@ -30,8 +26,6 @@ import {
  * @property {Record<string, { execute: (argv: string[], options?: import('../../cmd/registry.js').CommandContext) => Promise<void> }>} [commandRegistry]
  * @property {() => { getAvailable?: () => Array<unknown>, find?: (provider: string, id: string) => unknown }} [getModelRegistry]
  * @property {() => { getDefaultModel?: () => string | undefined, getDefaultProvider?: () => string | undefined }} [getSettingsManager]
- * @property {() => Promise<boolean>} [hasModelWelcomeBeenShown]
- * @property {() => Promise<void>} [recordModelWelcomeShown]
  * @property {(options?: import('../../cmd/registry.js').CommandContext) => Promise<void>} [quit]
  */
 
@@ -109,22 +103,9 @@ export async function maybeShowModelWelcome(options) {
     const getModelRegistry = options.getModelRegistry || getModelRegistryFn;
     const getSettingsManager = options.getSettingsManager || getSettingsManagerFn;
     const commandRegistry = options.commandRegistry || defaultCommandRegistry;
-    const hasModelWelcomeBeenShown = options.hasModelWelcomeBeenShown || hasModelWelcomeBeenShownFn;
-    const recordModelWelcomeShown = options.recordModelWelcomeShown || recordModelWelcomeShownFn;
-
     const initialAvailability = getConfiguredModelAvailability(getModelRegistry);
     if (initialAvailability.available) {
         return { shown: false, suppressBootBanner: false, noModel: false, setupCompleted: false };
-    }
-
-    if (await hasModelWelcomeBeenShown()) {
-        return {
-            shown: false,
-            suppressBootBanner: false,
-            noModel: true,
-            setupCompleted: false,
-            availabilityError: initialAvailability.error,
-        };
     }
 
     options.editor.disableSubmit = true;
@@ -138,7 +119,6 @@ export async function maybeShowModelWelcome(options) {
         initialAvailability.error ? `Model registry note: ${initialAvailability.error}` : "",
     ].filter(Boolean).join("\n");
 
-    await recordModelWelcomeShown();
     const choice = await options.uiAPI.promptSelect(
         title,
         [
