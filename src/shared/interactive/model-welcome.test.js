@@ -92,8 +92,6 @@ function makeHarness(selection, modelCommandSelectsDefault = true) {
                 rootBuilt++;
                 return Promise.resolve();
             },
-            hasModelWelcomeBeenShown: () => Promise.resolve(false),
-            recordModelWelcomeShown: () => Promise.resolve(),
         },
         rootBuilt: () => rootBuilt,
     };
@@ -135,35 +133,32 @@ Deno.test("available models bypass the first-run welcome", async () => {
     assertEquals(harness.editor.disableSubmit, false);
 });
 
-Deno.test("second no-model start does not suppress the boot banner", async () => {
-    const harness = makeHarness("subscription");
+Deno.test("no-model start shows welcome instead of relying on first-run state", async () => {
+    const harness = makeHarness(null);
+    let promptCount = 0;
     const result = await maybeShowModelWelcome({
         ...harness.options,
+        uiAPI: /** @type {any} */ ({
+            appendSystemMessage: (/** @type {string} */ message) => harness.messages.push(message),
+            promptSelect: () => {
+                promptCount++;
+                return Promise.resolve(null);
+            },
+        }),
         getModelRegistry: () => registryWithAvailable([]),
-        hasModelWelcomeBeenShown: () => Promise.resolve(true),
     });
 
-    assertEquals(result, {
-        shown: false,
-        suppressBootBanner: false,
-        noModel: true,
-        setupCompleted: false,
-        availabilityError: null,
-    });
-    assertEquals(harness.commands, []);
+    assertEquals(result, { shown: true, suppressBootBanner: true, noModel: true, setupCompleted: false });
+    assertEquals(promptCount, 1);
+    assertEquals(harness.commands, [{ name: COMMAND_NAMES.QUIT, argv: [] }]);
 });
 
-Deno.test("first no-model start records shown, suppresses the boot banner, and Esc quits", async () => {
+Deno.test("no-model start suppresses the boot banner, and Esc quits", async () => {
     const harness = makeHarness(null);
-    let recorded = 0;
     let quitCalled = 0;
     const result = await maybeShowModelWelcome({
         ...harness.options,
         getModelRegistry: () => registryWithAvailable([]),
-        recordModelWelcomeShown: () => {
-            recorded++;
-            return Promise.resolve();
-        },
         quit: () => {
             quitCalled++;
             return Promise.resolve();
@@ -171,7 +166,6 @@ Deno.test("first no-model start records shown, suppresses the boot banner, and E
     });
 
     assertEquals(result, { shown: true, suppressBootBanner: true, noModel: true, setupCompleted: false });
-    assertEquals(recorded, 1);
     assertEquals(quitCalled, 1);
     assertEquals(harness.commands, []);
     assertEquals(harness.editor.disableSubmit, true);
