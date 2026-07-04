@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { runSessionCommand } from "./index.js";
-import { setRootSessionManager } from "../../shared/session/session-state.js";
+import { setRootAgentSession, setRootSessionManager } from "../../shared/session/session-state.js";
 import { initRunWieldTheme } from "../../shared/ui/theme.js";
 
 initRunWieldTheme();
@@ -28,7 +28,7 @@ Deno.test("runSessionCommand reports no active session inside interactive mode",
     assertEquals(messages, ["Error: No active session."]);
 });
 
-Deno.test("runSessionCommand summarizes messages, tool use, compactions, and token usage", async () => {
+Deno.test("runSessionCommand summarizes messages, tool use, compactions, token usage, and compaction settings", async () => {
     const { uiAPI, messages } = makeUi();
     setRootSessionManager(
         /** @type {any} */ ({
@@ -61,11 +61,20 @@ Deno.test("runSessionCommand summarizes messages, tool use, compactions, and tok
             ],
         }),
     );
+    setRootAgentSession(
+        /** @type {any} */ ({
+            settingsManager: {
+                getCompactionSettings: () => ({ enabled: true, reserveTokens: 16000, keepRecentTokens: 22000 }),
+            },
+            getContextUsage: () => ({ tokens: 96000, contextWindow: 128000, percent: 75 }),
+        }),
+    );
 
     try {
         await runSessionCommand([], { uiAPI });
     } finally {
         setRootSessionManager(null);
+        setRootAgentSession(null);
     }
 
     const plain = messages.join("\n");
@@ -78,6 +87,12 @@ Deno.test("runSessionCommand summarizes messages, tool use, compactions, and tok
     assertEquals(plain.includes("Assistant:"), true);
     assertEquals(plain.includes("Tool Calls:"), true);
     assertEquals(plain.includes("Tool Results:"), true);
+    assertEquals(plain.includes("Compaction"), true);
+    assertEquals(plain.includes("Auto-compact:"), true);
+    assertEquals(plain.includes("16,000"), true);
+    assertEquals(plain.includes("22,000"), true);
+    assertEquals(plain.includes("112,000"), true);
+    assertEquals(plain.includes("96,000/128,000 (75.0%)"), true);
     assertEquals(plain.includes("1,000"), true);
     assertEquals(plain.includes("500"), true);
     assertEquals(plain.includes("1,775"), true);
