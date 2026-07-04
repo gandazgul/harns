@@ -201,11 +201,11 @@ Implemented v1 uses the existing Plan Lifecycle states rather than adding a sepa
 
 State transitions are recorded via the existing `recordPlanEvent` mechanism:
 
-| Event                     | From                                  | To                        | Meaning                                                        |
-| ------------------------- | ------------------------------------- | ------------------------- | -------------------------------------------------------------- |
-| `epic_readiness_passed`   | `approved`                            | `ready_for_decomposition` | The approved Epic is ready for Slicer decomposition.           |
-| `decomposition_finalized` | `approved`, `ready_for_decomposition` | `ready_for_work`          | Slicer finalized at least one child FEATURE Plan.              |
-| `epic_done_enough`        | `ready_for_work`, `verified`          | `verified`                | User marked the Epic done enough while children remain usable. |
+| Event                     | From                                  | To                        | Meaning                                                                              |
+| ------------------------- | ------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------ |
+| `epic_readiness_passed`   | `approved`                            | `ready_for_decomposition` | The approved Epic is ready for Slicer decomposition.                                 |
+| `decomposition_finalized` | `approved`, `ready_for_decomposition` | `ready_for_work`          | Slicer materialized draft child FEATURE Plans and finalized the decomposition seams. |
+| `epic_done_enough`        | `ready_for_work`, `verified`          | `verified`                | User marked the Epic done enough while children remain usable.                       |
 
 The earlier `completed`, `on_hold`, `all_children_done`, and `child_reassigned` events described in the original v1
 sketch were not implemented in this slice and remain future product work.
@@ -262,7 +262,8 @@ the plan count in any real project (< 100 plans).
 **Changes:**
 
 - **Slicer agent** (`workflow-slicer.js` + slicer-prompt.md) — rewritten from a single-prompt task-table mutator to an
-  interactive decomposition agent with tools for writing draft child FEATURE plans and finalizing decomposition.
+  interactive decomposition agent with one tool for materializing draft child FEATURE plans and finalizing
+  decomposition.
 - **Readiness gate** — updated to handle `type: epic` by moving approved Epics to `ready_for_decomposition` instead of
   requiring a task table.
 - **`plan-store.js`** — includes `findPlansByParent(parentName)`, child FEATURE materialization, dependency

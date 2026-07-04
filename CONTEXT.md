@@ -295,6 +295,9 @@ textual description of an attached image. _Avoid_: Image mode, multimodal router
 **See-Image Tool**: The `see_image` Custom Tool that sends a retained image attachment to the Vision Fallback and
 returns a textual description to a text-only Agent model. _Avoid_: Screenshot plugin, image reader, OCR tool
 
+**Code-Batch Tool**: The proposed RunWield Custom Tool that batches bounded Cymbal `show` and `outline` reads for fewer
+Agent roundtrips while leaving Cymbal CLI commands as raw primitives. _Avoid_: Multi-search tool, smart project snapshot
+
 ### Memory & Persistence
 
 **Mnemosyne**: The external semantic memory system for project and global memories. _Avoid_: Memory layer, memory store
