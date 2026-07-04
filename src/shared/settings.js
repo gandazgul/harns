@@ -340,6 +340,65 @@ export async function setCustomSetting(key, value, scope = "project") {
 }
 
 /**
+ * @param {unknown} value
+ * @param {string} label
+ * @returns {number}
+ */
+function validatePositiveIntegerSetting(value, label) {
+    const numberValue = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+    if (!Number.isInteger(numberValue) || /** @type {number} */ (numberValue) < 1) {
+        throw new Error(`${label} must be a positive integer.`);
+    }
+    return /** @type {number} */ (numberValue);
+}
+
+/**
+ * Safely updates one numeric global compaction setting while preserving siblings.
+ * Pi's SettingsManager exposes getters for these fields but only provides a
+ * setter for enabled, so RunWield writes the same global compaction object.
+ *
+ * @param {"reserveTokens" | "keepRecentTokens"} key
+ * @param {number} value
+ */
+async function setGlobalCompactionSetting(key, value) {
+    if (!storageInstance) initSettings();
+
+    // @ts-ignore storageInstance is definitely assigned here
+    storageInstance.withLock("global", (content) => {
+        let parsed = /** @type {Record<string, any>} */ ({});
+        if (content) {
+            try {
+                parsed = /** @type {Record<string, any>} */ (parseJsonc(content));
+            } catch (_e) { /* ignore */ }
+        }
+
+        const existing = parsed.compaction;
+        const compaction = existing && typeof existing === "object" && !Array.isArray(existing) ? existing : {};
+        parsed.compaction = { ...compaction, [key]: value };
+
+        return JSON.stringify(parsed, null, 2);
+    });
+
+    await getSettingsManager().reload();
+}
+
+/**
+ * Set the global compaction reserve token budget.
+ * @param {unknown} value
+ */
+export async function setCompactionReserveTokens(value) {
+    await setGlobalCompactionSetting("reserveTokens", validatePositiveIntegerSetting(value, "Reserve tokens"));
+}
+
+/**
+ * Set the global compaction keep-recent token window.
+ * @param {unknown} value
+ */
+export async function setCompactionKeepRecentTokens(value) {
+    await setGlobalCompactionSetting("keepRecentTokens", validatePositiveIntegerSetting(value, "Keep recent tokens"));
+}
+
+/**
  * Merged custom key lookup: reads a key from both global and project scopes
  * and returns the value with project scope taking precedence.
  *
