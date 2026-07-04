@@ -153,10 +153,10 @@ The Readiness Gate is classification-aware.
 For FEATURE Plans, the gate does not call an LLM. It promotes `approved` to `ready_for_work`.
 
 For PROJECT Epics, the gate records `epic_readiness_passed` and promotes `approved` to `ready_for_decomposition`. The
-Slicer then runs as an interactive decomposition agent. It can write draft child FEATURE Plans without changing the Epic
-status. When the user explicitly finalizes decomposition and at least one child FEATURE Plan exists, the Slicer records
-`decomposition_finalized` and the Epic becomes `ready_for_work` for child selection. That status does not mean the Epic
-itself can be executed.
+Slicer then runs as an interactive decomposition agent. When the user explicitly finalizes the decomposition seams, the
+Slicer materializes child FEATURE Plans as `draft`, records `decomposition_finalized`, and the Epic becomes
+`ready_for_work` for child selection. That status does not mean the Epic itself can be executed, and draft child FEATURE
+Plans still go through Planner/Plannotator review before execution.
 
 For legacy non-Epic PROJECT Plans, the gate keeps the older task-table compatibility path: it ensures a parseable Tasks
 table exists and runs the legacy Slicer if needed. That task-DAG path is legacy/future machinery, not the default

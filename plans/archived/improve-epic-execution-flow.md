@@ -86,7 +86,7 @@ approval, execution, and validation behavior remains unchanged.
 - `src/plan-store.js` — reuse existing front-matter unknown-key preservation and the current `sequence`/filename-prefix
   helpers, adding `order` rather than inventing a parallel storage path.
 - `src/shared/workflow/workflow-slicer.js` — reuse `CHILD_DESCRIPTOR_SCHEMA`, `summarizeChild()`, and
-  `slicer_write_feature_drafts` as the single materialization path.
+  `slicer_finalize_decomposition` as the single materialization/finalization path.
 
 ## Implementation Steps
 

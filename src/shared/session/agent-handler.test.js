@@ -58,7 +58,6 @@ Deno.test("agent-handler passes agent definition overrides and custom tools to r
     /** @type {any} */
     let captured = null;
     const customTools = [
-        /** @type {any} */ ({ name: "slicer_write_feature_drafts" }),
         /** @type {any} */ ({ name: "slicer_finalize_decomposition" }),
     ];
     const agentDef = /** @type {any} */ ({ displayName: "Slicer" });
