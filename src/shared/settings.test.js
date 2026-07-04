@@ -8,8 +8,11 @@ import {
     __resetSettingsForTests,
     getCodeReviewMode,
     getResolvedVisionFallbackModelSetting,
+    getSettingsManager,
     migratePiSettingsOnce,
     preserveRunWieldCustomSettingsForWrite,
+    setCompactionKeepRecentTokens,
+    setCompactionReserveTokens,
     setCustomSetting,
     shouldCleanupMergedWorktrees,
 } from "./settings.js";
@@ -295,6 +298,66 @@ Deno.test("shouldCleanupMergedWorktrees defaults true and honors false setting",
 
         await setCustomSetting("cleanupMergedWorktrees", false, "project");
         assertEquals(shouldCleanupMergedWorktrees(), false);
+    } finally {
+        Deno.chdir(originalCwd);
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        __resetSettingsForTests();
+        await Deno.remove(tempHome, { recursive: true });
+        await Deno.remove(tempProject, { recursive: true });
+    }
+});
+
+Deno.test("compaction token setters persist globally and preserve sibling compaction fields", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const originalCwd = Deno.cwd();
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-compaction-setting-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-compaction-setting-project-" });
+    try {
+        Deno.env.set("HOME", tempHome);
+        Deno.chdir(tempProject);
+        __resetSettingsForTests();
+
+        getSettingsManager().setCompactionEnabled(false);
+        await getSettingsManager().flush();
+        await setCompactionReserveTokens(12000);
+        await setCompactionKeepRecentTokens(34000);
+
+        const settings = getSettingsManager().getCompactionSettings();
+        assertEquals(settings, { enabled: false, reserveTokens: 12000, keepRecentTokens: 34000 });
+        assertEquals(JSON.parse(await Deno.readTextFile(join(tempHome, ".wld", "settings.json"))).compaction, {
+            enabled: false,
+            reserveTokens: 12000,
+            keepRecentTokens: 34000,
+        });
+    } finally {
+        Deno.chdir(originalCwd);
+        if (originalHome === undefined) Deno.env.delete("HOME");
+        else Deno.env.set("HOME", originalHome);
+        __resetSettingsForTests();
+        await Deno.remove(tempHome, { recursive: true });
+        await Deno.remove(tempProject, { recursive: true });
+    }
+});
+
+Deno.test("compaction token setters reject invalid values before writing", async () => {
+    const originalHome = Deno.env.get("HOME");
+    const originalCwd = Deno.cwd();
+    const tempHome = await Deno.makeTempDir({ prefix: "runwield-compaction-invalid-home-" });
+    const tempProject = await Deno.makeTempDir({ prefix: "runwield-compaction-invalid-project-" });
+    try {
+        Deno.env.set("HOME", tempHome);
+        Deno.chdir(tempProject);
+        __resetSettingsForTests();
+
+        let message = "";
+        try {
+            await setCompactionReserveTokens(0);
+        } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+        }
+        assertEquals(message, "Reserve tokens must be a positive integer.");
+        assertEquals(getSettingsManager().getCompactionSettings().reserveTokens, 16384);
     } finally {
         Deno.chdir(originalCwd);
         if (originalHome === undefined) Deno.env.delete("HOME");
