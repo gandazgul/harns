@@ -997,9 +997,27 @@ Deno.test("runSlicerAgent reports failure via uiAPI when present", async () => {
     assertEquals(messages.some((m) => m.includes("Slicer failed: kaboom")), true);
 });
 
-Deno.test("createSlicerFinalizeTool finalizes approved Epic with child FEATURE plans", async () => {
+Deno.test("createSlicerFinalizeTool writes draft child FEATURE plans before finalizing approved Epic", async () => {
     /** @type {any} */
     let recorded = null;
+    /** @type {Array<{ cwd: string, epicPlanName: string, children: unknown[] }>} */
+    const materializeCalls = [];
+    const childDescriptors = [{
+        order: 1,
+        title: "Child",
+        summary: "Child summary",
+        affectedPaths: ["src/a.js"],
+        dependencies: [],
+        content: "# Child",
+    }];
+    const writeResults = [{
+        name: "epic-a/01-child",
+        path: "/repo/plans/epic-a/01-child.md",
+        title: "Child",
+        action: "created",
+        dependencies: [],
+        metadata: { classification: "FEATURE", status: "draft", parentPlan: "epic-a" },
+    }];
     const tool = createSlicerFinalizeTool({
         planName: "epic-a",
         cwd: "/repo",
@@ -1010,11 +1028,61 @@ Deno.test("createSlicerFinalizeTool finalizes approved Epic with child FEATURE p
                         attrs: { classification: "PROJECT", type: "epic", status: "approved" },
                     }),
                 ),
+            materializeSlicerDraft: (args) => {
+                materializeCalls.push(args);
+                return Promise.resolve(/** @type {any} */ (writeResults));
+            },
             findPlansByParent: () =>
                 Promise.resolve([
                     /** @type {any} */ ({
                         name: "epic-a/01-child",
-                        attrs: { classification: "FEATURE" },
+                        attrs: { classification: "FEATURE", status: "draft" },
+                    }),
+                ]),
+            recordPlanEvent: (args) => {
+                recorded = args;
+                return Promise.resolve(/** @type {any} */ ({ status: "ready_for_work" }));
+            },
+        },
+    });
+
+    const result = await tool.execute(
+        "call-1",
+        { confirmation: "yes, finalize", children: childDescriptors },
+        new AbortController().signal,
+        () => {},
+        /** @type {any} */ ({}),
+    );
+
+    assertEquals(materializeCalls, [{ cwd: "/repo", epicPlanName: "epic-a", children: childDescriptors }]);
+    assertEquals(recorded.event, "decomposition_finalized");
+    assertEquals(recorded.currentStatus, "approved");
+    assertEquals(result.details, {
+        status: "ready_for_work",
+        children: ["epic-a/01-child"],
+        writeResults,
+        error: "",
+    });
+});
+
+Deno.test("createSlicerFinalizeTool can finalize existing child FEATURE plans without writing", async () => {
+    /** @type {any} */
+    let recorded = null;
+    const tool = createSlicerFinalizeTool({
+        planName: "epic-a",
+        cwd: "/repo",
+        __deps: {
+            loadPlan: () =>
+                Promise.resolve(
+                    /** @type {any} */ ({
+                        attrs: { classification: "PROJECT", type: "epic", status: "ready_for_decomposition" },
+                    }),
+                ),
+            findPlansByParent: () =>
+                Promise.resolve([
+                    /** @type {any} */ ({
+                        name: "epic-a/01-child",
+                        attrs: { classification: "FEATURE", status: "draft" },
                     }),
                 ]),
             recordPlanEvent: (args) => {
@@ -1033,10 +1101,53 @@ Deno.test("createSlicerFinalizeTool finalizes approved Epic with child FEATURE p
     );
 
     assertEquals(recorded.event, "decomposition_finalized");
-    assertEquals(recorded.currentStatus, "approved");
     assertEquals(result.details, {
         status: "ready_for_work",
         children: ["epic-a/01-child"],
+        writeResults: [],
+        error: "",
+    });
+});
+
+Deno.test("createSlicerFinalizeTool leaves already finalized Epics ready without recording another lifecycle event", async () => {
+    let recordCount = 0;
+    const tool = createSlicerFinalizeTool({
+        planName: "epic-a",
+        cwd: "/repo",
+        __deps: {
+            loadPlan: () =>
+                Promise.resolve(
+                    /** @type {any} */ ({
+                        attrs: { classification: "PROJECT", type: "epic", status: "ready_for_work" },
+                    }),
+                ),
+            findPlansByParent: () =>
+                Promise.resolve([
+                    /** @type {any} */ ({
+                        name: "epic-a/01-child",
+                        attrs: { classification: "FEATURE", status: "draft" },
+                    }),
+                ]),
+            recordPlanEvent: () => {
+                recordCount++;
+                return Promise.resolve(/** @type {any} */ ({ status: "ready_for_work" }));
+            },
+        },
+    });
+
+    const result = await tool.execute(
+        "call-1",
+        { confirmation: "yes, finalize" },
+        new AbortController().signal,
+        () => {},
+        /** @type {any} */ ({}),
+    );
+
+    assertEquals(recordCount, 0);
+    assertEquals(result.details, {
+        status: "ready_for_work",
+        children: ["epic-a/01-child"],
+        writeResults: [],
         error: "",
     });
 });

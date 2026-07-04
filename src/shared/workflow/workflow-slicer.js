@@ -67,60 +67,23 @@ function formatToolError(text) {
  * @param {Object} opts
  * @param {string} opts.planName
  * @param {string} [opts.cwd]
- * @param {{ materializeSlicerDraft?: typeof materializeSlicerDraft }} [opts.__deps]
- * @returns {import('@earendil-works/pi-coding-agent').ToolDefinition}
- */
-export function createSlicerDraftTool({ planName, cwd = CWD, __deps }) {
-    const materialize = __deps?.materializeSlicerDraft || materializeSlicerDraft;
-    return defineTool({
-        name: "slicer_write_feature_drafts",
-        label: "Write FEATURE Drafts",
-        description:
-            "Materialize draft child FEATURE plans for the current Epic. Use only after explicit user request.",
-        parameters: Type.Object({
-            children: Type.Array(CHILD_DESCRIPTOR_SCHEMA, {
-                description: "Child FEATURE plan descriptors to create or update.",
-            }),
-        }),
-        async execute(_toolCallId, params) {
-            try {
-                const children = /** @type {import('../../plan-store.js').ChildFeaturePlanDescriptor[]} */
-                    (params.children || []);
-                const results = await materialize({ cwd, epicPlanName: planName, children });
-                const summary = results.length === 0
-                    ? "No child FEATURE drafts were written."
-                    : results.map((result) => `${result.action}: ${result.name}`).join("\n");
-                return {
-                    content: [{ type: "text", text: summary }],
-                    details: { results, error: "" },
-                };
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                return {
-                    content: [{ type: "text", text: formatToolError(message) }],
-                    details: { results: [], error: message },
-                };
-            }
-        },
-    });
-}
-
-/**
- * @param {Object} opts
- * @param {string} opts.planName
- * @param {string} [opts.cwd]
- * @param {{ loadPlan?: typeof loadPlan, findPlansByParent?: typeof findPlansByParent, recordPlanEvent?: typeof recordPlanEvent }} [opts.__deps]
+ * @param {{ loadPlan?: typeof loadPlan, findPlansByParent?: typeof findPlansByParent, recordPlanEvent?: typeof recordPlanEvent, materializeSlicerDraft?: typeof materializeSlicerDraft }} [opts.__deps]
  * @returns {import('@earendil-works/pi-coding-agent').ToolDefinition}
  */
 export function createSlicerFinalizeTool({ planName, cwd = CWD, __deps }) {
     const loadPlanImpl = __deps?.loadPlan || loadPlan;
     const findChildren = __deps?.findPlansByParent || findPlansByParent;
     const recordEvent = __deps?.recordPlanEvent || recordPlanEvent;
+    const materialize = __deps?.materializeSlicerDraft || materializeSlicerDraft;
     return defineTool({
         name: "slicer_finalize_decomposition",
         label: "Finalize Epic Decomposition",
-        description: "Finalize the current Epic decomposition after explicit user confirmation.",
+        description:
+            "Materialize child FEATURE draft plans and finalize the current Epic decomposition after explicit user confirmation.",
         parameters: Type.Object({
+            children: Type.Optional(Type.Array(CHILD_DESCRIPTOR_SCHEMA, {
+                description: "Child FEATURE plan descriptors to create or update before finalizing.",
+            })),
             confirmation: Type.String({
                 description: "A short statement that the user explicitly confirmed finalizing decomposition.",
             }),
@@ -134,26 +97,42 @@ export function createSlicerFinalizeTool({ planName, cwd = CWD, __deps }) {
                 if (!epic) throw new Error(`Epic plan not found: ${planName}`);
                 if (!isEpicPlan(epic.attrs)) throw new Error(`Plan is not a PROJECT Epic: ${planName}`);
                 if (epic.attrs.status === "draft") throw new Error("Draft Epics cannot be finalized.");
+                if (
+                    epic.attrs.status !== "approved" && epic.attrs.status !== "ready_for_decomposition" &&
+                    epic.attrs.status !== "ready_for_work"
+                ) {
+                    throw new Error(
+                        `Cannot finalize Epic from status "${epic.attrs.status}". Expected approved or ready_for_decomposition.`,
+                    );
+                }
+
+                const childDescriptors = /** @type {import('../../plan-store.js').ChildFeaturePlanDescriptor[]} */
+                    (params.children || []);
+                const writeResults = childDescriptors.length === 0
+                    ? []
+                    : await materialize({ cwd, epicPlanName: planName, children: childDescriptors });
 
                 const children = (await findChildren(cwd, planName)).filter((child) =>
                     child.attrs.classification === "FEATURE"
                 );
-                if (children.length === 0) throw new Error("At least one child FEATURE plan is required.");
+                if (children.length === 0) {
+                    throw new Error("At least one child FEATURE plan is required to finalize decomposition.");
+                }
+
+                const childNames = children.map((child) => child.name);
+                const writeSummary = writeResults.length === 0
+                    ? "No child FEATURE drafts were written."
+                    : writeResults.map((result) => `${result.action}: ${result.name}`).join("\n");
 
                 if (epic.attrs.status === "ready_for_work") {
                     return {
                         content: [{
                             type: "text",
-                            text: `Epic already ready_for_work with ${children.length} child FEATURE plan(s).`,
+                            text:
+                                `${writeSummary}\nEpic already ready_for_work with ${children.length} child FEATURE plan(s).`,
                         }],
-                        details: { status: "ready_for_work", children: children.map((child) => child.name), error: "" },
+                        details: { status: "ready_for_work", children: childNames, writeResults, error: "" },
                     };
-                }
-
-                if (epic.attrs.status !== "approved" && epic.attrs.status !== "ready_for_decomposition") {
-                    throw new Error(
-                        `Cannot finalize Epic from status "${epic.attrs.status}". Expected approved or ready_for_decomposition.`,
-                    );
                 }
 
                 const updated = await recordEvent({
@@ -164,14 +143,17 @@ export function createSlicerFinalizeTool({ planName, cwd = CWD, __deps }) {
                     details: { triageMeta: epic.attrs },
                 });
                 return {
-                    content: [{ type: "text", text: `Finalized Epic decomposition: ${planName} is ready_for_work.` }],
-                    details: { status: updated.status, children: children.map((child) => child.name), error: "" },
+                    content: [{
+                        type: "text",
+                        text: `${writeSummary}\nFinalized Epic decomposition: ${planName} is ready_for_work.`,
+                    }],
+                    details: { status: updated.status, children: childNames, writeResults, error: "" },
                 };
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 return {
                     content: [{ type: "text", text: formatToolError(message) }],
-                    details: { status: "error", children: [], error: message },
+                    details: { status: "error", children: [], writeResults: [], error: message },
                 };
             }
         },
@@ -210,15 +192,13 @@ async function loadSlicerAgentDef(deps) {
 /**
  * @param {string} planName
  * @param {{
- *   createSlicerDraftTool?: typeof createSlicerDraftTool,
  *   createSlicerFinalizeTool?: typeof createSlicerFinalizeTool,
  * }} [deps]
  * @returns {import('@earendil-works/pi-coding-agent').ToolDefinition[]}
  */
 function createSlicerCustomTools(planName, deps) {
-    const makeDraftTool = deps?.createSlicerDraftTool || createSlicerDraftTool;
     const makeFinalizeTool = deps?.createSlicerFinalizeTool || createSlicerFinalizeTool;
-    return [makeDraftTool({ planName }), makeFinalizeTool({ planName })];
+    return [makeFinalizeTool({ planName })];
 }
 
 /**
@@ -236,7 +216,6 @@ function createSlicerCustomTools(planName, deps) {
  *   loadPlan?: typeof loadPlan,
  *   findPlansByParent?: typeof findPlansByParent,
  *   setActiveAgent?: (agentName: string, handler: import('../session/types.js').AgentMessageHandler, uiAPI: import('../ui/types.js').UiAPI, agentModel?: string, options?: { allowReturnToRouter?: boolean }) => void,
- *   createSlicerDraftTool?: typeof createSlicerDraftTool,
  *   createSlicerFinalizeTool?: typeof createSlicerFinalizeTool,
  * }} [opts.__deps] - Test-only injection point.
  * @returns {Promise<{ ok: boolean, error?: string }>}
