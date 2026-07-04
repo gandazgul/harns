@@ -24,6 +24,7 @@ import { runThemeCommand } from "./theme/index.js";
 import { runInstallCommand } from "./install/index.js";
 import { runRemoveCommand } from "./remove/index.js";
 import { runCompactCommand } from "./compact/index.js";
+import { runSettingsCommand } from "./settings/index.js";
 import { runCopyCommand } from "./copy/index.js";
 import { runReloadCommand } from "./reload/index.js";
 import { runVersionCommand } from "./version/index.js";
@@ -31,7 +32,7 @@ import { runSnipFiltersCommand } from "./snip-filters/index.js";
 import { getAgentDisplayName } from "../shared/session/agents.js";
 
 /** Known CLI / slash command names. Defined alongside the registry so adding a new command only touches one file. */
-/** @type {Readonly<{ROUTER: string, AGENT: string, MODEL: string, LOGIN: string, LOGOUT: string, STATUS: string, EXPORT: string, SHARE: string, LOAD_PLAN: string, RESUME: string, NEW: string, NAME: string, SESSION: string, PLANS: string, SLEEP: string, HELP: string, VERSION: string, QUIT: string, EXIT: string, INIT: string, THEME: string, INSTALL: string, REMOVE: string, COMPACT: string, RELOAD: string, SNIP_FILTERS: string, COPY: string}>} */
+/** @type {Readonly<{ROUTER: string, AGENT: string, MODEL: string, LOGIN: string, LOGOUT: string, STATUS: string, EXPORT: string, SHARE: string, LOAD_PLAN: string, RESUME: string, NEW: string, NAME: string, SESSION: string, PLANS: string, SLEEP: string, HELP: string, VERSION: string, QUIT: string, EXIT: string, INIT: string, THEME: string, INSTALL: string, REMOVE: string, COMPACT: string, SETTINGS: string, RELOAD: string, SNIP_FILTERS: string, COPY: string}>} */
 export const COMMAND_NAMES = Object.freeze({
     ROUTER: "router",
     AGENT: "agent",
@@ -57,6 +58,7 @@ export const COMMAND_NAMES = Object.freeze({
     INSTALL: "install",
     REMOVE: "remove",
     COMPACT: "compact",
+    SETTINGS: "settings",
     RELOAD: "reload",
     SNIP_FILTERS: "snip-filters",
     COPY: "copy",
@@ -494,6 +496,21 @@ export const commandRegistry = {
             "Optionally pass custom instructions to guide the summarization.",
         ],
         execute: runCompactCommand,
+        surfaces: ["slash"],
+    },
+    [COMMAND_NAMES.SETTINGS]: {
+        name: COMMAND_NAMES.SETTINGS,
+        displayName: "Settings",
+        description: "Open settings menu",
+        summary: "Open the interactive settings menu for compaction behavior.",
+        usage: [
+            "/settings",
+        ],
+        notes: [
+            "Slash command only (interactive session).",
+            "Currently exposes compaction settings: auto-compact, reserve tokens, and keep-recent tokens.",
+        ],
+        execute: runSettingsCommand,
         surfaces: ["slash"],
     },
     [COMMAND_NAMES.COPY]: {

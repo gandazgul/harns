@@ -15,6 +15,7 @@ Deno.test("getCommandDefinition resolves alias", () => {
 Deno.test("getCliCommandDefinitions excludes slash-only commands", () => {
     const commands = getCliCommandDefinitions();
     assertEquals(commands.some((command) => command.name === "export"), false);
+    assertEquals(commands.some((command) => command.name === "settings"), false);
     assertEquals(commands.some((command) => command.name === "router"), true);
 });
 
@@ -22,6 +23,7 @@ Deno.test("getSlashCommandDefinitions excludes cli-only commands", () => {
     const commands = getSlashCommandDefinitions();
     assertEquals(commands.some((command) => command.name === "plans"), false);
     assertEquals(commands.some((command) => command.name === "theme"), true);
+    assertEquals(commands.some((command) => command.name === "settings"), true);
 });
 
 Deno.test("registry surfaces capture theme and model CLI support", () => {
