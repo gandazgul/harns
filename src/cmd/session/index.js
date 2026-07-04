@@ -3,7 +3,7 @@
  * Command to show current session information.
  */
 
-import { getRootSessionManager } from "../../shared/session/session-state.js";
+import { getRootAgentSession, getRootSessionManager } from "../../shared/session/session-state.js";
 import { theme } from "../../shared/ui/theme.js";
 
 /**
@@ -81,6 +81,13 @@ export async function runSessionCommand(_argv, options = {}) {
     const sessionName = sessionManager.getSessionName?.() || "";
     const sessionFile = sessionManager.getSessionFile?.() || "In-memory";
     const sessionId = sessionManager.getSessionId?.() || "";
+    const rootAgentSession = getRootAgentSession();
+    const compactionSettings = rootAgentSession?.settingsManager?.getCompactionSettings?.();
+    const contextUsage = rootAgentSession?.getContextUsage?.();
+    const contextWindow = contextUsage?.contextWindow ?? rootAgentSession?.model?.contextWindow;
+    const autoThreshold = compactionSettings && typeof contextWindow === "number" && contextWindow > 0
+        ? Math.max(0, contextWindow - compactionSettings.reserveTokens)
+        : null;
 
     const lines = [];
 
@@ -105,6 +112,31 @@ export async function runSessionCommand(_argv, options = {}) {
     lines.push(`${theme.fg("dim", "Tool Calls:")} ${toolCalls}`);
     lines.push(`${theme.fg("dim", "Tool Results:")} ${toolResults}`);
     lines.push(`${theme.fg("dim", "Total:")} ${totalMessages}`);
+    lines.push("");
+
+    lines.push(theme.bold("Compaction"));
+    const compactionTimes = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
+    lines.push(`${theme.fg("dim", "Compacted:")} ${compactionTimes}`);
+    if (compactionSettings) {
+        lines.push(`${theme.fg("dim", "Auto-compact:")} ${compactionSettings.enabled ? "enabled" : "disabled"}`);
+        lines.push(`${theme.fg("dim", "Reserve Tokens:")} ${compactionSettings.reserveTokens.toLocaleString()}`);
+        lines.push(`${theme.fg("dim", "Keep Recent Tokens:")} ${compactionSettings.keepRecentTokens.toLocaleString()}`);
+        if (autoThreshold !== null) {
+            lines.push(`${theme.fg("dim", "Auto Threshold:")} ${autoThreshold.toLocaleString()}`);
+        }
+        if (contextUsage && typeof contextUsage.tokens === "number") {
+            const percent = typeof contextUsage.percent === "number" ? ` (${contextUsage.percent.toFixed(1)}%)` : "";
+            lines.push(
+                `${
+                    theme.fg("dim", "Current Context:")
+                } ${contextUsage.tokens.toLocaleString()}/${contextUsage.contextWindow.toLocaleString()}${percent}`,
+            );
+        } else if (typeof contextWindow === "number" && contextWindow > 0) {
+            lines.push(`${theme.fg("dim", "Current Context:")} unknown/${contextWindow.toLocaleString()}`);
+        }
+    } else {
+        lines.push(`${theme.fg("dim", "Settings:")} unavailable until an agent session is active`);
+    }
     lines.push("");
 
     lines.push(theme.bold("Tokens"));
