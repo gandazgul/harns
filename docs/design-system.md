@@ -56,7 +56,8 @@ so they agree again.
 
 ## Component architecture
 
-RunWield owns its browser UI components. The design system should use:
+RunWield owns its browser UI components. Shared design-system components should live under `src/ui/design-system/` so
+Workspace, Plannotator, and future browser surfaces can consume the same primitives. The design system should use:
 
 - RunWield semantic tokens for color, radius, spacing, and status intent;
 - UnoCSS for utility styling and generated CSS;
@@ -109,8 +110,18 @@ Use existing tokens before adding new ones.
 | `--rw-complexity-medium` | MEDIUM Complexity label.                                     |
 | `--rw-complexity-high`   | HIGH Complexity label.                                       |
 
-`theme-css.js` maps the active RunWield theme into these variables. New browser surfaces should consume the variables;
-they should not read theme JSON directly.
+The browser design system must share the active theme with the TUI. The shared design-system module should own the
+browser theme bridge that maps the active RunWield TUI theme into these variables. Workspace's current
+`src/ui/workspace/server/theme-css.js` is the source implementation to move or adapt into `src/ui/design-system/`. New
+browser surfaces should consume the generated variables; they should not read theme JSON directly.
+
+Shared CSS should be split by responsibility rather than kept as one broad `styles.css` file:
+
+- `tokens.css` for base CSS variables, resets, typography defaults, and theme-derived token usage;
+- `components.css` for reusable design-system primitives such as actions, cards, badges, notices, forms, metadata,
+  dialogs, and editor/markdown surfaces;
+- surface-specific CSS, such as `workspace.css`, for layouts and patterns that are not yet shared across browser
+  surfaces.
 
 ### Adding tokens
 
@@ -206,6 +217,22 @@ Use detail panels for object inspection and editing. A detail view should have:
 
 Do not make workflow-critical Front Matter or lifecycle state editable only through raw text. Use structured actions for
 workflow-critical changes.
+
+### Dialogs
+
+Dialog is a general modal primitive for browser surfaces that need focused confirmation, short forms, or blocking
+workflow decisions. Workspace does not currently provide a source pattern for dialogs, so new dialogs should preserve
+the Workspace visual language while using Zag for accessibility and interaction behavior.
+
+Dialog should be flexible rather than confirmation-only:
+
+- support yes/no confirmation flows;
+- support arbitrary body content for short forms or explanations;
+- support flexible footer actions using primary, secondary, danger, or disabled action patterns;
+- keep one visually dominant primary or danger action when a decision is required;
+- make dismissal behavior explicit when closing the dialog could lose input or skip a workflow decision;
+- remain ephemeral by default: opening a dialog should not change the browser URL, and refresh may close it unless a
+  future use case explicitly requires a route-backed dialog.
 
 ### Markdown and editor surfaces
 
