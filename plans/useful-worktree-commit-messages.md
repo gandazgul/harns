@@ -6,17 +6,13 @@ affectedPaths:
     - "src/shared/worktree.js"
 frontend: false
 createdAt: "2026-07-04T21:15:55-04:00"
-updatedAt: "2026-07-05T01:35:27.850Z"
-status: "in_progress"
+updatedAt: "2026-07-05T02:00:25.416Z"
+status: "verified"
 origin: "internal"
-humanReviewMode: null
-humanReviewDecision: null
-executionBaselineTree: "df0c2b201d4424548d7c41b76ec484f35599d948"
-worktreeId: "c16bf253"
-worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-harns--/harns-runwield-useful-worktree-commit-messages-c16bf253"
-worktreeBranch: "runwield/worktree/useful-worktree-commit-messages-c16bf253"
-worktreeBaseBranch: "main"
-worktreeStatus: "active"
+implementedAt: "2026-07-05T01:48:57.813Z"
+verifiedAt: "2026-07-05T02:00:25.416Z"
+humanReviewMode: "ask"
+humanReviewDecision: "skipped"
 routingIntent: "FEATURE"
 sessionName: "useful worktree commit messages"
 ---
