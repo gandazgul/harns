@@ -22,8 +22,8 @@ import {
     createPutOnHoldIntent,
     lifecycleActionLabel,
 } from "./islands/PlanLifecycleActions.jsx";
+import { renderRunWieldThemeCss } from "../design-system/theme-bridge.js";
 import { createWorkspaceApp, hasWorkspaceToken } from "./server.js";
-import { renderWorkspaceThemeCss } from "./server/theme-css.js";
 
 /**
  * @param {string} cwd
@@ -391,8 +391,8 @@ Deno.test("renderMarkdown renders links and escapes unsafe markdown input", () =
     assertStringIncludes(html, "<pre");
 });
 
-Deno.test("renderWorkspaceThemeCss maps agent theme tokens to workspace CSS variables", () => {
-    const css = renderWorkspaceThemeCss({
+Deno.test("renderRunWieldThemeCss maps agent theme tokens to workspace CSS variables", () => {
+    const css = renderRunWieldThemeCss({
         name: 'agent "theme"',
         vars: {
             base: "#010203",
@@ -431,11 +431,11 @@ Deno.test("renderWorkspaceThemeCss maps agent theme tokens to workspace CSS vari
     assertStringIncludes(css, "--rw-text-dim: #505152;");
 });
 
-Deno.test("renderWorkspaceThemeCss renders bundled Catppuccin Mocha export colors", async () => {
+Deno.test("renderRunWieldThemeCss renders bundled Catppuccin Mocha export colors", async () => {
     const themeJson = JSON.parse(
         await Deno.readTextFile(new URL("../../shared/ui/catppuccin-mocha.json", import.meta.url)),
     );
-    const css = renderWorkspaceThemeCss(themeJson);
+    const css = renderRunWieldThemeCss(themeJson);
 
     assertStringIncludes(css, '--rw-theme-name: "catppuccin-mocha"');
     assertStringIncludes(css, "--rw-page-bg: #11111b;");
@@ -446,15 +446,20 @@ Deno.test("renderWorkspaceThemeCss renders bundled Catppuccin Mocha export color
 });
 
 Deno.test("workspace detail header CSS lets lifecycle actions wrap without squeezing summary", async () => {
-    const css = await Deno.readTextFile(new URL("./static/styles.css", import.meta.url));
-    assertStringIncludes(css, ".detail-title-row {\n    align-items: center;\n    display: grid;");
-    assertStringIncludes(css, "grid-template-columns: auto minmax(0, 1fr) auto;");
-    assertStringIncludes(css, ".split-header {\n    align-items: flex-start;\n    display: grid;");
-    assertStringIncludes(css, "grid-template-columns: minmax(0, 1fr);");
-    assertStringIncludes(css, ".header-actions .lifecycle-actions {\n    flex: 1 1 100%;");
-    assertStringIncludes(css, ".detail-grid > * {\n    min-width: 0;");
-    assertStringIncludes(css, ".markdown-view {\n    background:");
-    assertStringIncludes(css, "overflow-wrap: anywhere;");
+    const workspaceCss = await Deno.readTextFile(new URL("./static/workspace.css", import.meta.url));
+    const componentsCss = await Deno.readTextFile(new URL("../design-system/components.css", import.meta.url));
+    assertStringIncludes(workspaceCss, ".detail-title-row {\n    align-items: center;\n    display: grid;");
+    assertStringIncludes(workspaceCss, "grid-template-columns: auto minmax(0, 1fr) auto;");
+    assertStringIncludes(workspaceCss, ".split-header {\n    align-items: flex-start;\n    display: grid;");
+    assertStringIncludes(workspaceCss, "grid-template-columns: minmax(0, 1fr);");
+    assertStringIncludes(workspaceCss, ".header-actions .lifecycle-actions {\n    flex: 1 1 100%;");
+    assertStringIncludes(
+        workspaceCss,
+        ".tabs a,\n    .tab-search-slot,\n    .plan-search-clear {\n        box-sizing: border-box;",
+    );
+    assertStringIncludes(workspaceCss, ".detail-grid > * {\n    min-width: 0;");
+    assertStringIncludes(componentsCss, ".markdown-view {\n    background:");
+    assertStringIncludes(componentsCss, "overflow-wrap: anywhere;");
 });
 
 Deno.test("Fresh Workspace rejects missing token and SSR-renders status column board cards", async () => {
@@ -469,6 +474,15 @@ Deno.test("Fresh Workspace rejects missing token and SSR-renders status column b
         const app = createWorkspaceApp({ cwd, token: "secret" }).handler();
         const rejected = await app(new Request("http://localhost/"));
         assertEquals(rejected.status, 401);
+        const tokensCss = await app(new Request("http://localhost/tokens.css"));
+        assertEquals(tokensCss.status, 200);
+        assertStringIncludes(await tokensCss.text(), "--rw-page-bg:");
+        const componentsCss = await app(new Request("http://localhost/components.css"));
+        assertEquals(componentsCss.status, 200);
+        assertStringIncludes(await componentsCss.text(), ".primary-action");
+        const workspaceCss = await app(new Request("http://localhost/workspace.css"));
+        assertEquals(workspaceCss.status, 200);
+        assertStringIncludes(await workspaceCss.text(), ".workspace-shell");
         const themeCss = await app(new Request("http://localhost/theme.css"));
         assertEquals(themeCss.status, 200);
         assertEquals(themeCss.headers.get("cache-control"), "no-store");
@@ -477,7 +491,13 @@ Deno.test("Fresh Workspace rejects missing token and SSR-renders status column b
         const accepted = await app(new Request("http://localhost/?token=secret&q=workspace"));
         assertEquals(accepted.status, 200);
         const html = await accepted.text();
+        assertStringIncludes(html, '<link rel="stylesheet" href="/tokens.css"');
+        assertStringIncludes(html, '<link rel="stylesheet" href="/components.css"');
+        assertStringIncludes(html, '<link rel="stylesheet" href="/workspace.css"');
         assertStringIncludes(html, '<link rel="stylesheet" href="/theme.css"');
+        assertEquals(html.indexOf("/tokens.css") < html.indexOf("/components.css"), true);
+        assertEquals(html.indexOf("/components.css") < html.indexOf("/workspace.css"), true);
+        assertEquals(html.indexOf("/workspace.css") < html.indexOf("/theme.css"), true);
         assertStringIncludes(html, 'aria-label="Search Plans"');
         assertStringIncludes(html, 'value="workspace"');
         assertEquals(html.includes("matching Plan"), false);
