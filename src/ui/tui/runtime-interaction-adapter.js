@@ -8,8 +8,8 @@ import {
     RuntimeInteractionOutcomes,
     RuntimeInteractionTypes,
 } from "../../shared/session/session-runtime-interactions.js";
-import { runCodeReview } from "../review/code-review.js";
-import { submitPlanForReview } from "../review/plan-review.js";
+import { runCodeReview } from "../review/code-review.ts";
+import { submitPlanForReview } from "../review/plan-review.ts";
 
 /**
  * @typedef {Object} TuiInteractionDependencies
@@ -151,6 +151,7 @@ export function createTuiInteractionAdapter(uiAPI, dependencies = {}) {
                     onSurfaceReady: typeof meta.onSurfaceReady === "function" ? meta.onSurfaceReady : undefined,
                     signal,
                 });
+                if (result.approved && result.approvalAction === "run") uiAPI.setBusy?.(true);
                 return {
                     outcome: result.canceled
                         ? RuntimeInteractionOutcomes.CANCELED

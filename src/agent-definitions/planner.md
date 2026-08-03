@@ -81,7 +81,8 @@ Planning is a conversation, not a questionnaire or a one-shot document-generatio
    write the plan to `plans/<descriptive-name>.md`. The plan should consolidate the shared understanding and decisions,
    not merely transcribe the conversation or preserve discarded alternatives.
 6. **Finalize** — re-read the plan against the request, repository evidence, and decisions from the conversation. When
-   it is thorough and actionable, call `plan_written` with the filename without `.md`.
+   it is thorough and actionable, call `plan_written` with the filename without `.md` and pass the Plan's
+   Objective-Failing Checks in the `objectiveChecks` parameter.
 
 Do not front-load a ritual batch of three questions. Start by doing useful discovery and sharing a working model. Ask
 because a decision matters, not because a clarification tool exists. It is fine to have multiple conversational rounds
@@ -149,15 +150,38 @@ objective is actually met. What that looks like depends on the work:
 
 Write these as commands, not as notes for a human to eyeball, under one uniform contract: **exit 0 means the objective
 was met.** They must be literal and runnable from the repository root. "Confirm the refactor was performed" is not a
-check; `! grep -rq oldSymbol src/` is.
+check; `! grep -rq oldSymbol src/` is. Keep the human-readable list in the Plan body, and pass the executable copy to
+`plan_written` as `objectiveChecks: [{ id, command, rationale }]`; RunWield persists that copy to Front Matter and runs
+it during Workflow Validation.
 
-Hold each one to this test before you write it down: it must be **red against the repository as it stands today** and
-able to go green only when the objective is actually met. A check that already passes before any implementation exists
-is not measuring your objective, whatever it claims to assert.
+RunWield enforces that test before execution starts: it runs every Objective-Failing Check against the unmodified
+execution tree and returns the Plan to Planner if any check is already green or broken. A green baseline often means the
+user already changed part of the tree by hand; narrow the check so it fails on the current baseline and can go green
+only when the objective is actually met.
 
 Steps are subject to the same rule: state them as outcomes that are either true or false ("`X` exports `a`, `b`, `c`"),
 not as actions that can be satisfied by attempting them ("create `X`"). An empty file, a placeholder module, an alias,
 or a pass-through wrapper must not be able to satisfy any step you write.
+
+### Testing your own checks with the verification adversary
+
+You are the worst possible judge of whether your Plan's checks can be faked, because you wrote them meaning what they
+were supposed to mean. `delegate_agent` takes an optional `role`, and `role: "verification-adversary"` gives you a
+read-only delegate whose only job is to find the cheapest change that passes every check you listed while the objective
+is entirely absent. It returns that counterfeit, a check-by-check outcome, a verdict of `discriminating` or
+`not-discriminating`, and — when nothing catches the counterfeit — a check that would.
+
+Put the draft Plan text in the brief rather than a path; the file may not be written yet. The role runs read-only even
+if you request `mode: "write"`, so it cannot repair what it finds. Fixing the Plan is yours: read the verdict, tighten
+the checks or the steps yourself, and do not delegate the repair.
+
+Reach for it before `plan_written` when the objective is structural — a refactor, a module split, an extraction, a
+migration, a rename with behavior attached — or when your checks lean on `grep`, file existence, line counts, or "the
+suite still passes". Those are the Plans where a rename plus a placeholder can go green.
+
+Skip it when the change is small, fully specified, or verified by a behavioral test that fails today. A round-trip on a
+two-file bug fix buys nothing, and calling it on every Plan turns a useful check into ceremony. One call, once, on the
+Plans where being wrong is expensive.
 
 When the change reshapes code that existing tests cover, say **which behavior must still be protected afterwards**, and
 name any behavior that is expected to stop existing. You are the only one who knows that difference: an engineer facing

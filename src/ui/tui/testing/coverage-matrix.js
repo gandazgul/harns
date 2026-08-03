@@ -10,7 +10,12 @@ import { assert } from "@std/assert";
 export const GOLDEN_TUI_REQUIRED_CAPABILITIES = Object.freeze({
     roles: ["role:guide", "role:ideator", "role:operator", "role:engineer"],
     routingIntents: ["intent:INQUIRY", "intent:IDEATION", "intent:OPERATION", "intent:QUICK_FIX"],
-    workflows: ["workflow:PLANNED_CHANGE", "workflow:PROJECT"],
+    workflows: [
+        "workflow:PLANNED_CHANGE",
+        "workflow:PROJECT",
+        "workflow:load-plan",
+        "workflow:concurrent-plans",
+    ],
     presentation: [
         "block:user",
         "block:thinking",
@@ -26,6 +31,7 @@ export const GOLDEN_TUI_REQUIRED_CAPABILITIES = Object.freeze({
         "block:managed-sync",
         "block:queued-steering",
         "block:image",
+        "block:abandon-progress",
     ],
     terminal: [
         "terminal:ctrl-c",
@@ -39,11 +45,25 @@ export const GOLDEN_TUI_REQUIRED_CAPABILITIES = Object.freeze({
     recovery: [
         "recovery:tool-failure",
         "recovery:workflow-validation",
+        "recovery:steered-task-completion",
         "recovery:reviewer-rejection",
         // RunWield pauses rather than halting whenever it needs a person. That
         // promise is only kept if the menu actually reaches the screen and the
         // answer actually resumes the run, which only an end-to-end scenario shows.
         "recovery:user-pause",
+        // The Engineer reports success and the check disagrees. Everything after that
+        // point — repair rounds, the round limit, the menu — only matters if it reaches
+        // a person, so the guarantee is end-to-end or it is nothing.
+        "recovery:objective-check-unmet",
+        // CI actually failing, and the loop finding its way back to CI after the repair.
+        // Every other scenario commits a CI command that cannot fail, so this path had
+        // no end-to-end coverage at all.
+        "recovery:ci-repair",
+        "recovery:interrupted-execution",
+        "recovery:load-plan-worktree",
+        "recovery:validation-failure-retry",
+        "recovery:validation-exhausted",
+        "recovery:malformed-plan-front-matter",
     ],
     durableOutcomes: [
         "durable:plan-lifecycle",
@@ -53,6 +73,12 @@ export const GOLDEN_TUI_REQUIRED_CAPABILITIES = Object.freeze({
         "durable:epic-evidence",
         "durable:work-record",
         "durable:mutation-policy",
+        // A Project has the most to lose when one child fails, because every child
+        // behind it waits. Continuing past an unverified child is worse than stopping.
+        "durable:epic-child-halted",
+        "durable:epic-completion",
+        "durable:quick-fix-delivery",
+        "durable:non-git-in-place",
     ],
 });
 

@@ -1,0 +1,773 @@
+/**
+ * @module plan-written
+ * Custom tool for planning agents to declare a plan and
+ * run the review-and-approve lifecycle.
+ *
+ * createPlanWrittenTool captures hosted-session context and triage metadata at session-start
+ * time. The tool runs review inside execute, but does NOT execute the plan — that's
+ * the orchestrator's job after the planning
+ * session ends. The outcome (`approved_execute`, `approved_decompose`, `saved`, `feedback`, `canceled`,
+ * `repair_required`) is returned via `details.outcome` so the orchestrator can
+ * dispatch the next agent, while `feedback` and `repair_required` keep the planner
+ * in-session to iterate.
+ */
+
+import { join, toFileUrl } from "@std/path";
+import { Type } from "@earendil-works/pi-ai";
+import { type AgentToolResult, defineTool } from "@earendil-works/pi-coding-agent";
+import { CLI_BIN, normalizePlanClassification, normalizeWorkKind, PLANS_DIR_NAME } from "../constants.js";
+import {
+    loadPlan,
+    normalizeObjectiveChecks,
+    resolvePlanExecutionPolicy,
+    updatePlanFrontMatter,
+} from "../plan-store.js";
+import { recordPlanEvent } from "../shared/workflow/plan-lifecycle.js";
+import { normalizePlanApprovalAction, PLAN_APPROVAL_ACTIONS } from "../shared/workflow/plan-approval.js";
+import { recordWorkflowMetric } from "../shared/workflow/metrics.js";
+import {
+    emitHostedSessionRuntimeEvent,
+    emitSystemStatus,
+    RuntimeEventTypes,
+} from "../shared/session/session-runtime-events.js";
+import {
+    requestHostedSessionInteraction,
+    RuntimeInteractionOutcomes,
+    RuntimeInteractionTypes,
+} from "../shared/session/session-runtime-interactions.js";
+import {
+    appendSessionCompleteGuidance,
+    requestPlanReviewRetryConfirmation,
+    requestRecoverablePlanReview,
+    SESSION_COMPLETE_GUIDANCE,
+} from "../shared/workflow/plan-review-recovery.js";
+import type { HostedSession } from "../shared/session/hosted-session.js";
+import type { PlanFrontMatter } from "../plan-store.js";
+
+export interface TriageMeta extends Partial<PlanFrontMatter> {
+    classification?: "QUICK_FIX" | "PLANNED_CHANGE" | "FEATURE" | "PROJECT";
+    workKind?: "BUG_FIX" | "FEATURE" | "REFACTOR" | "MAINTENANCE" | "DOCUMENTATION";
+    complexity?: "LOW" | "MEDIUM" | "HIGH";
+}
+
+interface ReviewImage {
+    base64: string;
+    mimeType: string;
+}
+
+interface ObjectiveCheckInput {
+    id: string;
+    command: string;
+    rationale?: string;
+}
+
+interface ToolResultDetails {
+    planName?: string;
+    objectiveChecks?: ObjectiveCheckInput[];
+    outcome?: string;
+    reason?: string;
+    triageMeta?: TriageMeta;
+    feedback?: string;
+    imageCount?: number;
+    reviewUrl?: string;
+    planPath?: string;
+    planFileUrl?: string;
+    remoteReview?: boolean;
+    reviewerUrl?: string;
+    spaceId?: string;
+    serverUrl?: string;
+    revision?: string | number;
+    reused?: boolean;
+    approved?: boolean;
+    approvalAction?: string;
+    planAttrs?: TriageMeta;
+}
+
+interface PlanReviewMeta {
+    approved?: boolean;
+    feedback?: string;
+    images?: ReviewImage[];
+    approvalAction?: string;
+    planAttrs?: TriageMeta;
+    revision?: string | number;
+    remoteReview?: boolean;
+    reviewerUrl?: string;
+    spaceId?: string;
+    serverUrl?: string;
+    reused?: boolean;
+}
+
+interface PlanWrittenOptions {
+    triageMeta?: TriageMeta;
+    agentName?: string;
+    hostedSession?: HostedSession;
+}
+
+type ToolResult = AgentToolResult<ToolResultDetails | null>;
+type InteractionMeta = NonNullable<Awaited<ReturnType<typeof requestHostedSessionInteraction>>["_meta"]>;
+
+function parsePlanReviewMeta(meta: InteractionMeta | undefined): PlanReviewMeta {
+    const source = meta || {};
+    return {
+        approved: source.approved === true,
+        feedback: typeof source.feedback === "string" ? source.feedback : undefined,
+        images: Array.isArray(source.images) ? source.images as ReviewImage[] : undefined,
+        approvalAction: typeof source.approvalAction === "string" ? source.approvalAction : undefined,
+        planAttrs: source.planAttrs && typeof source.planAttrs === "object"
+            ? source.planAttrs as TriageMeta
+            : undefined,
+        revision: typeof source.revision === "string" || typeof source.revision === "number"
+            ? source.revision
+            : undefined,
+        remoteReview: source.remoteReview === true,
+        reviewerUrl: typeof source.reviewerUrl === "string" ? source.reviewerUrl : undefined,
+        spaceId: typeof source.spaceId === "string" ? source.spaceId : undefined,
+        serverUrl: typeof source.serverUrl === "string" ? source.serverUrl : undefined,
+        reused: typeof source.reused === "boolean" ? source.reused : undefined,
+    };
+}
+
+const OBJECTIVE_CHECK_PARAMS = Type.Object({
+    id: Type.String({ minLength: 1, maxLength: 64, description: "Stable check id, e.g. OC1." }),
+    command: Type.String({
+        minLength: 1,
+        maxLength: 1000,
+        description: "Literal shell command RunWield executes from the repository root; exit 0 means objective met.",
+    }),
+    rationale: Type.Optional(Type.String({
+        minLength: 1,
+        maxLength: 500,
+        description: "Why this command can only pass once the objective is met.",
+    })),
+}, { additionalProperties: false });
+
+const TOOL_PARAMS = Type.Object({
+    planName: Type.String({
+        description: "Plan filename without extension (kebab-case preferred), e.g. implement-memory-system",
+    }),
+    objectiveChecks: Type.Optional(Type.Array(OBJECTIVE_CHECK_PARAMS, {
+        maxItems: 12,
+        description:
+            "Objective-Failing Checks for PLANNED_CHANGE Plans. Each command exits 0 only when the objective is met.",
+    })),
+});
+
+const MAX_OBJECTIVE_CHECKS = 12;
+const MAX_OBJECTIVE_CHECK_ID_LENGTH = 64;
+const MAX_OBJECTIVE_CHECK_COMMAND_LENGTH = 1000;
+const MAX_OBJECTIVE_CHECK_RATIONALE_LENGTH = 500;
+
+/**
+ * Build the planner/architect revision request after the user submits feedback
+ * via the review UI. Surfaced as the plan_written tool result so the agent can
+ * revise in-session.
+ *
+ * @param {{ round: number, planName: string, feedback: string | undefined }} opts
+ * @returns {string}
+ */
+function buildFeedbackRequestText(
+    { round, planName, feedback }: { round: number; planName: string; feedback?: string },
+): string {
+    return [
+        `## Plan Review Feedback (Round ${round})`,
+        "",
+        `The user provided feedback on plans/${planName}.md:`,
+        "",
+        feedback || "(no specific feedback provided)",
+    ].join("\n");
+}
+
+function textResult(
+    text: string,
+    details: ToolResultDetails | null = null,
+    terminate = false,
+    images: ReviewImage[] = [],
+): ToolResult {
+    const result: ToolResult = {
+        content: [
+            { type: "text" as const, text },
+            ...images.map(toToolImageContent),
+        ],
+        details: details ?? null,
+    };
+    if (terminate) result.terminate = true;
+    return result;
+}
+
+/**
+ * @param {{ planName: string, status: string, reviewUrl?: string }} opts
+ * @returns {string}
+ */
+function buildPlanWrittenToolOutput(
+    { planName, status, reviewUrl }: { planName: string; status: string; reviewUrl?: string },
+): string {
+    const planDisplayPath = `${PLANS_DIR_NAME}/${planName}.md`;
+    const lines = [
+        `Plan name: ${planDisplayPath}`,
+    ];
+    if (reviewUrl) lines.push(`To review open a browser to: ${reviewUrl}`);
+    lines.push(
+        `Status: ${status}`,
+    );
+    return `${lines.join("\n")}\n`;
+}
+
+function emitToolUpdate(onUpdate: ((result: ToolResult) => void) | undefined, result: ToolResult): void {
+    if (typeof onUpdate !== "function") return;
+    try {
+        onUpdate(result);
+    } catch {
+        // Tool-block progress is best-effort; the final tool result remains authoritative.
+    }
+}
+
+/**
+ * @param {{base64: string, mimeType: string}} image
+ * @returns {{type: "image", data: string, mimeType: string}}
+ */
+function toToolImageContent(image: ReviewImage) {
+    return { type: "image" as const, data: image.base64, mimeType: image.mimeType };
+}
+
+/** Validate the Plan-declared Objective-Failing Checks before persistence. */
+function validateObjectiveChecksParam(value: ObjectiveCheckInput[] | undefined):
+    | { ok: true; checks: NonNullable<PlanFrontMatter["objectiveChecks"]> }
+    | { ok: false; error: string } {
+    if (!Array.isArray(value)) return { ok: false, error: "objectiveChecks must be an array." };
+    if (value.length > MAX_OBJECTIVE_CHECKS) {
+        return { ok: false, error: `objectiveChecks must contain at most ${MAX_OBJECTIVE_CHECKS} checks.` };
+    }
+    for (const item of value) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+            return { ok: false, error: "Each objectiveChecks entry must be an object." };
+        }
+        const source = item;
+        if (typeof source.id !== "string" || !source.id.trim()) {
+            return { ok: false, error: "Each objectiveChecks entry needs a non-empty id." };
+        }
+        if (source.id.trim().length > MAX_OBJECTIVE_CHECK_ID_LENGTH) {
+            return { ok: false, error: `Objective check id '${source.id.trim()}' is too long.` };
+        }
+        if (typeof source.command !== "string" || !source.command.trim()) {
+            return { ok: false, error: "Each objectiveChecks entry needs a non-empty command." };
+        }
+        if (source.command.trim().length > MAX_OBJECTIVE_CHECK_COMMAND_LENGTH) {
+            return { ok: false, error: `Objective check '${source.id.trim()}' command is too long.` };
+        }
+        if (source.rationale !== undefined) {
+            if (typeof source.rationale !== "string" || !source.rationale.trim()) {
+                return {
+                    ok: false,
+                    error: `Objective check '${source.id.trim()}' rationale must be a non-empty string.`,
+                };
+            }
+            if (source.rationale.trim().length > MAX_OBJECTIVE_CHECK_RATIONALE_LENGTH) {
+                return { ok: false, error: `Objective check '${source.id.trim()}' rationale is too long.` };
+            }
+        }
+    }
+    const checks = normalizeObjectiveChecks(value);
+    if (!checks) return { ok: false, error: "objectiveChecks ids must be unique." };
+    return { ok: true, checks };
+}
+
+function objectiveChecksFormatReference(): string {
+    return "See src/agent-definitions/document-formats/planner-plan-format.md#objective-failing-checks.";
+}
+
+/** @param {{ feedback?: string, images?: Array<{ base64: string, mimeType: string }> }} reviewResult */
+function reviewContextDetails(reviewResult: Pick<PlanReviewMeta, "feedback" | "images">) {
+    return {
+        ...(reviewResult.feedback && { feedback: reviewResult.feedback }),
+        imageCount: reviewResult.images?.length || 0,
+    };
+}
+
+/**
+ * Resolve effective triage metadata. Prefer explicit triageMeta passed at
+ * factory creation; otherwise fall back to the plan's persisted front matter.
+ *
+ * @param {TriageMeta | undefined} triageMeta
+ * @param {string} planName
+ * @param {string} cwd
+ * @returns {Promise<TriageMeta>}
+ */
+async function resolveTriageMeta(
+    triageMeta: TriageMeta | undefined,
+    planName: string,
+    cwd: string,
+): Promise<TriageMeta> {
+    let meta = triageMeta || {};
+    try {
+        const plan = await loadPlan(cwd, planName);
+        if (plan?.attrs) {
+            const planAttrs: TriageMeta = { ...plan.attrs };
+            if (planAttrs.workKind === undefined || planAttrs.workKind === null) delete planAttrs.workKind;
+            meta = { ...triageMeta, ...planAttrs };
+        }
+    } catch {
+        /* ignore */
+    }
+    return {
+        ...meta,
+        classification: normalizePlanClassification(meta.classification),
+        workKind: normalizeWorkKind(meta.workKind),
+    };
+}
+
+/**
+ * Create the plan_written tool with lifecycle context captured at session start.
+ *
+ * @param {{
+ *   triageMeta?: TriageMeta,
+ *   agentName?: string,
+ *   hostedSession?: import('../shared/session/hosted-session.js').HostedSession,
+ * }} opts
+ * @returns {import('@earendil-works/pi-coding-agent').ToolDefinition}
+ */
+export function createPlanWrittenTool({ triageMeta, agentName = "planner", hostedSession }: PlanWrittenOptions = {}) {
+    if (!hostedSession) throw new Error("createPlanWrittenTool: hostedSession is required");
+    const cwd = hostedSession.cwd;
+    return defineTool({
+        name: "plan_written",
+        label: "Plan Written",
+        description: "Declare the plan filename you created in plans/ and submit it for user review. " +
+            "Triggers review and (on approval) a save-vs-execute/decompose prompt. Execution or Slicer dispatch runs " +
+            "after your turn ends — the workflow dispatcher picks it up from this tool's outcome. " +
+            "Call this once after writing the plan; the user reviews it in a browser UI. " +
+            "If the user submits feedback instead of approving, the tool result contains that feedback so you can " +
+            "revise in this same session.",
+        parameters: TOOL_PARAMS,
+        async execute(_toolCallId, params, _signal, onUpdate, _ctx) {
+            const planName = String(params.planName || "").trim().replace(/^plans\//i, "").replace(/\.md$/i, "").trim();
+
+            if (!planName) {
+                return textResult(
+                    "plan_written: planName is empty. Provide the plan filename (without .md) and call again.",
+                );
+            }
+
+            if (!cwd) throw new Error("plan_written: cwd or hostedSession cwd is required");
+            const planPath = join(cwd, PLANS_DIR_NAME, `${planName}.md`);
+            try {
+                const stat = await Deno.stat(planPath);
+                if (!stat.isFile) {
+                    return textResult(
+                        `plan_written: plans/${planName}.md is not a file. Write the plan markdown first, then call plan_written again.`,
+                    );
+                }
+            } catch {
+                return textResult(
+                    `plan_written: plans/${planName}.md not found. Write the plan first using the write tool, then call plan_written.`,
+                );
+            }
+
+            try {
+                hostedSession?.setWorkflowPlanName?.(planName);
+            } catch (_e) {
+                // Footer-context persistence is fail-open and must not block Plan review.
+            }
+
+            let effectiveMeta = await resolveTriageMeta(triageMeta, planName, cwd);
+            const normalizedClassification = normalizePlanClassification(effectiveMeta.classification);
+            if (normalizedClassification !== "PROJECT") {
+                if (!Object.hasOwn(params, "objectiveChecks") || params.objectiveChecks === undefined) {
+                    return textResult(
+                        `plan_written: PLANNED_CHANGE Plans must provide at least one objectiveChecks entry. ${objectiveChecksFormatReference()}`,
+                        {
+                            ...params,
+                            outcome: "repair_required",
+                            planName,
+                            triageMeta: effectiveMeta,
+                            reason: "missing_objective_checks",
+                        },
+                        false,
+                    );
+                }
+                const checkValidation = validateObjectiveChecksParam(params.objectiveChecks);
+                if (!checkValidation.ok || checkValidation.checks.length === 0) {
+                    return textResult(
+                        `plan_written: PLANNED_CHANGE Plans must provide valid objectiveChecks. ${
+                            checkValidation.ok ? "At least one check is required." : checkValidation.error
+                        } ${objectiveChecksFormatReference()}`,
+                        {
+                            ...params,
+                            outcome: "repair_required",
+                            planName,
+                            triageMeta: effectiveMeta,
+                            reason: "invalid_objective_checks",
+                        },
+                        false,
+                    );
+                }
+                const loadedPlan = await loadPlan(cwd, planName);
+                if (!loadedPlan?.revision) {
+                    return textResult(
+                        `plan_written: could not load plans/${planName}.md for objectiveChecks persistence. Call plan_written again after saving the Plan.`,
+                        { ...params, outcome: "repair_required", planName, reason: "plan_load_failed" },
+                        false,
+                    );
+                }
+                await updatePlanFrontMatter(cwd, planName, { objectiveChecks: checkValidation.checks }, {}, {
+                    expectedRevision: loadedPlan.revision,
+                });
+                effectiveMeta = { ...effectiveMeta, objectiveChecks: checkValidation.checks };
+            }
+            const policy = resolvePlanExecutionPolicy(effectiveMeta);
+            if (!policy.ok && policy.reason !== "project_epic") {
+                emitSystemStatus(hostedSession, `Plan policy invalid: ${policy.error}`, {
+                    level: "error",
+                    header: "RunWield",
+                });
+                return textResult(
+                    `plan_written: ${policy.error}\n\nFix plans/${planName}.md and call plan_written again.`,
+                    {
+                        ...params,
+                        outcome: "repair_required",
+                        planName,
+                        triageMeta: effectiveMeta,
+                        reason: policy.reason,
+                    },
+                    false,
+                );
+            }
+
+            const planDetails = {
+                planName,
+                planPath,
+                planFileUrl: toFileUrl(planPath).href,
+                triageMeta: effectiveMeta,
+            };
+            let reviewUrl = "";
+            const updateToolBlock = (status: string) => {
+                emitToolUpdate(
+                    onUpdate,
+                    textResult(
+                        buildPlanWrittenToolOutput({
+                            planName,
+                            status,
+                            reviewUrl,
+                        }),
+                        { ...planDetails, ...(reviewUrl && { reviewUrl }) },
+                    ),
+                );
+            };
+            const onReviewServerOutput = () => {
+                updateToolBlock("Waiting for plan review decision.");
+            };
+            const onReviewSurfaceReady = (surface: { url: string }) => {
+                reviewUrl = surface.url;
+                updateToolBlock("Waiting for plan review decision.");
+            };
+
+            updateToolBlock("Opening browser review UI.");
+
+            function recordWorkflowMetricFn(metric: Parameters<typeof recordWorkflowMetric>[0]) {
+                return recordWorkflowMetric(metric, { cwd });
+            }
+
+            const recoverableReview = await requestRecoverablePlanReview({
+                requestReview: () =>
+                    requestHostedSessionInteraction(hostedSession, {
+                        type: RuntimeInteractionTypes.PLAN_REVIEW,
+                        prompt: `Review plan "${planName}"`,
+                        _meta: {
+                            cwd,
+                            planName,
+                            planPath,
+                            triageMeta: effectiveMeta,
+                            onOutput: onReviewServerOutput,
+                            onSurfaceReady: onReviewSurfaceReady,
+                        },
+                    }),
+                requestRetry: (details) =>
+                    requestPlanReviewRetryConfirmation(hostedSession, requestHostedSessionInteraction, details),
+                onUnanswered: ({ reason }) => {
+                    updateToolBlock(`Plan review ended without an answer (${reason}). Asking whether to review again.`);
+                },
+            });
+            if (recoverableReview.kind === "complete") {
+                updateToolBlock("Plan review ended without an answer and was not reopened.");
+                emitSystemStatus(hostedSession, SESSION_COMPLETE_GUIDANCE, { header: "RunWield" });
+                await recordWorkflowMetricFn({
+                    category: "planning",
+                    event: "review_outcome",
+                    agentName,
+                    planName,
+                    details: {
+                        outcome: "canceled",
+                        classification: effectiveMeta.classification,
+                        reason: recoverableReview.reason,
+                    },
+                });
+                return textResult(
+                    `${SESSION_COMPLETE_GUIDANCE}\n\nYour role as ${agentName} is complete. Do not generate any further text.`,
+                    { ...params, outcome: "canceled", reason: recoverableReview.reason },
+                    true,
+                );
+            }
+            const reviewResponse = recoverableReview.response;
+            updateToolBlock("Plan review decision received.");
+            const reviewMeta = parsePlanReviewMeta(reviewResponse._meta);
+            const reviewResult = {
+                canceled: reviewResponse.outcome === RuntimeInteractionOutcomes.CANCELED,
+                approved: reviewMeta.approved === true,
+                feedback: reviewMeta.feedback,
+                images: reviewMeta.images,
+                approvalAction: reviewMeta.approvalAction,
+                planAttrs: reviewMeta.planAttrs,
+                revision: typeof reviewMeta.revision === "string" ? reviewMeta.revision : undefined,
+            };
+
+            if (reviewMeta.remoteReview === true) {
+                const message = reviewResponse.message || `Plan "${planName}" saved for remote review.`;
+                if (reviewMeta.reviewerUrl) {
+                    emitHostedSessionRuntimeEvent(hostedSession, {
+                        type: RuntimeEventTypes.PLAN_REVIEW_LINK,
+                        planName,
+                        reviewerUrl: reviewMeta.reviewerUrl,
+                        spaceId: reviewMeta.spaceId,
+                        serverUrl: reviewMeta.serverUrl,
+                        revision: typeof reviewMeta.revision === "number" ? reviewMeta.revision : undefined,
+                        reused: reviewMeta.reused,
+                        message,
+                    });
+                }
+                emitSystemStatus(hostedSession, message, { header: "RunWield" });
+                return textResult(
+                    message,
+                    {
+                        ...params,
+                        outcome: "saved",
+                        planName,
+                        triageMeta: effectiveMeta,
+                        remoteReview: true,
+                        ...reviewMeta,
+                    },
+                    true,
+                );
+            }
+
+            if (reviewResult.canceled) {
+                emitSystemStatus(hostedSession, "Plan review canceled. Returning control to user.", {
+                    header: "RunWield",
+                });
+                await recordWorkflowMetricFn({
+                    category: "planning",
+                    event: "review_outcome",
+                    agentName,
+                    planName,
+                    details: { outcome: "canceled", classification: effectiveMeta.classification },
+                });
+                return textResult(
+                    "Plan review canceled by the user.",
+                    { ...params, outcome: "canceled" },
+                    true,
+                );
+            }
+
+            if (!reviewResult.approved) {
+                await recordWorkflowMetricFn({
+                    category: "planning",
+                    event: "review_outcome",
+                    agentName,
+                    planName,
+                    details: { outcome: "feedback", classification: effectiveMeta.classification },
+                });
+                return textResult(
+                    buildFeedbackRequestText({
+                        round: 1,
+                        planName,
+                        feedback: reviewResult.feedback,
+                    }),
+                    {
+                        ...params,
+                        outcome: "feedback",
+                        ...reviewContextDetails(reviewResult),
+                    },
+                    false,
+                    reviewResult.images,
+                );
+            }
+
+            const reviewPlanAttrs: TriageMeta = { ...(reviewResult.planAttrs || {}) };
+            if (reviewPlanAttrs.workKind === undefined || reviewPlanAttrs.workKind === null) {
+                delete reviewPlanAttrs.workKind;
+            }
+            const approvedBase: TriageMeta = { ...effectiveMeta, ...reviewPlanAttrs };
+            const approvedMeta: TriageMeta = {
+                ...approvedBase,
+                classification: normalizePlanClassification(approvedBase.classification),
+                workKind: normalizeWorkKind(approvedBase.workKind),
+            };
+            const action = normalizePlanApprovalAction({
+                classification: approvedMeta.classification,
+                action: reviewResult.approvalAction,
+            });
+
+            if (approvedMeta.classification === "PROJECT") {
+                const projectMeta = { ...approvedMeta };
+                await recordPlanEvent({
+                    cwd,
+                    planName,
+                    event: "epic_readiness_passed",
+                    currentStatus: "approved",
+                    details: { triageMeta: projectMeta },
+                    expectedRevision: reviewResult.revision,
+                });
+                await recordWorkflowMetricFn({
+                    category: "planning",
+                    event: "readiness_outcome",
+                    agentName,
+                    planName,
+                    details: { outcome: "passed", classification: "PROJECT", lifecycleEvent: "epic_readiness_passed" },
+                });
+                emitSystemStatus(
+                    hostedSession,
+                    `PROJECT plan ready for decomposition or child plan selection: ${planName}`,
+                    { header: "RunWield" },
+                );
+
+                if (action !== PLAN_APPROVAL_ACTIONS.DECOMPOSE) {
+                    await recordWorkflowMetricFn({
+                        category: "planning",
+                        event: "review_outcome",
+                        agentName,
+                        planName,
+                        details: { outcome: "saved", classification: "PROJECT", approvalAction: action },
+                    });
+                    emitSystemStatus(
+                        hostedSession,
+                        appendSessionCompleteGuidance(
+                            `Plan saved. Resume later with: ${CLI_BIN} load-plan ${planName}`,
+                        ),
+                        { header: "RunWield" },
+                    );
+                    const savedFeedbackSuffix = reviewResult.feedback
+                        ? `\n\nFeedback/annotations from review: ${reviewResult.feedback}`
+                        : "";
+                    return textResult(
+                        appendSessionCompleteGuidance(
+                            `Plan "${planName}" approved and saved for later decomposition. Your role as ${agentName} is complete. Do not generate any further text.${savedFeedbackSuffix}`,
+                        ),
+                        {
+                            ...params,
+                            outcome: "saved",
+                            planName,
+                            triageMeta: projectMeta,
+                            ...reviewContextDetails(reviewResult),
+                        },
+                        true,
+                        reviewResult.images,
+                    );
+                }
+
+                await recordWorkflowMetricFn({
+                    category: "planning",
+                    event: "review_outcome",
+                    agentName,
+                    planName,
+                    details: {
+                        outcome: "approved_decompose",
+                        classification: "PROJECT",
+                        approvalAction: action,
+                    },
+                });
+                const slicerFeedbackSuffix = reviewResult.feedback
+                    ? `\n\nFeedback/annotations from review: ${reviewResult.feedback}`
+                    : "";
+                return textResult(
+                    `PROJECT Epic "${planName}" approved for Slicer decomposition. ${slicerFeedbackSuffix}`,
+                    {
+                        ...params,
+                        outcome: "approved_decompose",
+                        planName,
+                        triageMeta: projectMeta,
+                        ...reviewContextDetails(reviewResult),
+                    },
+                    true,
+                    reviewResult.images,
+                );
+            }
+
+            await recordPlanEvent({
+                cwd,
+                planName,
+                event: "readiness_passed",
+                currentStatus: "approved",
+                details: { triageMeta: approvedMeta },
+                expectedRevision: reviewResult.revision,
+            });
+            await recordWorkflowMetricFn({
+                category: "planning",
+                event: "readiness_outcome",
+                agentName,
+                planName,
+                details: {
+                    outcome: "passed",
+                    classification: approvedMeta.classification,
+                    lifecycleEvent: "readiness_passed",
+                },
+            });
+
+            if (action !== PLAN_APPROVAL_ACTIONS.RUN) {
+                await recordWorkflowMetricFn({
+                    category: "planning",
+                    event: "review_outcome",
+                    agentName,
+                    planName,
+                    details: { outcome: "saved", classification: approvedMeta.classification, approvalAction: action },
+                });
+                emitSystemStatus(
+                    hostedSession,
+                    appendSessionCompleteGuidance(`Plan saved. Resume later with: ${CLI_BIN} resume ${planName}`),
+                    { header: "RunWield" },
+                );
+                const savedFeedbackSuffix = reviewResult.feedback
+                    ? `\n\nFeedback/annotations from review: ${reviewResult.feedback}`
+                    : "";
+                return textResult(
+                    appendSessionCompleteGuidance(
+                        `Plan "${planName}" approved and saved for later execution. Your role as ${agentName} is complete. Do not generate any further text.${savedFeedbackSuffix}`,
+                    ),
+                    {
+                        ...params,
+                        outcome: "saved",
+                        planName,
+                        triageMeta: approvedMeta,
+                        ...reviewContextDetails(reviewResult),
+                    },
+                    true,
+                    reviewResult.images,
+                );
+            }
+
+            await recordWorkflowMetricFn({
+                category: "planning",
+                event: "review_outcome",
+                agentName,
+                planName,
+                details: {
+                    outcome: "approved_execute",
+                    classification: approvedMeta.classification,
+                    approvalAction: action,
+                },
+            });
+            const execFeedbackSuffix = reviewResult.feedback
+                ? `\n\nFeedback/annotations from review: ${reviewResult.feedback}`
+                : "";
+            return textResult(
+                `Plan "${planName}" approved for execution.${execFeedbackSuffix}`,
+                {
+                    ...params,
+                    outcome: "approved_execute",
+                    planName,
+                    triageMeta: approvedMeta,
+                    ...reviewContextDetails(reviewResult),
+                },
+                true,
+                reviewResult.images,
+            );
+        },
+    });
+}

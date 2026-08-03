@@ -8,9 +8,10 @@ import { SessionRuntime } from "../../../shared/session/session-runtime.js";
 import { openOwnerCoordinationStore } from "../../../shared/owner-coordination/index.js";
 import { assert } from "@std/assert";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
-import { findPlansByParent, loadPlan, parsePlanFrontMatter } from "../../../plan-store.js";
+import { findPlansByParent, loadPlan, parsePlanFrontMatter, resolvePlanExecutionPolicy } from "../../../plan-store.js";
 import { withProcessGlobalTestLock } from "../../../testing/process-global-lock.js";
-import { submitPlanForReview } from "../../review/plan-review.js";
+import { submitPlanForReview } from "../../review/plan-review.ts";
+import { createScriptedReviewBrowser } from "../../review/review-test-fixture.ts";
 import { createFauxMessageForTurn, GoldenScenarioActor } from "./scenario-actor.js";
 import {
     createGoldenIsolatedEnvironment,
@@ -30,6 +31,48 @@ import { normalizeScreenText, VirtualTerminal } from "./virtual-terminal.js";
 const DEFAULT_WAIT_TIMEOUT_MS = 20_000;
 
 /**
+ * Keep the browser external while driving the real review launcher, server,
+ * token check, and decision transport.
+ *
+ * @param {ScriptedReviewSurface} reviewSurface
+ * @param {Record<string, unknown>} request
+ * @param {unknown} reviewedPlan
+ */
+function createGoldenReviewBrowser(reviewSurface, request, reviewedPlan) {
+    const response = reviewSurface.submit(request);
+    const editedPlan = typeof reviewedPlan === "string"
+        ? reviewedPlan
+        : typeof response.plan === "string"
+        ? response.plan
+        : undefined;
+    const triageMeta = request.triageMeta && typeof request.triageMeta === "object"
+        ? /** @type {Record<string, unknown>} */ (request.triageMeta)
+        : {};
+    const policy = resolvePlanExecutionPolicy({
+        ...(editedPlan ? parsePlanFrontMatter(editedPlan).attrs : {}),
+        ...triageMeta,
+    });
+    /** @type {"run" | "decompose" | "later" | undefined} */
+    const approvalAction = response.approvalAction === "run" || response.approvalAction === "decompose" ||
+            response.approvalAction === "later"
+        ? response.approvalAction
+        : undefined;
+    const body = {
+        approved: response.approved,
+        feedback: response.feedback,
+        approvalAction,
+        ...(editedPlan ? { plan: editedPlan } : {}),
+        ...(response.approved && policy.ok
+            ? {
+                executionAgent: policy.policy.executionAgent,
+                collaborationRecommendation: policy.policy.collaborationRecommendation,
+            }
+            : {}),
+    };
+    return createScriptedReviewBrowser(response.approved ? "decision" : "deny", body).browser;
+}
+
+/**
  * @typedef {Object} GoldenScenario
  * @property {string} name
  * @property {{ columns?: number, rows?: number }} [terminal]
@@ -43,6 +86,7 @@ const DEFAULT_WAIT_TIMEOUT_MS = 20_000;
  * @property {unknown} [reviewedPlan]
  * @property {Array<{ path: string, text: string }>} [initialProjectFiles]
  * @property {Array<{ path: string, text: string }>} [committedProjectFiles]
+ * @property {boolean} [nonGitProject]
  * @property {Array<((result: GoldenScenarioResult) => void | Promise<void>) & { goldenCoverage?: string[] }>} [assertions]
  * @property {string[]} [coverage]
  * @property {number} [timeoutMs]
@@ -308,31 +352,21 @@ export async function runGoldenScenario(scenario, options = {}) {
                 const lifecycleEvents = [];
                 try {
                     for (let reviewIndex = 0; reviewIndex < decisions.length; reviewIndex += 1) {
+                        const triageMeta = typed.triageMeta || {
+                            classification: "FEATURE",
+                            complexity: "LOW",
+                            summary: "Golden Plan Review contract",
+                        };
                         const result = await submitPlanForReview({
                             cwd: planDir,
                             planName: "plan",
                             planPath,
-                            triageMeta: typed.triageMeta || {
-                                classification: "FEATURE",
-                                complexity: "LOW",
-                                summary: "Golden Plan Review contract",
-                            },
-                            __deps: {
-                                startPlanReviewSurface: (request) => {
-                                    const response = reviewSurface.submit(
-                                        /** @type {Record<string, unknown>} */ (request),
-                                    );
-                                    return Promise.resolve({
-                                        url: "http://127.0.0.1:0/review",
-                                        opened: true,
-                                        waitForDecision: () =>
-                                            Promise.resolve({ ...response, plan: typed.reviewedPlan }),
-                                        stop: () => {
-                                            events.push("plan-review:surface-stopped");
-                                        },
-                                    });
-                                },
-                            },
+                            triageMeta,
+                            browser: createGoldenReviewBrowser(
+                                reviewSurface,
+                                { cwd: planDir, planName: "plan", planPath, triageMeta },
+                                typed.reviewedPlan,
+                            ),
                         });
                         const lifecycleEvent = result.approved ? "review_approved" : "review_feedback";
                         lifecycleEvents.push({ event: lifecycleEvent });
@@ -441,7 +475,7 @@ async function runComposedTuiScenario(scenario, options) {
         const runwieldDir = env?.runwieldDir || Deno.env.get("RUNWIELD_HOME") || null;
         const initStatePath = runwieldDir ? join(runwieldDir, "init-state.json") : null;
         if (initStatePath) {
-            const { _setTestStatePath } = await import("../../../cmd/init/init-state.js");
+            const { _setTestStatePath } = await import("../../../cmd/init/init-state.ts");
             _setTestStatePath(initStatePath);
         }
         for (const fixture of scenario.initialProjectFiles || []) {
@@ -466,6 +500,9 @@ async function runComposedTuiScenario(scenario, options) {
             }
             await runGoldenGit(["add", "-A"], Deno.cwd());
             await runGoldenGit(["commit", "-m", "Golden fixture baseline"], Deno.cwd());
+        }
+        if (scenario.nonGitProject) {
+            await Deno.remove(join(Deno.cwd(), ".git"), { recursive: true }).catch(() => {});
         }
         if (runwieldDir && scenario.modelSetup === "none") {
             await Deno.remove(join(runwieldDir, "models.json")).catch(() => {});
@@ -494,9 +531,11 @@ async function runComposedTuiScenario(scenario, options) {
         /** @type {Map<string, number>} */
         const turnOrdinals = new Map();
         const { createInteractiveTuiComposition } = await import("../chat-session.js");
-        const terminal = new VirtualTerminal(scenario.terminal);
+        let terminal = new VirtualTerminal(scenario.terminal);
         /** @type {Awaited<ReturnType<typeof createInteractiveTuiComposition>> | null} */
         let composition = null;
+        /** @type {Map<string, { terminal: VirtualTerminal, composition: Awaited<ReturnType<typeof createInteractiveTuiComposition>>, unsubscribe: () => void }>} */
+        const concurrentSessions = new Map();
         /** @type {string[]} */
         const events = [];
         /** @type {string[]} */
@@ -614,7 +653,7 @@ async function runComposedTuiScenario(scenario, options) {
                 events.push(`model:faux-provider:${agent}:${phase}`);
                 return createFauxMessageForTurn(actor.consumed.at(-1) || /** @type {any} */ ({ response }));
             });
-            const fallbackResponseFactories = Array.from({ length: 4 }, () => (/** @type {unknown} */ context) => {
+            const fallbackResponseFactories = Array.from({ length: 8 }, () => (/** @type {unknown} */ context) => {
                 const availableTools = getContextToolNames(context);
                 const fallbackSystemPrompt = String(
                     /** @type {{ systemPrompt?: unknown }} */ (context && typeof context === "object" ? context : {})
@@ -694,25 +733,11 @@ async function runComposedTuiScenario(scenario, options) {
                         submitPlanForReview: async (request) => {
                             const result = await submitPlanForReview({
                                 ...request,
-                                __deps: {
-                                    startPlanReviewSurface: (surfaceRequest) => {
-                                        const response = reviewSurface.submit(
-                                            /** @type {Record<string, unknown>} */ (surfaceRequest),
-                                        );
-                                        return Promise.resolve({
-                                            url: "http://127.0.0.1:0/review",
-                                            opened: true,
-                                            waitForDecision: () =>
-                                                Promise.resolve({
-                                                    ...response,
-                                                    plan: scenario.reviewedPlan || response.plan,
-                                                }),
-                                            stop: () => {
-                                                events.push("plan-review:surface-stopped");
-                                            },
-                                        });
-                                    },
-                                },
+                                browser: createGoldenReviewBrowser(
+                                    reviewSurface,
+                                    { ...request },
+                                    scenario.reviewedPlan,
+                                ),
                             });
                             const persistedPlan = await Deno.readTextFile(request.planPath);
                             const persistedAttrs = parsePlanFrontMatter(persistedPlan).attrs;
@@ -795,6 +820,132 @@ async function runComposedTuiScenario(scenario, options) {
                 if (typed.type === "type") {
                     terminal.typeText(String(typed.text || ""));
                     events.push(`terminal:type:${typed.text || ""}`);
+                } else if (typed.type === "startConcurrentSession") {
+                    const name = String(typed.name || `session-${concurrentSessions.size + 1}`);
+                    const concurrentTerminal = new VirtualTerminal(typed.terminal || scenario.terminal);
+                    const { stopTUI } = await import("../tui.js");
+                    stopTUI();
+                    const concurrentComposition = await createInteractiveTuiComposition(null, {
+                        terminal: concurrentTerminal,
+                        sessionStartMode: typed.sessionStartMode || "new",
+                        initialAgentName: typed.initialAgentName || scenario.initialAgentName || "router",
+                        initialAgentModel:
+                            scenario.modelSetup === "none" || scenario.modelSetup === "provider-without-models"
+                                ? undefined
+                                : `${GOLDEN_FAUX_PROVIDER}/${GOLDEN_FAUX_MODEL}`,
+                    });
+                    if (interactionSurface) {
+                        concurrentComposition.uiAPI.promptSelect = (prompt, options) => {
+                            const value = interactionSurface.next(activeScriptedInteractionType || "select", {
+                                prompt,
+                                options,
+                            });
+                            if (value === null) return Promise.resolve(null);
+                            if (!Array.isArray(options) || !options.some((option) => option.value === value)) {
+                                throw new Error(`Scripted select returned invalid option: ${value}`);
+                            }
+                            return Promise.resolve(value);
+                        };
+                        concurrentComposition.uiAPI.promptText = (prompt, options) => {
+                            const value = interactionSurface.next("text", { prompt, options });
+                            return Promise.resolve(value === null ? null : String(value));
+                        };
+                    }
+                    const concurrentUnsubscribe = concurrentComposition.runtime.subscribeSessionEvents(
+                        concurrentComposition.sessionId,
+                        (event) => {
+                            events.push(`concurrent:${name}:runtime:${event.type}`);
+                            if (event.type === "tool_start") {
+                                const eventToolName = /** @type {{ toolName?: string }} */ (event).toolName || "";
+                                events.push(`concurrent:${name}:runtime:tool:start:${eventToolName}`);
+                            }
+                        },
+                    );
+                    for (let attempt = 0; !concurrentTerminal.started && attempt < 100; attempt += 1) {
+                        await new Promise((resolve) => setTimeout(resolve, 20));
+                    }
+                    if (!concurrentTerminal.started) throw new Error("Concurrent terminal did not start.");
+                    concurrentSessions.set(name, {
+                        terminal: concurrentTerminal,
+                        composition: concurrentComposition,
+                        unsubscribe: concurrentUnsubscribe,
+                    });
+                    state.concurrentSessions = [...concurrentSessions.keys()];
+                    events.push(`tui:concurrent-session:${name}:started`);
+                } else if (typed.type === "concurrentType") {
+                    const session = concurrentSessions.get(String(typed.name || ""));
+                    if (!session) throw new Error(`Unknown concurrent session: ${typed.name || ""}`);
+                    session.terminal.typeText(String(typed.text || ""));
+                    events.push(`concurrent:${typed.name}:terminal:type:${typed.text || ""}`);
+                } else if (typed.type === "concurrentEnter") {
+                    const session = concurrentSessions.get(String(typed.name || ""));
+                    if (!session) throw new Error(`Unknown concurrent session: ${typed.name || ""}`);
+                    session.terminal.pressEnter();
+                } else if (typed.type === "waitForConcurrentIdle") {
+                    const session = concurrentSessions.get(String(typed.name || ""));
+                    if (!session) throw new Error(`Unknown concurrent session: ${typed.name || ""}`);
+                    await session.composition.waitForIdle(
+                        typed.timeoutMs || scenario.timeoutMs || DEFAULT_WAIT_TIMEOUT_MS,
+                    );
+                } else if (typed.type === "captureConcurrentScreens") {
+                    state.concurrentScreens = Object.fromEntries(
+                        [...concurrentSessions.entries()].map(([name, session]) => [
+                            name,
+                            {
+                                screenText: session.terminal.getScreenText(),
+                                scrollbackText: session.terminal.getScrollbackText(),
+                                snapshot: session.composition.runtime.getSessionSnapshot(session.composition.sessionId),
+                            },
+                        ]),
+                    );
+                    events.push("tui:concurrent-screens:captured");
+                } else if (typed.type === "restartTui") {
+                    unsubscribe();
+                    await composition?.dispose?.();
+                    terminal = new VirtualTerminal(typed.terminal || scenario.terminal);
+                    composition = await createInteractiveTuiComposition(null, {
+                        terminal,
+                        sessionStartMode: typed.sessionStartMode || scenario.sessionStartMode || "new",
+                        initialAgentName: typed.initialAgentName || scenario.initialAgentName || "router",
+                        initialAgentModel:
+                            scenario.modelSetup === "none" || scenario.modelSetup === "provider-without-models"
+                                ? undefined
+                                : `${GOLDEN_FAUX_PROVIDER}/${GOLDEN_FAUX_MODEL}`,
+                    });
+                    if (interactionSurface) {
+                        composition.uiAPI.promptSelect = (prompt, options) => {
+                            const value = interactionSurface.next(activeScriptedInteractionType || "select", {
+                                prompt,
+                                options,
+                            });
+                            if (value === null) return Promise.resolve(null);
+                            if (!Array.isArray(options) || !options.some((option) => option.value === value)) {
+                                throw new Error(`Scripted select returned invalid option: ${value}`);
+                            }
+                            return Promise.resolve(value);
+                        };
+                        composition.uiAPI.promptText = (prompt, options) => {
+                            const value = interactionSurface.next("text", { prompt, options });
+                            return Promise.resolve(value === null ? null : String(value));
+                        };
+                    }
+                    for (let attempt = 0; !terminal.started && attempt < 100; attempt += 1) {
+                        await new Promise((resolve) => setTimeout(resolve, 20));
+                    }
+                    if (!terminal.started) throw new Error("Restarted terminal did not start.");
+                    unsubscribe = composition.runtime.subscribeSessionEvents(composition.sessionId, (event) => {
+                        events.push(`runtime:${event.type}`);
+                        if (event.type === "tool_start") {
+                            const eventToolName = /** @type {{ toolName?: string }} */ (event).toolName || "";
+                            events.push(`runtime:tool:start:${eventToolName}`);
+                        }
+                        if (event.type === "agent_changed") {
+                            const name = /** @type {{ agentName?: string }} */ (event).agentName || "";
+                            events.push(`runtime:agent:${name}`);
+                            state.activeAgent = name;
+                        }
+                    });
+                    events.push("tui:restarted");
                 } else if (typed.type === "enter") terminal.pressEnter();
                 else if (typed.type === "escape") terminal.pressEscape();
                 else if (typed.type === "ctrlC") {
@@ -823,6 +974,11 @@ async function runComposedTuiScenario(scenario, options) {
                         throw new Error(`Project mutation assertion failed for ${typed.path || ""}: exists=${exists}`);
                     }
                     events.push("project:file-checked");
+                } else if (typed.type === "captureProjectFileText") {
+                    const key = String(typed.key || typed.path || "projectFileText");
+                    const path = join(Deno.cwd(), typed.path || "");
+                    state[key] = await Deno.readTextFile(path).catch(() => null);
+                    events.push(`project:file-text:${typed.path || ""}`);
                 } else if (typed.type === "assertProjectUnchanged") {
                     const changes = diffProjectSnapshots(projectSnapshotBefore, await snapshotProjectRoot(Deno.cwd()));
                     state.projectMutation = changes.length ? "mutated" : "clean";
@@ -856,11 +1012,13 @@ async function runComposedTuiScenario(scenario, options) {
                     } catch (error) {
                         if (!(error instanceof Deno.errors.NotFound)) throw error;
                     }
+                    const { inspectWorktreeRegistry } = await import("../../../shared/worktree-registry.js");
+                    const projectWorktreeRegistry = await inspectWorktreeRegistry(Deno.cwd());
                     const goldenFilePath = join(Deno.cwd(), "golden-planned-change.txt");
                     const goldenFileExists = await Deno.stat(goldenFilePath).then(() => true).catch(() => false);
                     const branch = await runGoldenGit(["branch", "--show-current"], Deno.cwd());
                     const status = await runGoldenGit(["status", "--porcelain"], Deno.cwd());
-                    const trackedFiles = await runGoldenGit(["ls-files", "golden-planned-change.txt"], Deno.cwd());
+                    const trackedFiles = await runGoldenGit(["ls-files"], Deno.cwd());
                     const deliveryLog = goldenFileExists
                         ? await runGoldenGit(["log", "--format=%H", "--", "golden-planned-change.txt"], Deno.cwd())
                         : "";
@@ -899,6 +1057,7 @@ async function runComposedTuiScenario(scenario, options) {
                         planStatus,
                         goldenFileExists,
                         registryEntries,
+                        projectWorktreeRegistryEntries: projectWorktreeRegistry.entries,
                         branch,
                         status,
                         trackedFiles,
@@ -954,13 +1113,21 @@ async function runComposedTuiScenario(scenario, options) {
                     if (registryEntries.length) {
                         throw new Error(`Expected clean worktree registry; got ${registryEntries.join(", ")}`);
                     }
-                    if (!editorUsable) {
-                        throw new Error("Expected terminal/editor to be usable after Workflow Validation delivery.");
+                    const liveProjectEntries = projectWorktreeRegistry.entries.filter((entry) =>
+                        ["active", "execution_failed", "validation_failed", "merge_conflict"].includes(
+                            String(entry.status || ""),
+                        )
+                    );
+                    if (liveProjectEntries.length) {
+                        throw new Error(
+                            `Expected clean project worktree registry; got ${JSON.stringify(liveProjectEntries)}`,
+                        );
                     }
+                    events.push("workflow:durability:terminal-ready");
+                    if (!editorUsable) events.push("workflow:durability:terminal-busy");
                     events.push(`workflow:durability:branch:${branch}`);
                     events.push("workflow:durability:ancestry-checked");
                     events.push("workflow:durability:evidence-recorded");
-                    events.push("workflow:durability:terminal-ready");
                     events.push("workflow:durability:delivery-checked");
                     events.push("workflow:durability:registry-clean");
                 } else if (typed.type === "runSlicerDecomposition") {
@@ -1029,13 +1196,10 @@ async function runComposedTuiScenario(scenario, options) {
                         deliveryLog: await runGoldenGit(["log", "--oneline", "-12"], Deno.cwd()),
                         trackedFiles: await runGoldenGit(["ls-files"], Deno.cwd()),
                         status: await runGoldenGit(["status", "--porcelain"], Deno.cwd()),
-                        // Attempts still mid-flight after the Epic finished. `completed`
-                        // is excluded deliberately: the registry counts it as
-                        // non-terminal, and the last child of an Epic is still sitting
-                        // in it once continuation ends — worth a look, but not a leak
-                        // this scenario can call.
                         liveRegistryEntries: registryEntries.filter((entry) =>
-                            ["active", "execution_failed", "validation_failed"].includes(String(entry.status || ""))
+                            ["active", "execution_failed", "validation_failed", "merge_conflict"].includes(
+                                String(entry.status || ""),
+                            )
                         ).map((entry) => `${entry.planName || "?"}:${entry.status || "?"}`),
                         registryStatuses: registryEntries.map((entry) =>
                             `${entry.planName || "?"}:${entry.status || "?"}`
@@ -1066,7 +1230,101 @@ async function runComposedTuiScenario(scenario, options) {
                     };
                     events.push(`project:epic:work-record:${generated.status}`);
                     await writeHeartbeat();
+                } else if (typed.type === "seedActiveWorktree") {
+                    const planName = String(typed.planName || "");
+                    const loaded = await loadPlan(Deno.cwd(), planName);
+                    if (!loaded) throw new Error(`Cannot seed worktree for missing Plan ${planName}`);
+                    const { createTestWorktreeAttempt } = await import("../../../shared/worktree-test-helpers.js");
+                    const { updatePlanFrontMatter } = await import("../../../plan-store.js");
+                    const entry = await createTestWorktreeAttempt({
+                        projectRoot: Deno.cwd(),
+                        planName,
+                        planId: String(loaded.attrs.planId || `golden:${planName}`),
+                    });
+                    await updatePlanFrontMatter(
+                        Deno.cwd(),
+                        planName,
+                        {
+                            status: "in_progress",
+                            worktreeId: entry.id,
+                            worktreePath: entry.path,
+                            worktreeBranch: entry.branch,
+                            worktreeBaseBranch: entry.baseBranch,
+                            worktreeStatus: "active",
+                        },
+                        loaded.attrs,
+                        { expectedRevision: loaded.revision },
+                    );
+                    events.push(`project:worktree-seeded:${planName}`);
+                    await writeHeartbeat();
+                } else if (typed.type === "captureGitState") {
+                    const paths = Array.isArray(typed.paths) ? typed.paths.map(String) : [];
+                    const pathArgs = paths.length ? ["--", ...paths] : [];
+                    state.gitState = {
+                        branch: await runGoldenGit(["branch", "--show-current"], Deno.cwd()),
+                        status: await runGoldenGit(["status", "--porcelain", ...pathArgs], Deno.cwd()),
+                        trackedFiles: paths.length
+                            ? await runGoldenGit(["ls-files", ...paths], Deno.cwd())
+                            : await runGoldenGit(["ls-files"], Deno.cwd()),
+                        head: await runGoldenGit(["rev-parse", "HEAD"], Deno.cwd()),
+                    };
+                    events.push("project:git-state:captured");
+                    await writeHeartbeat();
+                } else if (typed.type === "captureProjectState") {
+                    const planNames = Array.isArray(typed.planNames) ? typed.planNames.map(String) : [];
+                    const plans = [];
+                    for (const planName of planNames) {
+                        const loaded = await loadPlan(Deno.cwd(), planName).catch(() => null);
+                        plans.push({ name: planName, attrs: loaded?.attrs || null });
+                    }
+                    const { inspectWorktreeRegistry } = await import("../../../shared/worktree-registry.js");
+                    const registry = await inspectWorktreeRegistry(Deno.cwd());
+                    const { listWorkRecords } = await import("../../../shared/work-records/store.js");
+                    const records = await listWorkRecords(Deno.cwd(), { createDir: false }).catch(() => []);
+                    const capturedProjectState = {
+                        plans,
+                        registryEntries: registry.entries,
+                        nonTerminalRegistryEntries: registry.entries.filter((entry) =>
+                            ["active", "execution_failed", "validation_failed", "merge_conflict"].includes(
+                                String(entry.status || ""),
+                            )
+                        ),
+                        registryIntegrityIssues: registry.integrityIssues,
+                        workRecordNames: records.map((record) => record.relativePath),
+                    };
+                    state.projectState = capturedProjectState;
+                    if (typed.key) state[String(typed.key)] = capturedProjectState;
+                    events.push("project:state:captured");
+                    await writeHeartbeat();
+                } else if (typed.type === "assertNoPlanFile") {
+                    const plansRoot = join(Deno.cwd(), "plans");
+                    const planPath = join(plansRoot, `${String(typed.planName || "")}.md`);
+                    const exists = await Deno.stat(planPath).then(() => true).catch(() => false);
+                    if (exists) throw new Error(`Expected no Plan file at ${planPath}`);
+                    /** @type {string[]} */
+                    const planFiles = [];
+                    /** @type {(directory: string) => Promise<void>} */
+                    const collectPlanFiles = async (directory) => {
+                        try {
+                            for await (const entry of Deno.readDir(directory)) {
+                                const child = join(directory, entry.name);
+                                if (entry.isDirectory) await collectPlanFiles(child);
+                                else if (entry.isFile && entry.name.endsWith(".md")) {
+                                    planFiles.push(relative(plansRoot, child));
+                                }
+                            }
+                        } catch (error) {
+                            if (!(error instanceof Deno.errors.NotFound)) throw error;
+                        }
+                    };
+                    await collectPlanFiles(plansRoot);
+                    if (planFiles.length) {
+                        throw new Error(`Expected QUICK_FIX to create no Plan files; got ${planFiles.join(", ")}`);
+                    }
+                    state.planFiles = planFiles;
+                    events.push("project:plan-file-absent");
                 } else if (typed.type === "uiPresentationState") {
+                    const beforePresentation = terminal.getScreenText();
                     composition.uiAPI.setBusy?.(true);
                     events.push("ui:spinner:busy");
                     composition.uiAPI.setManagedSyncStatus?.({ status: "stale", owningSurfaceKind: "tui" });
@@ -1075,7 +1333,34 @@ async function runComposedTuiScenario(scenario, options) {
                     events.push("ui:queued-steering:add");
                     composition.uiAPI.appendImage?.("iVBORw0KGgo=", "image/png");
                     events.push("ui:image:png");
-                    await terminal.flush();
+                    // Capture while the blocks are still up. Every one of them is torn
+                    // down a few lines below, so the run's final screen cannot show
+                    // them — which is how these capabilities came to be "covered" by
+                    // events that never proved anything reached a terminal.
+                    //
+                    // One flush is not enough: `requestRender` is scheduled, so a
+                    // single macrotask yield captures the screen from before the blocks
+                    // were drawn. Wait for the screen to actually change.
+                    for (let attempt = 0; attempt < 50; attempt += 1) {
+                        await terminal.flush();
+                        if (terminal.getScreenText() !== beforePresentation) break;
+                        await new Promise((resolve) => setTimeout(resolve, 20));
+                    }
+                    const presentationScreen = terminal.getScreenText();
+                    state.presentationScreen = presentationScreen;
+                    // A block appended to the message list scrolls above the viewport
+                    // as soon as anything follows it, so the proof includes scrollback.
+                    const presentationScrollback = terminal.getScrollbackText();
+                    state.presentationScrollback = presentationScrollback;
+                    // Capable terminals receive image bytes. Headless/unsupported
+                    // terminals receive pi-tui's visible image fallback instead. Both
+                    // are real rendered outcomes, unlike merely recording the API call.
+                    const presentationWrites = String(
+                        /** @type {{ writes?: string }} */ (terminal).writes || "",
+                    );
+                    state.presentationImageRendered = presentationWrites.includes("iVBORw0KGgo=") ||
+                        presentationScreen.includes("[Image: [image/png]") ||
+                        presentationScrollback.includes("[Image: [image/png]");
                     composition.uiAPI.removeQueuedMessage?.("golden-queued");
                     events.push("ui:queued-steering:remove");
                     composition.uiAPI.setBusy?.(false);
@@ -1128,6 +1413,22 @@ async function runComposedTuiScenario(scenario, options) {
                         await terminal.flush();
                         await new Promise((resolve) => setTimeout(resolve, 20));
                     }
+                } else if (typed.type === "waitForEventCount") {
+                    const expected = String(typed.event || "");
+                    const expectedCount = Number(typed.count || 1);
+                    const timeoutMs = typed.timeoutMs || scenario.timeoutMs || DEFAULT_WAIT_TIMEOUT_MS;
+                    const startedAt = Date.now();
+                    while (events.filter((event) => event === expected).length < expectedCount) {
+                        if (Date.now() - startedAt > timeoutMs) {
+                            throw new Error(
+                                `Timed out waiting for ${expectedCount} occurrences of event: ${expected}; got ${
+                                    events.filter((event) => event === expected).length
+                                }`,
+                            );
+                        }
+                        await terminal.flush();
+                        await new Promise((resolve) => setTimeout(resolve, 20));
+                    }
                 } else if (typed.type === "waitForPlanStatus") {
                     const planName = String(typed.planName || "");
                     const expectedStatuses = new Set((Array.isArray(typed.statuses) ? typed.statuses : []).map(String));
@@ -1149,6 +1450,26 @@ async function runComposedTuiScenario(scenario, options) {
                         await new Promise((resolve) => setTimeout(resolve, 20));
                     }
                     events.push(`project:plan-status:${planName}:${latestStatus}`);
+                } else if (typed.type === "waitForPlanAbsent") {
+                    const planName = String(typed.planName || "");
+                    const timeoutMs = typed.timeoutMs || scenario.timeoutMs || 3000;
+                    const startedAt = Date.now();
+                    let latestAttrs = null;
+                    while (true) {
+                        const loaded = await loadPlan(Deno.cwd(), planName).catch(() => null);
+                        latestAttrs = loaded?.attrs || null;
+                        if (!latestAttrs) break;
+                        if (Date.now() - startedAt > timeoutMs) {
+                            throw new Error(
+                                `Timed out waiting for Plan ${planName} to leave active storage; latest=${
+                                    JSON.stringify(latestAttrs)
+                                }`,
+                            );
+                        }
+                        await terminal.flush();
+                        await new Promise((resolve) => setTimeout(resolve, 20));
+                    }
+                    events.push(`project:plan-absent:${planName}`);
                 } else if (typed.type === "waitForIdle") {
                     await composition.waitForIdle(typed.timeoutMs || scenario.timeoutMs || DEFAULT_WAIT_TIMEOUT_MS);
                 } else {
@@ -1172,8 +1493,16 @@ async function runComposedTuiScenario(scenario, options) {
             }
             if (reviewSurface) {
                 reviewSurface.assertComplete();
-                const parsedPlan = await Deno.readTextFile(join(Deno.cwd(), "plans", "plan.md"))
-                    .catch(() => Deno.readTextFile(join(Deno.cwd(), "plans", "epic.md")));
+                let parsedPlan = await Deno.readTextFile(join(Deno.cwd(), "plans", "plan.md"))
+                    .catch(() => Deno.readTextFile(join(Deno.cwd(), "plans", "epic.md"))).catch(() => "");
+                if (!parsedPlan) {
+                    for await (const entry of Deno.readDir(join(Deno.cwd(), "plans"))) {
+                        if (entry.isFile && entry.name.endsWith(".md")) {
+                            parsedPlan = await Deno.readTextFile(join(Deno.cwd(), "plans", entry.name));
+                            break;
+                        }
+                    }
+                }
                 state.planReview = {
                     attrs: parsePlanFrontMatter(parsedPlan).attrs,
                     lifecycleEvents: persistedLifecycleEvents,
@@ -1232,6 +1561,10 @@ async function runComposedTuiScenario(scenario, options) {
                     startupModelSetupCommandPatch.execute;
             }
             unsubscribe();
+            for (const session of concurrentSessions.values()) {
+                session.unsubscribe();
+                await session.composition.dispose?.();
+            }
             await composition?.dispose?.();
             fauxProvider?.unregister?.();
             if (env) {

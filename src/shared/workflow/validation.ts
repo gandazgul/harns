@@ -12,8 +12,9 @@ import { runActiveAgentTurn } from "../session/agent-switching.js";
 import { loadDirectDeliveryHierarchySnapshot } from "./validation-delivery-hierarchy.ts";
 import { preparePrimaryPlanPathForMerge, restorePrimaryPlanPathAfterMergeFailure } from "../worktree.js";
 import { runIsolatedAgentSession } from "../session/session.js";
-import { emitSystemStatus } from "../session/session-runtime-events.js";
+import type { RuntimeValidationProgress } from "../session/session-runtime-events.js";
 import { requestHostedSessionInteraction, RuntimeInteractionTypes } from "../session/session-runtime-interactions.js";
+import { acknowledgeTaskCompletion, claimPendingTaskCompletion } from "../session/task-completion-session.ts";
 import { getCodeReviewMode, getGuidedReviewMode, shouldCleanupMergedWorktrees } from "../settings.js";
 import { createGitPort } from "../git-port.ts";
 import {
@@ -23,7 +24,7 @@ import {
     removeWorktreeGitArtifacts,
 } from "../worktree.js";
 import {
-    removeEntry as removeWorktreeRegistryEntry,
+    pruneEntry as pruneWorktreeRegistryEntry,
     updateEntry as updateWorktreeRegistryEntry,
 } from "../worktree-registry.js";
 import {
@@ -32,13 +33,14 @@ import {
 } from "../work-records/auto-generation.js";
 import { getWorkflowDiff } from "./git-snapshot.js";
 import { recordWorkflowMetric } from "./metrics.js";
+import { runObjectiveChecks, summarizeObjectiveChecks } from "./objective-checks.ts";
 import {
     PLAN_STATUSES,
     recordPlanEvent,
     stageValidationPassedInExecutionWorktree,
     VALIDATION_PLAN_STATUSES,
 } from "./plan-lifecycle.js";
-import { resolveValidationExecutionContext } from "./execution-context.js";
+import { resolveValidationExecutionContext } from "./execution-context.ts";
 import { runDirectDeliveryPublicationTransition, runPlanFrontMatterTransition } from "./state-transition.ts";
 import { buildDiffInspectionSection, createReviewDiffTool } from "./review-diff-tool.js";
 import {
@@ -62,6 +64,21 @@ import {
     usedReviewDiffTool,
     verifyPostMergeCandidatePublished,
 } from "./validation-helpers.ts";
+import { type LocalCIPort, systemLocalCIPort } from "./validation-local-ci.ts";
+import { readRepairedMergeCandidate } from "./validation-merge-verification.ts";
+import {
+    clearValidationPosition,
+    getValidationPosition,
+    rememberValidationPosition,
+    type ValidationPhaseName,
+} from "./validation-position.ts";
+import {
+    completeValidationProgress,
+    createValidationProgress,
+    emitRunWieldSystemStatus,
+    getCurrentValidationProgress,
+    updateValidationProgress,
+} from "./validation-progress.ts";
 
 export {
     loadManualQaPrompt,
@@ -88,13 +105,14 @@ type PlanStatus = "implemented" | "validated_ci" | "validated_reviewer";
 type PlanEvent = Parameters<typeof recordPlanEvent>[0]["event"];
 type PlanEventStatus = Parameters<typeof recordPlanEvent>[0]["currentStatus"];
 type PlanFrontMatter = import("../../plan-store.js").PlanFrontMatter;
-type TriageMeta = import("../../tools/plan-written.js").TriageMeta & Partial<PlanFrontMatter>;
+type TriageMeta = import("../../tools/plan-written.ts").TriageMeta & Partial<PlanFrontMatter>;
 type ActiveExecutionWorkflow = import("../session/hosted-session.js").ActiveExecutionWorkflow;
 type HostedSession = import("../session/hosted-session.js").HostedSession;
 type AgentMessage = import("@earendil-works/pi-agent-core").AgentMessage;
 type AgentDefinition = import("../session/types.js").AgentDefinition;
 type GitPort = import("../git-port.ts").GitPort;
 type LocalCIResult = Awaited<ReturnType<typeof runLocalCI>>;
+type ObjectiveCheckResult = Awaited<ReturnType<typeof runObjectiveChecks>>[number];
 type RecordPlanEventArgs = Parameters<typeof recordPlanEvent>[0];
 type RecordPlanEventResult = Awaited<ReturnType<typeof recordPlanEvent>>;
 type ValidationExecutionResolution = Awaited<ReturnType<typeof resolveValidationExecutionContext>>;
@@ -106,7 +124,9 @@ type InteractionRequest = Parameters<typeof requestHostedSessionInteraction>[1];
 type InteractionResponse = Awaited<ReturnType<typeof requestHostedSessionInteraction>>;
 type WorktreeDeliveryEvidence = import("../../plan-store.js").WorktreeDeliveryEvidence;
 type DeliveryEvidence = import("../../plan-store.js").DeliveryEvidence;
-type ValidationPhaseResult = WorkflowValidationResult;
+type ValidationPhaseResult = WorkflowValidationResult & {
+    awaitingTaskCompletion?: true;
+};
 
 type IsolatedAgentSessionOptions = {
     hostedSession: HostedSession;
@@ -136,28 +156,12 @@ type SemanticReviewPort = {
     requestInteraction?: (hostedSession: HostedSession, request: InteractionRequest) => Promise<InteractionResponse>;
 };
 
-type ValidationDeps = {
-    /**
-     * Local validation commands run a real subprocess, so tests supply their own.
-     * A genuine environment boundary.
-     */
-    runLocalCI?: typeof runLocalCI;
-    /**
-     * Fail-closed execution-context resolution. Injected only so tests can exercise a
-     * phase without standing up a worktree; it decides whether validation may run at
-     * all, so faking it skips the fail-closed checks rather than an external boundary.
-     * Track it as machinery and remove it with the worktree capability port.
-     */
-    resolveValidationExecutionContext?: typeof resolveValidationExecutionContext;
-};
-
 type MechanicalValidationArgs = {
     sessionManager?: SessionManager;
     hostedSession?: HostedSession;
     cwd?: string;
     manualQaName?: string;
     manualQaContext?: string;
-    __deps?: ValidationDeps;
 };
 
 type ValidationLoopArgs = {
@@ -170,7 +174,7 @@ type ValidationLoopArgs = {
     executionContext?: ActiveExecutionWorkflow;
     git?: GitPort;
     semanticReviewPort?: SemanticReviewPort;
-    __deps?: ValidationDeps;
+    localCI?: LocalCIPort;
 };
 
 type PhaseContext = {
@@ -222,6 +226,7 @@ const REVIEWER_TOOL_NAMES = ["read", "grep", "find", "ls", "review_diff", "revie
 
 export const runMechanicalValidation = runQuickFixMechanicalValidation as (
     args: MechanicalValidationArgs,
+    localCI?: LocalCIPort,
 ) => Promise<{ passed: boolean; attempts: number; reason?: string }>;
 
 /**
@@ -238,14 +243,82 @@ export async function runValidationPhase(args: ValidationLoopArgs): Promise<Vali
         triageMeta: { ...args.triageMeta, ...canonicalPlan.attrs },
         planContent: canonicalPlan.markdown,
     };
-    switch (canonicalPlan.status) {
-        case "implemented":
+    const nextPhase = resolveNextPhase(args, canonicalPlan.status);
+    if (await healStatusAheadOfPhase(canonicalArgs, nextPhase, canonicalPlan.status)) {
+        return await runMechanicalValidationPhase({
+            ...canonicalArgs,
+            triageMeta: { ...canonicalArgs.triageMeta, status: "implemented" },
+        });
+    }
+    switch (nextPhase) {
+        case "mechanical":
             return await runMechanicalValidationPhase(canonicalArgs);
-        case "validated_ci":
+        case "semantic":
             return await runSemanticReviewPhase(canonicalArgs);
-        case "validated_reviewer":
+        case "delivery":
             return await runValidatedReviewerPhase(canonicalArgs);
     }
+}
+
+/**
+ * Which phase runs next: what the loop remembers, or failing that, the Plan.
+ *
+ * Memory wins because it is strictly better informed. It was written by the phase
+ * that last knew where it was going, whereas status is a three-valued summary that
+ * anything writing to the Plan can move — including a repair Agent's own
+ * `task_completed`, which is how a run could skip its remaining checks and go
+ * straight to publication.
+ */
+/** Validation's three statuses in the order the loop passes through them. */
+const VALIDATION_STATUS_ORDER = ["implemented", "validated_ci", "validated_reviewer"];
+
+/** The status a phase expects to find on the Plan it is about to run. */
+const PHASE_STATUS: Record<ValidationPhaseName, string> = {
+    mechanical: "implemented",
+    semantic: "validated_ci",
+    delivery: "validated_reviewer",
+};
+
+/**
+ * Pull a Plan back when its status has run ahead of where the loop actually is.
+ *
+ * The loop remembers dispatching a CI repair and never seeing CI pass; if the Plan
+ * meanwhile reads `validated_ci`, something else moved it — a repair Agent's
+ * `task_completed` is the one that happens — and the checks it claims to have
+ * passed never ran. Recording the phase's own outcome against that status is
+ * refused by the lifecycle guard, correctly, so the drift has to be undone rather
+ * than worked around: `validation_failed` is legal from every validation status and
+ * lands on `implemented`, which re-runs the checks from the start.
+ *
+ * Returns whether a heal happened, in which case the mechanical phase runs.
+ */
+async function healStatusAheadOfPhase(
+    args: ValidationLoopArgs,
+    phase: ValidationPhaseName,
+    status: string,
+): Promise<boolean> {
+    const expected = VALIDATION_STATUS_ORDER.indexOf(PHASE_STATUS[phase]);
+    const actual = VALIDATION_STATUS_ORDER.indexOf(status);
+    if (expected < 0 || actual < 0 || actual <= expected) return false;
+    const reason = `The Plan was marked ${status} while Workflow Validation was still at ${
+        PHASE_STATUS[phase]
+    }. Those checks did not run, so validation is starting again from the build.`;
+    const projectRoot = getProjectRoot(args);
+    emitStatus(args.hostedSession, reason, "warning");
+    await recordLifecycleEvent(args, projectRoot, "validation_failed", status as PlanEventStatus, reason);
+    return true;
+}
+
+function resolveNextPhase(
+    args: ValidationLoopArgs,
+    status: "implemented" | "validated_ci" | "validated_reviewer",
+): ValidationPhaseName {
+    const fromStatus: ValidationPhaseName = status === "validated_reviewer"
+        ? "delivery"
+        : status === "validated_ci"
+        ? "semantic"
+        : "mechanical";
+    return getValidationPosition(args.hostedSession, args.planName)?.phase || fromStatus;
 }
 
 /**
@@ -275,7 +348,16 @@ export async function runValidationLoop(args: ValidationLoopArgs): Promise<Workf
     for (let phase = 0; phase < MAX_PHASES_PER_CALL; phase += 1) {
         const before = (await loadPlan(projectRoot, args.planName))?.frontMatterRevision;
         result = await runValidationPhase(phaseArgs);
-        if (result.kind !== "paused") return result;
+        if (result.kind !== "paused") {
+            // Verified or failed, the run is finished and its position dies with it.
+            clearValidationPosition(args.hostedSession, args.planName);
+            return result;
+        }
+        // A mechanical repair turn is not a completion signal. The repair Agent
+        // must explicitly call task_completed before this invocation may run CI
+        // again; otherwise a question or ordinary text response could advance the
+        // Plan merely because failure-attempt bookkeeping changed Front Matter.
+        if (result.awaitingTaskCompletion) return result;
         const after = (await loadPlan(projectRoot, args.planName))?.frontMatterRevision;
         // Front Matter revision, not status: human review reaches a decision without
         // changing status, and publication is what runs next. Comparing status alone
@@ -359,7 +441,7 @@ async function runMechanicalValidationPhase(args: ValidationLoopArgs): Promise<V
     const phase = await resolvePhaseContext(args);
     if (phase.kind === "blocked") return phase.result;
 
-    const runLocalCIImpl = args.__deps?.runLocalCI || runLocalCI;
+    const localCI = args.localCI || systemLocalCIPort;
     // Counted here rather than re-read from `args` each pass, because a user Retry
     // buys a fresh set of rounds: the `validation_failed` recorded below resets the
     // durable counter, and this has to follow it or the very next run would report
@@ -370,8 +452,14 @@ async function runMechanicalValidationPhase(args: ValidationLoopArgs): Promise<V
         // A test suite can run for minutes. Saying so beforehand is the difference
         // between "it is working" and "it has hung" — publication had gone quiet here
         // too, leaving the longest wait in the workflow completely unannounced.
-        emitStatus(args.hostedSession, `Running CI Validation in ${phase.context.executionCwd}.`);
-        const ciResult = await runLocalCIImpl({ hostedSession: args.hostedSession, cwd: phase.context.executionCwd });
+        emitProgress(args, `Running CI Validation in ${phase.context.executionCwd}.`, "info", {
+            outcome: "running",
+            stage: "ci",
+            repairAttempt: attempts > 0 ? clampCycle(attempts) : null,
+            maxRepairAttempts: attempts > 0 ? AUTOMATIC_ROUNDS : null,
+            checks: { ci: "running" },
+        });
+        const ciResult = await localCI.run({ hostedSession: args.hostedSession, cwd: phase.context.executionCwd });
         await recordMetric(args, phase.context.projectRoot, {
             category: "validation",
             event: "ci_attempt",
@@ -399,14 +487,124 @@ async function runMechanicalValidationPhase(args: ValidationLoopArgs): Promise<V
             };
         }
         if (ciResult.exitCode === 0) {
-            await recordLifecycleEvent(args, phase.context.projectRoot, "mechanical_validation_passed", "implemented");
-            preserveValidationContinuationState(args, phase.context);
-            emitStatus(args.hostedSession, "Build and tests passed.", "success");
+            const objectiveCheckOutcome = await runPlanObjectiveChecks(args, phase.context, attempts);
+            if (objectiveCheckOutcome.kind === "passed") {
+                await recordLifecycleEvent(
+                    args,
+                    phase.context.projectRoot,
+                    "mechanical_validation_passed",
+                    "implemented",
+                );
+                preserveValidationContinuationState(args, phase.context);
+                emitProgress(args, "Build, tests, and Objective-Failing Checks passed.", "success", {
+                    stage: "cycle",
+                    checks: { ci: "passed" },
+                });
+                return {
+                    kind: "paused",
+                    planName: args.planName,
+                    projectRoot: phase.context.projectRoot,
+                    reason: "Mechanical Validation passed.",
+                };
+            }
+            if (objectiveCheckOutcome.kind === "skipped") {
+                await recordLifecycleEvent(
+                    args,
+                    phase.context.projectRoot,
+                    "mechanical_validation_passed",
+                    "implemented",
+                );
+                preserveValidationContinuationState(args, phase.context);
+                emitProgress(args, "Build and tests passed.", "success", {
+                    stage: "cycle",
+                    checks: { ci: "passed" },
+                });
+                return {
+                    kind: "paused",
+                    planName: args.planName,
+                    projectRoot: phase.context.projectRoot,
+                    reason: "Mechanical Validation passed.",
+                };
+            }
+            if (objectiveCheckOutcome.kind === "broken") {
+                await recordLifecycleEvent(
+                    args,
+                    phase.context.projectRoot,
+                    "validation_failed",
+                    "implemented",
+                    objectiveCheckOutcome.reason,
+                );
+                return {
+                    kind: "failed",
+                    planName: args.planName,
+                    projectRoot: phase.context.projectRoot,
+                    reason: objectiveCheckOutcome.reason,
+                };
+            }
+
+            attempts += 1;
+            if (attempts >= AUTOMATIC_ROUNDS) {
+                await recordLifecycleEvent(
+                    args,
+                    phase.context.projectRoot,
+                    "validation_failed",
+                    "implemented",
+                    objectiveCheckOutcome.reason,
+                );
+                const pause: UserActionPause = {
+                    whatHappened: `The Objective-Failing Checks for "${args.planName}" are still unmet. ${
+                        getAgentDisplayName(phase.context.executionAgent, phase.context.projectRoot)
+                    } tried ${AUTOMATIC_ROUNDS} times and could not satisfy them.`,
+                    doThis:
+                        `Take a look yourself in ${phase.context.executionCwd}. When you think it is fixed, pick Retry and RunWield will run validation again and carry on from there.`,
+                    details: [objectiveCheckOutcome.reason],
+                };
+                if (await pauseForUserAction(args, pause) === "retry") {
+                    attempts = 0;
+                    continue;
+                }
+                return {
+                    kind: "failed",
+                    planName: args.planName,
+                    projectRoot: phase.context.projectRoot,
+                    reason: `${pause.whatHappened} ${pause.doThis}`,
+                };
+            }
+
+            const repairCompleted = await dispatchObjectiveCheckRepair(
+                args,
+                phase.context,
+                objectiveCheckOutcome.results,
+            );
+            await recordLifecycleEvent(
+                args,
+                phase.context.projectRoot,
+                "mechanical_validation_failed",
+                "implemented",
+                objectiveCheckOutcome.reason,
+            );
+            if (!repairCompleted) {
+                const reason = `${
+                    getAgentDisplayName(phase.context.executionAgent, phase.context.projectRoot)
+                } stopped without task_completed during Objective-Failing Check repair.`;
+                emitStatus(
+                    args.hostedSession,
+                    `${reason} Validation will resume after task_completed.`,
+                    "warning",
+                );
+                return {
+                    kind: "paused",
+                    planName: args.planName,
+                    projectRoot: phase.context.projectRoot,
+                    reason,
+                    awaitingTaskCompletion: true,
+                };
+            }
             return {
                 kind: "paused",
                 planName: args.planName,
                 projectRoot: phase.context.projectRoot,
-                reason: "Mechanical Validation passed.",
+                reason: "Mechanical Validation failed; Objective-Failing Check repair required.",
             };
         }
 
@@ -442,7 +640,7 @@ async function runMechanicalValidationPhase(args: ValidationLoopArgs): Promise<V
             };
         }
 
-        await dispatchCiRepair(args, phase.context, ciResult);
+        const repairCompleted = await dispatchCiRepair(args, phase.context, ciResult);
         await recordLifecycleEvent(
             args,
             phase.context.projectRoot,
@@ -450,6 +648,23 @@ async function runMechanicalValidationPhase(args: ValidationLoopArgs): Promise<V
             "implemented",
             failureReason,
         );
+        if (!repairCompleted) {
+            const reason = `${
+                getAgentDisplayName(phase.context.executionAgent, phase.context.projectRoot)
+            } stopped without task_completed during CI repair.`;
+            emitStatus(
+                args.hostedSession,
+                `${reason} Validation will resume after task_completed.`,
+                "warning",
+            );
+            return {
+                kind: "paused",
+                planName: args.planName,
+                projectRoot: phase.context.projectRoot,
+                reason,
+                awaitingTaskCompletion: true,
+            };
+        }
         return {
             kind: "paused",
             planName: args.planName,
@@ -516,6 +731,22 @@ async function runSemanticReviewPhase(args: ValidationLoopArgs): Promise<Validat
     for (;;) {
         const nextRound = round + 1;
         const reviewMode = nextRound <= DISCOVERY_ROUNDS ? "discovery" : "verify";
+        // The reviewer runs in its own session, so without this the whole round is
+        // silent: the user sees the Engineer finish, then nothing, and the verdict
+        // lands only in the Plan's failure reason. Say a round is starting, and say
+        // which kind it is — a verify round reads very differently from a sweep.
+        emitProgress(
+            args,
+            `Semantic Code Review round ${nextRound}/${AUTOMATIC_ROUNDS} (${reviewMode}) in progress...`,
+            "info",
+            {
+                outcome: "running",
+                stage: "semantic_review",
+                cycle: clampCycle(nextRound),
+                maxCycles: AUTOMATIC_ROUNDS,
+                checks: { semanticReview: "running" },
+            },
+        );
         const review = await runReviewerRound(
             args,
             context,
@@ -549,7 +780,12 @@ async function runSemanticReviewPhase(args: ValidationLoopArgs): Promise<Validat
                     advisoryCount: review.outcome.advisories.length,
                 },
             });
-            emitStatus(args.hostedSession, `Semantic Code Review Approved (round ${nextRound}).`, "success");
+            emitProgress(args, `Semantic Code Review Approved (round ${nextRound}).`, "success", {
+                stage: "semantic_review",
+                cycle: clampCycle(nextRound),
+                maxCycles: AUTOMATIC_ROUNDS,
+                checks: { semanticReview: "passed" },
+            });
             await recordLifecycleEvent(args, context.projectRoot, "semantic_review_passed", "validated_ci");
             return {
                 kind: "paused",
@@ -601,9 +837,12 @@ async function runSemanticReviewPhase(args: ValidationLoopArgs): Promise<Validat
         // unbuilt, now that a Retry re-enters at the reviewer rather than going back
         // around through the mechanical phase.
         if (nextRound >= AUTOMATIC_ROUNDS) {
-            const runLocalCIImpl = args.__deps?.runLocalCI || runLocalCI;
+            // At the limit the repair is tested right here instead of going back
+            // around, so the loop stays in this phase rather than the mechanical one
+            // the dispatch above pinned it to.
+            rememberValidationPosition(args.hostedSession, args.planName, { phase: "semantic" });
             emitStatus(args.hostedSession, `Running CI Validation in ${context.executionCwd}.`);
-            const ciResult = await runLocalCIImpl({
+            const ciResult = await (args.localCI || systemLocalCIPort).run({
                 hostedSession: args.hostedSession,
                 cwd: context.executionCwd,
             });
@@ -735,7 +974,11 @@ async function runHumanReviewPhase(args: ValidationLoopArgs, context: PhaseConte
         stats: {},
     };
     for (;;) {
-        emitStatus(args.hostedSession, "Waiting for User Code Review...", "info");
+        emitProgress(args, "Waiting for User Code Review...", "info", {
+            outcome: "running",
+            stage: "human_review",
+            checks: { humanReview: "running" },
+        });
         const outcome = await requestHumanReviewDecision();
         if (outcome.kind === "decided") return outcome.result;
         // The review window closed with no answer in it. That is not a rejection, so
@@ -774,7 +1017,10 @@ async function runHumanReviewPhase(args: ValidationLoopArgs, context: PhaseConte
                 humanReviewDecision: "approved",
                 humanReviewedAt: new Date().toISOString(),
             });
-            emitStatus(args.hostedSession, "User Code Review Approved.", "success");
+            emitProgress(args, "User Code Review Approved.", "success", {
+                stage: "human_review",
+                checks: { humanReview: "passed" },
+            });
             return {
                 kind: "decided",
                 result: {
@@ -871,12 +1117,9 @@ async function runPublicationPhase(
     const cleanupMergedWorktrees = shouldCleanupMergedWorktrees(context.projectRoot);
     const gitPort = args.git || createGitPort();
     const planPath = `plans/${args.planName}.md`;
-    // Held for this call only, deliberately. When a merge conflict is repaired in a
-    // detached merge worktree, publishing means finishing *that* tree — starting a
-    // fresh merge walks straight back into the same conflict. Completion is the goal,
-    // not durability: the retry happens right here, a few lines down, so the path has
-    // nowhere to get lost between the repair and the publish.
-    let repairMergeWorktreePath: string | undefined;
+    const storedRepairWorktree = await resolveStoredValidationMergeRepairWorktree(args, context);
+    if (storedRepairWorktree.kind === "blocked") return storedRepairWorktree.outcome;
+    let repairMergeWorktreePath = storedRepairWorktree.path;
     let agentRepairs = 0;
     // Captured once, as plain strings: the guards above narrowed both, but TypeScript
     // drops that narrowing inside the hoisted helpers below.
@@ -895,7 +1138,12 @@ async function runPublicationPhase(
             await runPostVerificationHandoffs(args, context.projectRoot);
             return { recorded: true, result: buildVerifiedResult(args, context.projectRoot) };
         }
-        repairMergeWorktreePath = getMergeWorktreePath(error) || repairMergeWorktreePath;
+        const nextRepairMergeWorktreePath = getMergeWorktreePath(error);
+        if (nextRepairMergeWorktreePath) {
+            const persisted = await persistValidationMergeRepairWorktree(args, context, nextRepairMergeWorktreePath);
+            if (persisted.kind === "blocked") return persisted.outcome;
+            repairMergeWorktreePath = nextRepairMergeWorktreePath;
+        }
         const failureKind = getMergeFailureKind(error);
 
         // A merge conflict is normal and fixable, so try the Agent first and retry
@@ -936,13 +1184,17 @@ async function runPublicationPhase(
     }
 
     async function publishOnce(): Promise<PublicationOutcome> {
-        const checkpoint = await checkpointExecutionWorktree({
+        const repairedCandidate = repairMergeWorktreePath
+            ? await readRepairedMergeCandidate(repairMergeWorktreePath)
+            : null;
+        const checkpoint = repairedCandidate || await checkpointExecutionWorktree({
             worktreePath: context.executionCwd,
             branch: executionBranch,
             planName: args.planName,
             planDescription: args.triageMeta?.summary,
         });
-        const targetHeadBeforeMerge = await gitPort.branchHead(context.projectRoot, targetBranch);
+        const targetHeadBeforeMerge = repairedCandidate?.targetHeadBeforeMerge ||
+            await gitPort.branchHead(context.projectRoot, targetBranch);
         const deliveryEvidence: WorktreeDeliveryEvidence = {
             version: 1,
             mode: "worktree_merge",
@@ -950,19 +1202,26 @@ async function runPublicationPhase(
             targetBranch,
             targetHeadBeforeMerge,
         };
-        const staging = await stageValidationPassedInExecutionWorktree({
-            projectRoot: context.projectRoot,
-            executionCwd: context.executionCwd,
-            planName: args.planName,
-            details: {
-                triageMeta: args.triageMeta,
-                executionMode: "worktree",
-                deliveryEvidence,
-                worktreeStatus: "merged",
-                cleanupMergedWorktrees,
-                ...humanReviewMetadata,
-            },
-        });
+        const hierarchy = await loadDirectDeliveryHierarchySnapshot(context.projectRoot, args.planName)
+            .catch(() => ({ revision: undefined, parentPlan: undefined, siblingPlans: [] }));
+        const repairedPlanPaths = new Set([planPath]);
+        if (hierarchy.parentPlan) repairedPlanPaths.add(`plans/${hierarchy.parentPlan}.md`);
+        for (const sibling of hierarchy.siblingPlans) repairedPlanPaths.add(`plans/${sibling.name}.md`);
+        const staging = repairedCandidate
+            ? { planPaths: [...repairedPlanPaths] }
+            : await stageValidationPassedInExecutionWorktree({
+                projectRoot: context.projectRoot,
+                executionCwd: context.executionCwd,
+                planName: args.planName,
+                details: {
+                    triageMeta: args.triageMeta,
+                    executionMode: "worktree",
+                    deliveryEvidence,
+                    worktreeStatus: "merged",
+                    cleanupMergedWorktrees,
+                    ...humanReviewMetadata,
+                },
+            });
         // The merge is the only irreversible act in the system: a commit that reaches
         // the target branch cannot be taken back. It therefore runs inside the
         // publication transaction, which locks the attempt and the target ref, holds
@@ -972,8 +1231,6 @@ async function runPublicationPhase(
         // recovery cannot tell "never merged" from "merged, bookkeeping behind", and
         // the failure path below would report a merge failure for work already on the
         // target branch.
-        const hierarchy = await loadDirectDeliveryHierarchySnapshot(context.projectRoot, args.planName)
-            .catch(() => ({ revision: undefined, parentPlan: undefined, siblingPlans: [] }));
         const publication = await runDirectDeliveryPublicationTransition({
             projectRoot: context.projectRoot,
             planName: args.planName,
@@ -1018,9 +1275,11 @@ async function runPublicationPhase(
                 // Say what is about to happen to the user's branch. The merge is the
                 // one irreversible act in the system, and publication had gone silent
                 // about it: the branch moved with nothing in the transcript saying so.
-                emitStatus(
-                    args.hostedSession,
+                emitProgress(
+                    args,
                     `Merging validated worktree branch ${executionBranch} into target branch ${targetBranch}.`,
+                    "info",
+                    { outcome: "running", stage: "merge", checks: { merge: "running" } },
                 );
                 const mergeResult = await mergeExecutionWorktree({
                     projectRoot: context.projectRoot,
@@ -1100,9 +1359,7 @@ async function resolvePhaseContext(
 ): Promise<{ kind: "ok"; context: PhaseContext } | { kind: "blocked"; result: ValidationPhaseResult }> {
     const projectRoot = getProjectRoot(args);
     const activeWorkflow = args.hostedSession.getActiveExecutionWorkflow?.() || null;
-    const resolveValidationExecutionContextImpl = args.__deps?.resolveValidationExecutionContext ||
-        resolveValidationExecutionContext;
-    const resolution = await resolveValidationExecutionContextImpl({
+    const resolution = await resolveValidationExecutionContext({
         projectRoot,
         planName: args.planName,
         triageMeta: args.triageMeta,
@@ -1114,10 +1371,10 @@ async function resolvePhaseContext(
         // nothing: the workflow ended mid-run with no message, which is the exact
         // shape of a strand — the user watches an Agent finish and then nothing
         // happens, ever.
-        emitStatus(
-            args.hostedSession,
+        emitHalted(
+            args,
             `RunWield cannot continue validating ${args.planName}: ${resolution.message}`,
-            "error",
+            resolution.message,
         );
         await recordLifecycleEvent(
             args,
@@ -1131,7 +1388,6 @@ async function resolvePhaseContext(
             result: { kind: "failed", planName: args.planName, projectRoot, reason: resolution.message },
         };
     }
-    if (activeWorkflow) args.hostedSession.clearActiveExecutionWorkflow?.();
     const context = resolution.context;
     const policyAgent = activeWorkflow?.executionAgent || args.executionContext?.executionAgent || AGENTS.ENGINEER;
     const executionAgent = policyAgent === AGENTS.FRONTEND_ENGINEER ? "frontend-engineer" : "engineer";
@@ -1407,19 +1663,108 @@ async function dispatchReviewFeedbackRepair(
     }
 }
 
+type ObjectiveCheckPhaseOutcome =
+    | { kind: "passed" }
+    | { kind: "skipped" }
+    | { kind: "unmet"; reason: string; results: ObjectiveCheckResult[] }
+    | { kind: "broken"; reason: string; results: ObjectiveCheckResult[] };
+
+async function runPlanObjectiveChecks(
+    args: ValidationLoopArgs,
+    context: PhaseContext,
+    attempts: number,
+): Promise<ObjectiveCheckPhaseOutcome> {
+    if (!isPlannedChangeClassification(args.triageMeta.classification)) return { kind: "skipped" };
+    const checks = args.triageMeta.objectiveChecks || [];
+    if (!checks.length) return { kind: "skipped" };
+
+    emitStatus(
+        args.hostedSession,
+        `Running Objective-Failing Checks for ${args.planName}: ${checks.map((check) => check.id).join(", ")}.`,
+    );
+    const results = await runObjectiveChecks({ checks, cwd: context.executionCwd });
+    const summary = summarizeObjectiveChecks(results);
+    await recordMetric(args, context.projectRoot, {
+        category: "validation",
+        event: "objective_checks_attempt",
+        planName: args.planName,
+        details: {
+            mechanicalAttempt: attempts + 1,
+            total: summary.total,
+            met: summary.met,
+            unmet: summary.unmet,
+            broken: summary.broken,
+            checks: results.map((result) => ({ id: result.id, status: result.status, exitCode: result.exitCode })),
+        },
+    });
+    emitStatus(args.hostedSession, summary.block, summary.broken || summary.unmet ? "warning" : "success");
+    if (summary.broken > 0) {
+        return { kind: "broken", reason: `Objective-Failing Check defect.\n\n${summary.block}`, results };
+    }
+    if (summary.unmet > 0) {
+        return { kind: "unmet", reason: `Objective-Failing Checks unmet.\n\n${summary.block}`, results };
+    }
+    return { kind: "passed" };
+}
+
+async function dispatchObjectiveCheckRepair(
+    args: ValidationLoopArgs,
+    context: PhaseContext,
+    results: ObjectiveCheckResult[],
+): Promise<boolean> {
+    const runActiveAgentTurnImpl = runActiveAgentTurn;
+    const summary = summarizeObjectiveChecks(results);
+    args.hostedSession.setActiveExecutionWorkflow?.({ ...context.workflowBase });
+    emitStatus(
+        args.hostedSession,
+        `Objective-Failing Checks are unmet. Dispatching ${
+            getAgentDisplayName(context.executionAgent, context.projectRoot)
+        } to satisfy them...`,
+        "warning",
+    );
+    await runActiveAgentTurnImpl({
+        hostedSession: args.hostedSession,
+        agentName: context.executionAgent,
+        userRequest:
+            "The Plan failed Objective-Failing Checks during Mechanical Validation. Fix the implementation so these checks exit 0, then call task_completed when the repair is complete. Do not edit the Plan checks unless the user explicitly asks for a new Plan review. If the repair involves tests, follow the write-tests skill for sound testing behavior:\n\n" +
+            summary.block,
+        sessionManager: args.sessionManager,
+        cwd: context.executionCwd,
+    });
+    const completion = claimPendingTaskCompletion(
+        args.hostedSession,
+        args.hostedSession.getRootAgentSession(),
+    );
+    if (!completion) return false;
+    // `implemented` is already the durable recovery state for this repair. Once
+    // completion wakes validation, a crash can safely rerun Mechanical Validation
+    // from that lifecycle checkpoint.
+    acknowledgeTaskCompletion(args.hostedSession, completion);
+    return true;
+}
+
 async function dispatchCiRepair(
     args: ValidationLoopArgs,
     context: PhaseContext,
     ciResult: LocalCIResult,
-): Promise<void> {
+): Promise<boolean> {
     const runActiveAgentTurnImpl = runActiveAgentTurn;
     args.hostedSession.setActiveExecutionWorkflow?.({ ...context.workflowBase });
-    emitStatus(
-        args.hostedSession,
+    // Pin the loop here before the Agent runs. The repair reports `task_completed`
+    // into the root transcript, which is also what marks a Plan implemented — so
+    // without this the next phase reads an advanced status and jumps past the CI
+    // that has not passed yet.
+    rememberValidationPosition(args.hostedSession, args.planName, {
+        phase: "mechanical",
+        awaiting: "ci_repair",
+    });
+    emitProgress(
+        args,
         `Build failed. Dispatching ${
             getAgentDisplayName(context.executionAgent, context.projectRoot)
-        } to fix syntax/types...`,
+        } to fix the CI failure...`,
         "warning",
+        { outcome: "running", stage: "engineer_repair", checks: { ci: "failed" } },
     );
     await runActiveAgentTurnImpl({
         hostedSession: args.hostedSession,
@@ -1430,6 +1775,13 @@ async function dispatchCiRepair(
         sessionManager: args.sessionManager,
         cwd: context.executionCwd,
     });
+    const completion = claimPendingTaskCompletion(
+        args.hostedSession,
+        args.hostedSession.getRootAgentSession(),
+    );
+    if (!completion) return false;
+    acknowledgeTaskCompletion(args.hostedSession, completion);
+    return true;
 }
 
 /**
@@ -1478,6 +1830,60 @@ function getMergeWorktreePath(error: unknown): string | undefined {
         return typeof path === "string" ? path : undefined;
     }
     return undefined;
+}
+
+type ValidationMergeRepairWorktreeResolution =
+    | { kind: "ready"; path?: string }
+    | { kind: "blocked"; outcome: PublicationOutcome };
+
+async function resolveStoredValidationMergeRepairWorktree(
+    args: ValidationLoopArgs,
+    context: PhaseContext,
+): Promise<ValidationMergeRepairWorktreeResolution> {
+    const path = readValidationMergeRepairWorktree(args.triageMeta);
+    if (!path) return { kind: "ready" };
+    if (await filesystemPathExists(path)) return { kind: "ready", path };
+    const cleared = await persistValidationMergeRepairWorktree(args, context, null);
+    if (cleared.kind === "blocked") return cleared;
+    return { kind: "ready" };
+}
+
+function readValidationMergeRepairWorktree(triageMeta: TriageMeta): string | undefined {
+    const path = triageMeta.validationMergeRepairWorktree;
+    return typeof path === "string" && path ? path : undefined;
+}
+
+async function filesystemPathExists(path: string): Promise<boolean> {
+    try {
+        await Deno.stat(path);
+        return true;
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return false;
+        throw error;
+    }
+}
+
+async function persistValidationMergeRepairWorktree(
+    args: ValidationLoopArgs,
+    context: PhaseContext,
+    path: string | null,
+): Promise<{ kind: "committed" } | { kind: "blocked"; outcome: PublicationOutcome }> {
+    const transition = await runPlanFrontMatterTransition({
+        projectRoot: context.projectRoot,
+        planName: args.planName,
+        operation: "validation_merge_repair_worktree",
+        updates: { validationMergeRepairWorktree: path },
+        recoveryAttrs: { ...args.triageMeta },
+    });
+    if (transition.status === "committed") return { kind: "committed" };
+    const reason = transition.message || `Could not save merge repair worktree state for ${args.planName}.`;
+    return {
+        kind: "blocked",
+        outcome: {
+            recorded: false,
+            result: { kind: "failed", planName: args.planName, projectRoot: context.projectRoot, reason },
+        },
+    };
 }
 
 function getBlockingPaths(error: unknown): string[] {
@@ -1628,13 +2034,47 @@ async function recordLifecycleEvent(
     failureReason?: string,
     extraDetails: Partial<RecordPlanEventArgs["details"]> = {},
 ): Promise<RecordPlanEventResult> {
-    return await recordPlanEvent({
+    const result = await recordPlanEvent({
         cwd: projectRoot,
         planName: args.planName,
         event,
         currentStatus,
         details: { triageMeta: args.triageMeta, failureReason, ...extraDetails },
     });
+    // Move the remembered position with the transition the loop just made, in one
+    // place rather than at each call site. Scattering it meant a path that recorded
+    // a status change without also updating the memory left the two disagreeing,
+    // and dispatch trusts the memory — human-review feedback sent the Plan back to
+    // `implemented` while the memory still said `semantic`, and the next phase tried
+    // to review a Plan that had already moved past it.
+    //
+    // Only transitions validation performs land here. That is the point: a status
+    // moved by anything else — a repair Agent's own `task_completed` — leaves the
+    // memory alone, which is exactly the jump this is meant to refuse.
+    const nextPhase = phaseForRecordedStatus(event);
+    if (nextPhase) rememberValidationPosition(args.hostedSession, args.planName, { phase: nextPhase });
+    return result;
+}
+
+/**
+ * The phase that owns the status a lifecycle event moves a Plan to.
+ *
+ * Returns nothing for events that do not resolve to a validation phase — the
+ * terminal ones, whose position is cleared rather than moved.
+ */
+function phaseForRecordedStatus(event: PlanEvent): ValidationPhaseName | undefined {
+    switch (event) {
+        case "mechanical_validation_passed":
+            return "semantic";
+        case "semantic_review_passed":
+            return "delivery";
+        case "mechanical_validation_failed":
+        case "semantic_review_feedback":
+        case "validation_failed":
+            return "mechanical";
+        default:
+            return undefined;
+    }
 }
 
 /**
@@ -1688,7 +2128,7 @@ async function persistHumanReviewMetadata(
         planName: args.planName,
         operation: "validation_human_review_metadata",
         updates: metadata,
-        recoveryAttrs: args.triageMeta,
+        recoveryAttrs: { ...args.triageMeta },
     });
 }
 
@@ -1700,15 +2140,15 @@ async function settlePublishedWorktree(
     if (context.worktreeId) {
         await updateWorktreeRegistryEntry(context.projectRoot, context.worktreeId, { status: "merged" });
     }
+    if (context.worktreeId) {
+        await pruneWorktreeRegistryEntry(context.projectRoot, context.worktreeId).catch(() => {});
+    }
     if (cleanupMergedWorktrees && context.executionCwd) {
         await removeWorktreeGitArtifacts({ projectRoot: context.projectRoot, path: context.executionCwd, force: false })
             .catch(() => {});
         if (context.worktreeBranch) {
             await deleteMergedWorktreeBranch({ projectRoot: context.projectRoot, branch: context.worktreeBranch })
                 .catch(() => {});
-        }
-        if (context.worktreeId) {
-            await removeWorktreeRegistryEntry(context.projectRoot, context.worktreeId).catch(() => {});
         }
     }
 }
@@ -1727,6 +2167,20 @@ async function runPostVerificationHandoffs(args: ValidationLoopArgs, projectRoot
 }
 
 function buildVerifiedResult(args: ValidationLoopArgs, projectRoot: string): WorkflowValidationResult {
+    // The run is over, so its position must not outlive it — a Plan reopened later
+    // has to start from what the Plan durably says, not from where this one ended.
+    clearValidationPosition(args.hostedSession, args.planName);
+    // Close the panel out on the way past. Without this the last thing the user
+    // sees is a merge still "running", on a run that finished successfully.
+    const current = getCurrentValidationProgress(args.hostedSession);
+    if (current) {
+        emitStatus(
+            args.hostedSession,
+            `${args.planName} is verified and published.`,
+            "success",
+            completeValidationProgress(current, true, `${args.planName} is verified and published.`),
+        );
+    }
     return {
         kind: "verified",
         planName: args.planName,
@@ -1738,12 +2192,110 @@ function buildVerifiedResult(args: ValidationLoopArgs, projectRoot: string): Wor
     };
 }
 
+/**
+ * Say something to the user, carrying the validation panel with it.
+ *
+ * Every line the loop emits goes through here, and every one of them re-sends the
+ * progress the session is currently holding. That is what keeps the panel pinned
+ * for the whole run rather than only on the lines that happen to change a stage:
+ * the loop talks constantly, and a status line that dropped the progress used to
+ * take the panel down with it.
+ */
 function emitStatus(
     hostedSession: HostedSession,
     message: string,
     level: "info" | "success" | "warning" | "error" = "info",
+    progress?: RuntimeValidationProgress,
 ): void {
-    emitSystemStatus(hostedSession, message, { level });
+    emitRunWieldSystemStatus(hostedSession, message, level, progress);
+}
+
+/**
+ * Move the loop's position and announce it.
+ *
+ * The patch applies to wherever the session already is, so checks accumulate
+ * across phases within a run. On a cold start there is nothing to patch and the
+ * position is seeded from the Plan's status by {@link seedProgressForStatus}.
+ */
+function emitProgress(
+    args: ValidationLoopArgs,
+    message: string,
+    level: "info" | "success" | "warning" | "error",
+    patch: Parameters<typeof updateValidationProgress>[1],
+): void {
+    const current = getCurrentValidationProgress(args.hostedSession) || seedProgressForStatus(args);
+    const next = updateValidationProgress(current, patch);
+    // The total counts passes through the loop, so it can never sit below the round
+    // it is qualifying. Rounds advance within a run while the total was seeded once
+    // from durable counters, which is how the panel came to read "round 2/3 (total 1)".
+    const total = Math.max(next.totalCycle || 0, next.cycle || 0, current.totalCycle || 0);
+    emitStatus(args.hostedSession, message, level, total > 0 ? { ...next, totalCycle: total } : next);
+}
+
+/**
+ * Close the panel out on a run that stopped.
+ *
+ * Terminal outcomes have to be internally consistent — no check left pending, none
+ * left running — which is what {@link completeValidationProgress} settles. Patching
+ * `outcome: "failed"` directly leaves the record contradicting itself and the event
+ * is rejected, taking the whole halt path down with it.
+ */
+function emitHalted(args: ValidationLoopArgs, message: string, reason: string): void {
+    clearValidationPosition(args.hostedSession, args.planName);
+    const current = getCurrentValidationProgress(args.hostedSession) || seedProgressForStatus(args);
+    // A failed run has to name what failed. Checks caught mid-flight settle to
+    // `failed` on their own; a halt that lands before anything started has nothing
+    // to settle, and CI is the gate it never got through.
+    const settled = Object.values(current.checks).some((check) => check === "running" || check === "failed")
+        ? current
+        : updateValidationProgress(current, { checks: { ci: "failed" } });
+    emitStatus(args.hostedSession, message, "error", completeValidationProgress(settled, false, reason));
+}
+
+/**
+ * Where a run picks up when nothing is held in memory.
+ *
+ * Status is the right answer for exactly this moment and no other: a fresh call
+ * knows only what the Plan durably records, so the checks already behind the
+ * current status are marked passed and the rest are left pending.
+ */
+function seedProgressForStatus(args: ValidationLoopArgs): RuntimeValidationProgress {
+    const status = args.triageMeta.status;
+    const semanticDone = status === "validated_reviewer";
+    const ciDone = semanticDone || status === "validated_ci";
+    const rounds = readSemanticRound(args.triageMeta);
+    return createValidationProgress({
+        kind: "workflow",
+        outcome: "running",
+        // Deliberately neutral. A stage has to agree with its own check — naming
+        // `semantic_review` before the reviewer has started is rejected outright —
+        // so the seed only says which checks are already behind us, and the first
+        // real emit of a phase names the stage as it begins.
+        stage: "cycle",
+        cycle: clampCycle(rounds + 1),
+        maxCycles: AUTOMATIC_ROUNDS,
+        // Rounds and repairs both count as passes through the loop, so a user Retry
+        // that resets the round counter still reads as forward motion rather than
+        // starting over at one.
+        totalCycle: rounds + readCiAttempts(args.triageMeta) + 1,
+        checks: {
+            ci: ciDone ? "passed" : "pending",
+            semanticReview: semanticDone ? "passed" : ciDone ? "running" : "pending",
+            humanReview: semanticDone ? "running" : "pending",
+            merge: "pending",
+        },
+    });
+}
+
+/**
+ * Keep the displayed round inside the advertised limit.
+ *
+ * A Retry hands out a fresh set of rounds without resetting how many have run, so
+ * the raw count legitimately passes the maximum; showing "round 4/3" would just
+ * look broken. The total is what carries the real number.
+ */
+function clampCycle(cycle: number): number {
+    return Math.min(Math.max(1, cycle), AUTOMATIC_ROUNDS);
 }
 
 function getProjectRoot(args: ValidationLoopArgs): string {
@@ -1803,12 +2355,12 @@ function hasFinalHumanReviewDecision(meta: Partial<PlanFrontMatter>): boolean {
 }
 
 function preserveValidationContinuationState(args: ValidationLoopArgs, context: PhaseContext): void {
-    if (
-        context.workflowBase.semanticRound === undefined && !context.workflowBase.reviewLedger &&
-        !context.workflowBase.repairBaselineTree && !context.workflowBase.lastRepairReport
-    ) {
-        return;
-    }
+    // Resolving a phase temporarily clears the active workflow while it verifies
+    // the execution context. A successful boundary is still the same execution:
+    // semantic review needs its Plan/worktree identity even when this is the first
+    // pass and there is no repair ledger yet. Restoring only workflows that happened
+    // to carry repair metadata stranded ordinary CI -> review transitions at the
+    // session cwd with no active owner.
     args.hostedSession.setActiveExecutionWorkflow?.({ ...context.workflowBase });
 }
 

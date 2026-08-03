@@ -50,17 +50,17 @@ import {
     isInitDone as isInitDoneFn,
     isInitOffered as isInitOfferedFn,
     recordInitOffered as recordInitOfferedFn,
-} from "../../cmd/init/init-state.js";
+} from "../../cmd/init/init-state.ts";
 import { SessionRuntime, SessionTurnInProgressError } from "../../shared/session/session-runtime.js";
 import { RuntimeEventTypes } from "../../shared/session/session-runtime-events.js";
 import { resolveTemplateModel } from "../../shared/models/model-validation.js";
 import { createGenerationGuard } from "./generation-guard.js";
-import { installUiApiOverrides } from "./ui-api-overrides.js";
-import { renderBootBanner } from "./boot-banner.js";
+import { installUiApiOverrides } from "./ui-api-overrides.ts";
+import { renderBootBanner } from "./boot-banner.ts";
 import { getSelectedDefaultModelAvailability, maybeShowModelWelcome } from "./model-welcome.js";
 import { getHomeDir } from "../../constants.js";
 import { handleBashCommand } from "./bash-interceptor.js";
-import { handleSlashCommand, isImmediateBuiltinSlashCommandWhileStreaming } from "./slash-dispatch.js";
+import { handleSlashCommand, isImmediateBuiltinSlashCommandWhileStreaming } from "./slash-dispatch.ts";
 import { installKeybindings } from "./keybindings.js";
 import { hasClipboardImage } from "./clipboard.js";
 const CHAT_PROMPT_AGENT_NAME = AGENTS.OPERATOR;
@@ -960,9 +960,9 @@ export async function startInteractiveSession(initialUserRequest, options = {}) 
         editor,
         container,
         messageList,
+        getProjectRoot: () => getRuntimeSnapshot().cwd,
         setActiveModel: setCurrentActiveModel,
         getActiveModelState: () => getRuntimeSnapshot().activeModel,
-        __deps: { getSettingsManager: () => getSettingsManager(getRuntimeSnapshot().cwd) },
     });
     options.configureUiAPI?.(uiAPI);
 
@@ -1365,7 +1365,7 @@ export async function startInteractiveSession(initialUserRequest, options = {}) 
                 tui,
                 sessionStartedAt,
                 originalHandleInput,
-                builtinNames: CHAT_BUILTIN_SLASH_NAMES,
+                initCommandAvailable: CHAT_BUILTIN_SLASH_NAMES.has("init"),
                 promptTemplateByName,
                 skills,
                 chatPromptAgentName: CHAT_PROMPT_AGENT_NAME,

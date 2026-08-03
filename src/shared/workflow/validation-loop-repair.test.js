@@ -1,15 +1,11 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 
 import { loadPlan } from "../../plan-store.js";
+import { recordPlanEvent } from "./plan-lifecycle.js";
 import { HostedSession } from "../session/hosted-session.js";
 import { ensureRootAgentSession } from "../session/session.js";
 import { runValidationLoop, runValidationPhase } from "./validation.ts";
-import {
-    attachRecorder,
-    makeUi,
-    makeValidationProjectRoot,
-    noOpWorktreePlanHandoffDeps,
-} from "./validation-test-helpers.js";
+import { attachRecorder, makeUi, makeValidationProjectRoot } from "./validation-test-helpers.js";
 
 function makeValidationUi(cwd = Deno.cwd()) {
     const uiAPI = makeUi();
@@ -88,10 +84,9 @@ Deno.test("runValidationLoop pauses with Engineer when CI repair does not call t
         planName: "p",
         planContent: "# p",
         triageMeta: { classification: "QUICK_FIX", status: "implemented" },
-        __deps: /** @type {any} */ ({
-            ...noOpWorktreePlanHandoffDeps(),
-            runLocalCI: () => Promise.resolve({ exitCode: 1, output: "type error", canceled: false }),
-        }),
+        localCI: {
+            run: () => Promise.resolve({ exitCode: 1, output: "type error", canceled: false }),
+        },
     });
 
     const plan = await loadPlan(projectRoot, "p");
@@ -104,6 +99,55 @@ Deno.test("runValidationLoop pauses with Engineer when CI repair does not call t
     assertEquals(plan?.attrs.validationCiAttempts, 1);
 });
 
+Deno.test("runValidationLoop dispatches repair when Objective-Failing Checks are unmet", async () => {
+    const objectiveChecks = [{ id: "OC1", command: "false", rationale: "must become true" }];
+    const { projectRoot, hostedSession, repairRoot } = await makeImplementedRun({
+        classification: "PLANNED_CHANGE",
+        objectiveChecks,
+    });
+
+    const result = await runValidationPhase({
+        hostedSession,
+        planName: "p",
+        planContent: "# p",
+        triageMeta: { classification: "PLANNED_CHANGE", status: "implemented", objectiveChecks },
+        localCI: {
+            run: () => Promise.resolve({ exitCode: 0, output: "ok", canceled: false }),
+        },
+    });
+
+    const plan = await loadPlan(projectRoot, "p");
+    assertEquals(result.kind, "paused");
+    assertEquals(repairRoot.prompts.length, 1);
+    assertStringIncludes(repairRoot.prompts[0], "Objective-Failing Checks");
+    assertStringIncludes(repairRoot.prompts[0], "OC1: unmet");
+    assertEquals(plan?.attrs.validationCiAttempts, 1);
+});
+
+Deno.test("runValidationLoop stops without repair when an Objective-Failing Check is broken", async () => {
+    const objectiveChecks = [{ id: "OC1", command: "not-a-real-runwield-command" }];
+    const { projectRoot, hostedSession, repairRoot } = await makeImplementedRun({
+        classification: "PLANNED_CHANGE",
+        objectiveChecks,
+    });
+
+    const result = await runValidationPhase({
+        hostedSession,
+        planName: "p",
+        planContent: "# p",
+        triageMeta: { classification: "PLANNED_CHANGE", status: "implemented", objectiveChecks },
+        localCI: {
+            run: () => Promise.resolve({ exitCode: 0, output: "ok", canceled: false }),
+        },
+    });
+
+    const plan = await loadPlan(projectRoot, "p");
+    assertEquals(result.kind, "failed");
+    assertStringIncludes(result.reason || "", "Objective-Failing Check defect");
+    assertEquals(repairRoot.prompts.length, 0);
+    assertEquals(plan?.attrs.validationCiAttempts, 0);
+});
+
 Deno.test("runValidationLoop preserves Frontend Engineer owner when CI repair pauses", async () => {
     const { projectRoot, hostedSession, repairRoot } = await makeImplementedRun({
         executionAgent: "frontend-engineer",
@@ -114,10 +158,9 @@ Deno.test("runValidationLoop preserves Frontend Engineer owner when CI repair pa
         planName: "p",
         planContent: "# p",
         triageMeta: { classification: "QUICK_FIX", status: "implemented" },
-        __deps: /** @type {any} */ ({
-            ...noOpWorktreePlanHandoffDeps(),
-            runLocalCI: () => Promise.resolve({ exitCode: 1, output: "css failed", canceled: false }),
-        }),
+        localCI: {
+            run: () => Promise.resolve({ exitCode: 1, output: "css failed", canceled: false }),
+        },
     });
 
     const plan = await loadPlan(projectRoot, "p");
@@ -149,10 +192,9 @@ Deno.test("runValidationLoop offers a way out when the repair rounds for CI are 
         planName: "p",
         planContent: "# p",
         triageMeta: { classification: "QUICK_FIX", status: "implemented", validationCiAttempts: 2 },
-        __deps: /** @type {any} */ ({
-            ...noOpWorktreePlanHandoffDeps(),
-            runLocalCI: () => Promise.resolve({ exitCode: 1, output: "type error", canceled: false }),
-        }),
+        localCI: {
+            run: () => Promise.resolve({ exitCode: 1, output: "type error", canceled: false }),
+        },
     });
 
     const plan = await loadPlan(projectRoot, "p");
@@ -195,9 +237,8 @@ Deno.test("Retry after the CI rounds run out runs the tests again and carries on
         planName: "p",
         planContent: "# p",
         triageMeta: { classification: "QUICK_FIX", status: "implemented", validationCiAttempts: 2 },
-        __deps: /** @type {any} */ ({
-            ...noOpWorktreePlanHandoffDeps(),
-            runLocalCI: () => {
+        localCI: {
+            run: () => {
                 ciRuns += 1;
                 return Promise.resolve(
                     ciRuns === 1
@@ -205,7 +246,7 @@ Deno.test("Retry after the CI rounds run out runs the tests again and carries on
                         : { exitCode: 0, output: "ok", canceled: false },
                 );
             },
-        }),
+        },
     });
 
     assertEquals(uiAPI.promptSelections.length, 1);
@@ -231,10 +272,9 @@ Deno.test("a stopped test run asks rather than reporting the work as broken", as
         planName: "p",
         planContent: "# p",
         triageMeta: { classification: "QUICK_FIX", status: "implemented" },
-        __deps: /** @type {any} */ ({
-            ...noOpWorktreePlanHandoffDeps(),
-            runLocalCI: () => Promise.resolve({ exitCode: 130, output: "", canceled: true }),
-        }),
+        localCI: {
+            run: () => Promise.resolve({ exitCode: 130, output: "", canceled: true }),
+        },
     });
 
     assertEquals(uiAPI.promptSelections.length, 1);
@@ -242,4 +282,52 @@ Deno.test("a stopped test run asks rather than reporting the work as broken", as
     assertStringIncludes(result.reason || "", "stopped before they finished");
     // Nothing was learned, so nothing is recorded: the Plan stays where it was.
     assertEquals((await loadPlan(projectRoot, "p"))?.attrs.status, "implemented");
+});
+
+Deno.test("runValidationPhase re-runs CI after a repair even when the Plan status jumped ahead", async () => {
+    const { projectRoot, hostedSession } = await makeImplementedRun();
+
+    /** @type {number[]} */
+    const ciExitCodes = [];
+    const localCI = {
+        run: () => {
+            ciExitCodes.push(1);
+            return Promise.resolve({ exitCode: 1, output: "type error", canceled: false });
+        },
+    };
+
+    const first = await runValidationPhase({
+        hostedSession,
+        planName: "p",
+        planContent: "# p",
+        triageMeta: { classification: "QUICK_FIX", status: "implemented" },
+        localCI,
+    });
+    assertEquals(first.kind, "paused");
+    assertEquals(ciExitCodes.length, 1);
+
+    // The repair Agent reports `task_completed` into the root transcript, which is
+    // also what marks a Plan implemented, so the status can arrive at the next phase
+    // already advanced past the CI that never passed. Simulate exactly that.
+    await recordPlanEvent({
+        cwd: projectRoot,
+        planName: "p",
+        event: "mechanical_validation_passed",
+        currentStatus: "implemented",
+        details: { triageMeta: { classification: "QUICK_FIX", status: "implemented" } },
+    });
+    assertEquals((await loadPlan(projectRoot, "p"))?.attrs.status, "validated_ci");
+
+    // Status now says Semantic Review is next. The loop knows better: it dispatched a
+    // CI repair and never saw CI pass, so it goes back to CI.
+    const second = await runValidationPhase({
+        hostedSession,
+        planName: "p",
+        planContent: "# p",
+        triageMeta: { classification: "QUICK_FIX", status: "validated_ci" },
+        localCI,
+    });
+
+    assertEquals(second.kind, "paused");
+    assertEquals(ciExitCodes.length, 2, "Expected CI to run again rather than being skipped by the advanced status.");
 });

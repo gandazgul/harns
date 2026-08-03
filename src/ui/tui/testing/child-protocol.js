@@ -104,11 +104,11 @@ export async function runGoldenScenarioChildProcess(request) {
     // the grace window, or crashed before its own cleanup. The child announces
     // its environment root on startup precisely so this path can find it.
     if (!request.keepArtifacts) await removeChildEnvironmentRoot(childPayload);
-    if (
-        !result.success ||
-        (childPayload && typeof childPayload === "object" && "ok" in childPayload &&
-            !/** @type {{ ok?: unknown }} */ (childPayload).ok)
-    ) {
+    const childReportedFailure = childPayload && typeof childPayload === "object" && "ok" in childPayload &&
+        !/** @type {{ ok?: unknown }} */ (childPayload).ok;
+    const childReportedSuccess = childPayload && typeof childPayload === "object" && "ok" in childPayload &&
+        /** @type {{ ok?: unknown }} */ (childPayload).ok === true;
+    if (childReportedFailure || (!result.success && !childReportedSuccess)) {
         const artifactDir = await writeChildFailureArtifact(normalizedRequest, result, childPayload);
         const childArtifact = childPayload && typeof childPayload === "object" && "artifactDir" in childPayload
             ? `; childArtifactDir=${String(/** @type {{ artifactDir?: unknown }} */ (childPayload).artifactDir || "")}`
@@ -183,7 +183,7 @@ async function runChild(request) {
         for (const [key, value] of Object.entries(env.env)) Deno.env.set(key, value);
         Deno.chdir(env.projectRoot);
         Deno.env.set("WLD_GOLDEN_TUI_CHILD", "1");
-        const { _setTestStatePath } = await import("../../../cmd/init/init-state.js");
+        const { _setTestStatePath } = await import("../../../cmd/init/init-state.ts");
         _setTestStatePath(join(env.runwieldDir, "init-state.json"));
         const { runGoldenScenario } = await import("./scenario-runner.js");
         const moduleUrl = request.scenarioModule.startsWith("file:")

@@ -1,10 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 
-import { loadManualQaPrompt, loadReviewerPrompt, runManualQaChecklistPrompt } from "./validation.ts";
-import { HostedSession } from "../session/hosted-session.js";
-import { makeRecordedSession, makeUi } from "./validation-test-helpers.js";
-
-import { __resetSettingsForTests } from "../settings.js";
+import { loadManualQaPrompt, loadReviewerPrompt } from "./validation.ts";
 
 Deno.test("loadManualQaPrompt returns a bare tool-free prompt", async () => {
     /** @type {string[]} */
@@ -26,7 +22,7 @@ Deno.test("loadManualQaPrompt returns a bare tool-free prompt", async () => {
         (relativePath) => Promise.resolve(`/tmp/bundled-agent-definitions/${relativePath}`),
     );
 
-    assertEquals(readPaths, ["/tmp/bundled-agent-definitions/workflow-prompts/manual-qa-prompt.md"]);
+    assertEquals(readPaths, ["/tmp/bundled-agent-definitions/subagent-definitions/manual-qa-prompt.md"]);
     assertEquals(promptDef.name, "operator");
     assertEquals(promptDef.displayName, "Manual QA");
     assertEquals(promptDef.tools, []);
@@ -35,106 +31,12 @@ Deno.test("loadManualQaPrompt returns a bare tool-free prompt", async () => {
 
 Deno.test("bundled Manual QA prompt requires the user checklist shape", async () => {
     const prompt = await Deno.readTextFile(
-        new URL("../../agent-definitions/workflow-prompts/manual-qa-prompt.md", import.meta.url),
+        new URL("../../agent-definitions/subagent-definitions/manual-qa-prompt.md", import.meta.url),
     );
 
     assertStringIncludes(prompt, "Manual verification steps for <plan name>");
     assertStringIncludes(prompt, "- [ ] step 1");
     assertStringIncludes(prompt, "automated verification has already passed");
-});
-
-Deno.test("runManualQaChecklistPrompt uses isolated Plan context without tools", async () => {
-    /** @type {any} */
-    let invocation;
-    const expectedMessages = /** @type {any} */ ([{ role: "assistant", content: "checklist" }]);
-    const promptDef = /** @type {any} */ ({
-        name: "operator",
-        displayName: "Manual QA",
-        model: "",
-        description: "Checklist prompt",
-        tools: [],
-        systemPrompt: "Output a checklist.",
-    });
-
-    const hostedSession = makeRecordedSession("validation-test", makeUi());
-    const result = await runManualQaChecklistPrompt({
-        hostedSession,
-        name: "settings-panel",
-        classification: "PLANNED_CHANGE",
-        context: "## Verification Plan\n- Manual: save settings and reload",
-        cwd: "/repo",
-        __deps: {
-            loadManualQaPrompt: () => Promise.resolve(promptDef),
-            runIsolatedAgentSession: (/** @type {any} */ args) => {
-                invocation = args;
-                return Promise.resolve(expectedMessages);
-            },
-        },
-    });
-
-    assertEquals(result, expectedMessages);
-    assertEquals(invocation.agentName, "operator");
-    assertEquals(invocation.cwd, "/repo");
-    assertEquals(invocation._agentDefOverride, promptDef);
-    assertEquals(invocation.includeEditFallback, false);
-    assertEquals(Object.hasOwn(invocation, "useRootSession"), false);
-    assertStringIncludes(invocation.userRequest, "Name: settings-panel");
-    assertStringIncludes(invocation.userRequest, "Classification: PLANNED_CHANGE");
-    assertStringIncludes(invocation.userRequest, "save settings and reload");
-});
-
-Deno.test("runManualQaChecklistPrompt persists visible checklist for resume replay", async () => {
-    /** @type {Array<Record<string, unknown>>} */
-    const entries = [];
-    const session = new HostedSession({
-        id: "manual-qa-persist",
-        cwd: Deno.cwd(),
-        sessionManager: /** @type {any} */ ({
-            getSessionId: () => "manual-qa-persisted",
-            getCwd: () => Deno.cwd(),
-            getBranch: () => entries,
-            appendCustomEntry: (/** @type {string} */ customType, /** @type {unknown} */ data) => {
-                entries.push({ type: "custom", customType, data });
-            },
-        }),
-    });
-    const promptDef = /** @type {any} */ ({
-        name: "operator",
-        displayName: "Manual QA",
-        model: "",
-        description: "Checklist prompt",
-        tools: [],
-        systemPrompt: "Output a checklist.",
-    });
-
-    await runManualQaChecklistPrompt({
-        hostedSession: session,
-        name: "settings-panel",
-        classification: "PLANNED_CHANGE",
-        context: "context",
-        cwd: Deno.cwd(),
-        __deps: {
-            loadManualQaPrompt: () => Promise.resolve(promptDef),
-            runIsolatedAgentSession: () =>
-                Promise.resolve(
-                    /** @type {any} */ ([{
-                        role: "assistant",
-                        content: [{ type: "text", text: "Manual verification steps for settings-panel" }],
-                    }]),
-                ),
-        },
-    });
-
-    assertEquals(entries, [{
-        type: "custom",
-        customType: "runwield.manual_qa_checklist",
-        data: {
-            agentName: "Operator",
-            text: "Manual verification steps for settings-panel",
-            name: "settings-panel",
-            classification: "PLANNED_CHANGE",
-        },
-    }]);
 });
 
 Deno.test("loadReviewerPrompt returns a bare tool-free prompt", async () => {
@@ -158,7 +60,7 @@ Deno.test("loadReviewerPrompt returns a bare tool-free prompt", async () => {
         (relativePath) => Promise.resolve(`/tmp/bundled-agent-definitions/${relativePath}`),
     );
 
-    assertEquals(readPaths, ["/tmp/bundled-agent-definitions/workflow-prompts/reviewer-prompt.md"]);
+    assertEquals(readPaths, ["/tmp/bundled-agent-definitions/subagent-definitions/reviewer-prompt.md"]);
     assertEquals(reviewerDef.name, "reviewer");
     assertEquals(reviewerDef.displayName, "Reviewer");
     assertEquals(reviewerDef.tools, []);
@@ -187,7 +89,7 @@ Deno.test("loadReviewerPrompt loads the verification prompt for later rounds", a
         (relativePath) => Promise.resolve(`/tmp/bundled-agent-definitions/${relativePath}`),
     );
 
-    assertEquals(readPaths, ["/tmp/bundled-agent-definitions/workflow-prompts/reviewer-verify-prompt.md"]);
+    assertEquals(readPaths, ["/tmp/bundled-agent-definitions/subagent-definitions/reviewer-verify-prompt.md"]);
     assertEquals(reviewerDef.systemPrompt, "Verify the open findings.");
 });
 
@@ -216,8 +118,8 @@ Deno.test("loadReviewerPrompt retries if the extracted prompt cache is refreshed
     );
 
     assertEquals(ensuredPaths, [
-        "workflow-prompts/reviewer-prompt.md",
-        "workflow-prompts/reviewer-prompt.md",
+        "subagent-definitions/reviewer-prompt.md",
+        "subagent-definitions/reviewer-prompt.md",
     ]);
     assertEquals(readAttempts, 2);
     assertStringIncludes(reviewerDef.systemPrompt, "Recovered prompt");
@@ -248,7 +150,7 @@ Deno.test("loadReviewerPrompt retries transient partial prompt reads", async () 
 
 /** @param {string} name */
 function readBundledPrompt(name) {
-    return Deno.readTextFile(new URL(`../../agent-definitions/workflow-prompts/${name}`, import.meta.url));
+    return Deno.readTextFile(new URL(`../../agent-definitions/subagent-definitions/${name}`, import.meta.url));
 }
 
 Deno.test("bundled discovery reviewer prompt states an approval default", async () => {

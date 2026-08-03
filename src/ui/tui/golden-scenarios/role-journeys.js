@@ -79,10 +79,23 @@ export const guideInquiryRoleJourneyScenario = {
         assertsGoldenCoverage("durable:mutation-policy", (result) => {
             assert(result.state.projectMutation === "clean", "Guide scenario must leave project unchanged.");
         }),
-        assertRuntimeEvent("block:user", "terminal:type:explain the routing flow"),
-        assertRuntimeEvent("block:thinking", "runtime:assistant:thinking"),
-        assertRuntimeEvent("block:assistant", "runtime:assistant:text"),
-        assertRuntimeEvent("block:tool", "runtime:tool:start:read"),
+        // Four rendered blocks, asserted on the render. These were claimed by
+        // `runtime:*` events, which prove the runtime emitted something — not that
+        // any of it reached a terminal. The leading indentation on the user prompt is
+        // load-bearing: it is what the block's padding produces, and it distinguishes
+        // the rendered block from the raw keystroke echo of the same words.
+        assertsGoldenCoverage("block:user", (result) => {
+            assertScreenIncludes(result, "  explain the routing flow");
+        }),
+        assertsGoldenCoverage("block:thinking", (result) => {
+            assertScreenIncludes(result, "Read project context before answering.");
+        }),
+        assertsGoldenCoverage("block:assistant", (result) => {
+            assertScreenIncludes(result, "Guide:");
+        }),
+        assertsGoldenCoverage("block:tool", (result) => {
+            assertScreenIncludes(result, "read README.md");
+        }),
     ],
 };
 
@@ -223,7 +236,14 @@ export const engineerQuickFixMechanicalValidationScenario = {
     name: "role-engineer-quick-fix-mechanical-validation",
     composedTui: true,
     terminal: { columns: 100, rows: 30 },
-    coverage: ["role:engineer", "intent:QUICK_FIX", "recovery:workflow-validation", "block:validation-handoff"],
+    coverage: [
+        "role:engineer",
+        "intent:QUICK_FIX",
+        "recovery:workflow-validation",
+        "recovery:steered-task-completion",
+        "block:validation-handoff",
+        "durable:quick-fix-delivery",
+    ],
     scriptedInteractions: [
         { type: "text", promptIncludes: "Enter the command to validate", value: "true" },
     ],
@@ -234,25 +254,87 @@ export const engineerQuickFixMechanicalValidationScenario = {
             agent: "engineer",
             phase: "engineer",
             ordinal: 1,
-            requiredTools: ["task_completed"],
+            requiredTools: ["bash", "task_completed"],
             text: "Mechanical Validation passed after QUICK_FIX.",
-            toolCalls: [{ name: "task_completed", arguments: { message: "- QUICK_FIX implemented and verified." } }],
+            toolCalls: [
+                { name: "bash", arguments: { command: "printf quick > golden-quick-fix.txt" } },
+                { name: "task_completed", arguments: { message: "- QUICK_FIX implemented and verified." } },
+            ],
         },
     ],
-    actions: [{ type: "type", text: "make a tiny quick fix" }, { type: "enter" }, {
-        type: "waitForIdle",
-        timeoutMs: 10000,
-    }],
+    actions: [
+        { type: "type", text: "make a tiny quick fix" },
+        { type: "enter" },
+        {
+            type: "waitForEvent",
+            event: "runtime:agent:engineer",
+            timeoutMs: 8000,
+        },
+        {
+            type: "type",
+            text: "while you are there, keep the fix minimal",
+        },
+        { type: "enter" },
+        {
+            type: "waitForIdle",
+            timeoutMs: 15000,
+        },
+        {
+            type: "assertProjectFile",
+            path: "golden-quick-fix.txt",
+            exists: true,
+        },
+        { type: "assertNoPlanFile", planName: "quick-fix" },
+        { type: "captureGitState", paths: ["golden-quick-fix.txt"] },
+        { type: "captureProjectState", planNames: [] },
+    ],
     assertions: [
         assertRuntimeEvent("role:engineer", "runtime:agent:engineer"),
         assertsGoldenCoverage("intent:QUICK_FIX", (result) => {
             assertEventIncludes(result, "runtime:tool:start:task_completed");
-            assertScreenIncludes(result, "Mechanical Validation passed after QUICK_FIX.");
+            assertScreenIncludes(result, "QUICK_FIX Mechanical Validation passed.");
         }),
         assertsGoldenCoverage("recovery:workflow-validation", (result) => {
             assertScreenIncludes(result, "Saved validation command: 'true'");
         }),
-        assertRuntimeEvent("block:validation-handoff", "runtime:tool:start:task_completed"),
+        assertRuntimeEvent("recovery:steered-task-completion", "runtime:queue"),
+        // QUICK_FIX drives the mechanical panel. Asserting a `task_completed` tool
+        // start here proved nothing about the panel; the heading does.
+        assertsGoldenCoverage("block:validation-handoff", (result) => {
+            assertScreenIncludes(result, "Mechanical Validation");
+        }),
+        assertsGoldenCoverage("durable:quick-fix-delivery", (result) => {
+            assertEventIncludes(result, "project:file-checked");
+            const projectState = /** @type {{ registryEntries?: unknown[] } | undefined} */ (result.state.projectState);
+            const gitState =
+                /** @type {{ branch?: string, status?: string, trackedFiles?: string } | undefined} */ (result.state
+                    .gitState);
+            assert(
+                typeof gitState?.trackedFiles === "string",
+                "Expected QUICK_FIX Git tracking evidence to be recorded.",
+            );
+            assert(
+                ["main", "master"].includes(String(gitState?.branch || "")),
+                `Expected QUICK_FIX to return to primary checkout branch; got ${gitState?.branch}`,
+            );
+            assert(
+                String(gitState?.status || "").includes("golden-quick-fix.txt"),
+                `Expected current QUICK_FIX product semantics to leave delivered file in Git status; got ${gitState?.status}`,
+            );
+            assert(result.state.editorUsable === true, "Expected TUI usable after QUICK_FIX completion.");
+            assert(
+                Array.isArray(result.state.planFiles) && result.state.planFiles.length === 0,
+                `Expected QUICK_FIX to create no Plan files under plans/; got ${
+                    JSON.stringify(result.state.planFiles)
+                }`,
+            );
+            assert(
+                (projectState?.registryEntries || []).length === 0,
+                `Expected QUICK_FIX to leave no worktree registry entries; got ${
+                    JSON.stringify(projectState?.registryEntries)
+                }`,
+            );
+        }),
     ],
 };
 

@@ -402,6 +402,15 @@ changing Plan Status. _Avoid_: Workflow Outcome, status update, lifecycle event
 **Delegated Agent Session**: A disposable context-isolated Agent Session that receives a bounded brief from a parent
 Agent Session and returns only its result. _Avoid_: Context-free session, Task worker, workflow handoff
 
+**Delegated Agent Role**: An optional specialization a parent selects on `delegate_agent`, composing a prompt overlay
+onto the base delegated prompt and declaring an authority ceiling that can reduce the requested delegation mode.
+Omitting it yields the unspecialized `general` role. _Avoid_: Subagent type, delegated persona, Agent subtype
+
+**Verification Adversary**: The read-only Delegated Agent Role (`verification-adversary`) that receives a draft Plan and
+returns the cheapest counterfeit implementation passing every listed check with the objective absent, a verdict of
+`discriminating` or `not-discriminating`, and the check that would catch it. Recommended for structural Plans; never a
+required gate. _Avoid_: Plan reviewer, Reviewer, red team, adversarial validation
+
 **Epic**: A PROJECT Plan that contains design and decomposition context for child PLANNED_CHANGE Plans rather than
 executable implementation work. _Avoid_: Initiative, umbrella task, PROJECT subtype
 
@@ -417,8 +426,16 @@ return to Router with context before continuing. _Avoid_: Surprise return, silen
 **Workflow Validation**: RunWield's independent validation pass after a completed executable Plan loop. _Avoid_: Agent
 self-check, final summary
 
-**Mechanical Validation**: RunWield's automated local validation command loop without semantic review or Plan status
-transitions. _Avoid_: Workflow Validation, Reviewer review, agent self-check
+**Mechanical Validation**: RunWield's automated command validation loop. In no-plan QUICK_FIX work it runs local CI only
+without semantic review or Plan status transitions; inside Workflow Validation for executable Plans it runs local CI
+plus that Plan's Objective-Failing Checks before Semantic Review. _Avoid_: Workflow Validation, Reviewer review, agent
+self-check
+
+**Objective-Failing Check**: A Plan-owned shell command with one contract: exit 0 means the Plan objective is met. It
+must be red before implementation and green after implementation; RunWield stores the executable copy in Plan Front
+Matter as `objectiveChecks`, mechanically verifies the red state before execution starts, and reruns it during Workflow
+Validation's Mechanical Validation phase to verify the green state. _Avoid_: Manual check, verification note,
+lint/type-check only
 
 **Pair Execution**: A user-steered frontend execution style where the Frontend Engineer delivers coherent visible
 increments and blocks at intentional feedback checkpoints. _Avoid_: Live pair-design, frontend mode, Manual QA
@@ -566,6 +583,8 @@ command definition, prompt command
 - Every **Agent Session** loads exactly one merged **Agent Definition**.
 - An **Agent** may load one or more **Skills** without changing work ownership or Agent Session identity.
 - A **Delegated Agent Session** receives a bounded brief without inheriting its parent's conversation history.
+- A **Delegated Agent Role**'s authority ceiling bounds the requested delegation mode; the **Verification Adversary**
+  runs read-only and advises Planner without gating any Plan Status transition.
 - An execution Agent Session emits **Task Completion** before validation can begin.
 - **OPERATION** work ends after Operator self-verification; **QUICK_FIX** work receives **Mechanical Validation**;
   executable Plan work receives Workflow Validation.

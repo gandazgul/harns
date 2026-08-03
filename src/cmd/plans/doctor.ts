@@ -3,7 +3,7 @@
  * Report and safely repair Plan/worktree lifecycle drift.
  */
 
-import { parseArgs as parseArgsFn } from "@std/cli/parse-args";
+import { parseArgs } from "@std/cli/parse-args";
 import { join } from "@std/path";
 import {
     CLI_BIN,
@@ -71,6 +71,8 @@ interface IssueGuidance {
     diagnosis: string;
     nextSteps: string[];
 }
+
+type PlansDoctorCommandOptions = Record<never, never>;
 
 function printHelp() {
     console.log(`Usage:
@@ -239,7 +241,18 @@ function getIssueGuidance(issue: DoctorIssue): IssueGuidance {
     }
 }
 
-function formatDoctorReport(issues: DoctorIssue[], repaired: number, repair: boolean) {
+function summarizeIssueSeverities(issues: DoctorIssue[]): string {
+    const severityCounts = issues.reduce((counts, issue) => {
+        const severity = getIssueGuidance(issue).severity;
+        counts.set(severity, (counts.get(severity) || 0) + 1);
+        return counts;
+    }, new Map<IssueGuidance["severity"], number>());
+    return ["Critical", "Needs attention", "Cleanup"].map((severity) =>
+        `${severity}: ${severityCounts.get(severity as IssueGuidance["severity"]) || 0}`
+    ).join(" · ");
+}
+
+function formatDoctorReport(issues: DoctorIssue[]) {
     const byCategory = new Map<string, DoctorIssue[]>();
     for (const issue of issues) {
         const guidance = getIssueGuidance(issue);
@@ -248,18 +261,9 @@ function formatDoctorReport(issues: DoctorIssue[], repaired: number, repair: boo
         byCategory.set(guidance.category, categoryIssues);
     }
 
-    const severityCounts = issues.reduce((counts, issue) => {
-        const severity = getIssueGuidance(issue).severity;
-        counts.set(severity, (counts.get(severity) || 0) + 1);
-        return counts;
-    }, new Map<IssueGuidance["severity"], number>());
     const lines = [
         `[RunWield] Plans doctor diagnosis: ${issues.length} issue${issues.length === 1 ? "" : "s"} found.`,
-        `Summary: ${
-            ["Critical", "Needs attention", "Cleanup"].map((severity) =>
-                `${severity}: ${severityCounts.get(severity as IssueGuidance["severity"]) || 0}`
-            ).join(" · ")
-        }`,
+        `Summary: ${summarizeIssueSeverities(issues)}`,
         "",
     ];
 
@@ -288,20 +292,24 @@ function formatDoctorReport(issues: DoctorIssue[], repaired: number, repair: boo
         });
     }
 
-    if (repair) {
-        lines.push(`[RunWield] Applied ${repaired} safe repair(s).`);
-        if (issues.length > 0) {
-            lines.push(
-                "The issues above need a decision RunWield will not make for you. Nothing was deleted: " +
-                    "every worktree, branch, and Plan file named above is still exactly where it was.",
-            );
-        }
-    } else if (issues.some((issue) => issue.repairable)) {
+    if (issues.some((issue) => issue.repairable)) {
         lines.push(
             `[RunWield] Some of this is safe for RunWield to fix by itself. Run: ${CLI_BIN} plans doctor --repair`,
         );
     }
     return lines.join("\n").trimEnd();
+}
+
+function formatDoctorRepairReport(repaired: number, remainingIssues: DoctorIssue[]): string {
+    const lines = [
+        `[RunWield] Applied ${repaired} safe repair${repaired === 1 ? "" : "s"}.`,
+        `[RunWield] ${remainingIssues.length} problem${remainingIssues.length === 1 ? " remains" : "s remain"}.`,
+    ];
+    if (remainingIssues.length > 0) {
+        lines.push(`Summary: ${summarizeIssueSeverities(remainingIssues)}`);
+    }
+    lines.push(`For the full diagnosis, run: ${CLI_BIN} plans doctor`);
+    return lines.join("\n");
 }
 
 async function collectPlanIssues(
@@ -913,20 +921,24 @@ export async function runPlansDoctor(projectRoot: string, repair = false) {
 
 export async function runPlansDoctorCommand(
     argv: string[],
-    options: { __testDeps?: { parseArgs?: typeof parseArgsFn; runPlansDoctor?: typeof runPlansDoctor } } = {},
+    _options: PlansDoctorCommandOptions = {},
 ) {
-    const deps = options.__testDeps || {};
-    const parseArgs = deps.parseArgs || parseArgsFn;
     const parsed = parseArgs(argv, { boolean: ["help", "repair"], alias: { h: "help" } });
     if (parsed.help) {
         printHelp();
         return;
     }
-    const runDoctor = deps.runPlansDoctor || runPlansDoctor;
-    const result = await runDoctor(getCwd(), Boolean(parsed.repair));
+    const repair = Boolean(parsed.repair);
+    const projectRoot = getCwd();
+    const result = await runPlansDoctor(projectRoot, repair);
+    if (repair) {
+        const remaining = await runPlansDoctor(projectRoot, false);
+        console.log(formatDoctorRepairReport(result.repaired, remaining.issues));
+        return;
+    }
     if (result.issues.length === 0) {
         console.log("[RunWield] Plans doctor found no lifecycle/worktree drift.");
         return;
     }
-    console.log(formatDoctorReport(result.issues, result.repaired, Boolean(parsed.repair)));
+    console.log(formatDoctorReport(result.issues));
 }

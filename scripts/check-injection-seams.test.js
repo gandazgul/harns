@@ -1,5 +1,10 @@
 import { assertEquals } from "@std/assert";
-import { collectConditionalSeams, collectSeamNames } from "./check-injection-seams.js";
+import {
+    collectConditionalSeamKeys,
+    collectConditionalSeams,
+    collectSeamNames,
+    isMachinerySeam,
+} from "./check-injection-seams.js";
 
 /** @param {string[]} lines */
 function conditionalLines(...lines) {
@@ -23,6 +28,12 @@ Deno.test("collectSeamNames reads member access and destructured bags", () => {
     ]);
 });
 
+Deno.test("machinery seam patterns match wildcards in the middle of transaction names", () => {
+    assertEquals(isMachinerySeam("runImplementationCheckpointTransition"), true);
+    assertEquals(isMachinerySeam("runTransition"), true);
+    assertEquals(isMachinerySeam("runImplementationCheckpoint"), false);
+});
+
 // One line of indirection used to hide an entire bag, machinery included.
 Deno.test("collectSeamNames follows a bag aliased to a local name", () => {
     const source = [
@@ -33,6 +44,32 @@ Deno.test("collectSeamNames follows a bag aliased to a local name", () => {
     ].join("\n");
 
     assertEquals(collectSeamNames(source), ["recordPlanEvent", "requestPlanReview"]);
+});
+
+Deno.test("collectSeamNames rejects optional fallback bags renamed to ports", () => {
+    const names = collectSeamNames(`
+        export function run({ ports = {} }) {
+            const transition = ports.runPlanTransition || runPlanTransition;
+            const load = ports.loadPlan || loadPlan;
+            return transition(load);
+        }
+        export function resume(ports) {
+            return (ports?.runActiveAgentTurn || runActiveAgentTurn)();
+        }
+    `);
+
+    assertEquals(names, ["loadPlan", "runActiveAgentTurn", "runPlanTransition"]);
+});
+
+Deno.test("collectSeamNames leaves required capability ports alone", () => {
+    const names = collectSeamNames(`
+        interface LocalCIPort { run(cwd: string): Promise<number>; }
+        export function validate(localCI: LocalCIPort, cwd: string) {
+            return localCI.run(cwd);
+        }
+    `);
+
+    assertEquals(names, []);
 });
 
 Deno.test("collectConditionalSeams flags a seam gated on the bag itself", () => {
@@ -75,6 +112,41 @@ Deno.test("collectConditionalSeams flags a branch on an injected value compared 
     );
 });
 
+Deno.test("collectConditionalSeams cannot be defeated by renaming the bag", () => {
+    assertEquals(
+        conditionalLines(
+            "function choose(dependencies = {}) {",
+            "const turn = dependencies?.runRootTurn",
+            "    ? fakeTurn",
+            "    : runRootTurn; }",
+        ),
+        ["3"],
+    );
+});
+
+Deno.test("conditional seam keys are stable by collaborator and preserve repeated branches", () => {
+    assertEquals(
+        collectConditionalSeamKeys(`
+            function choose(deps = {}) {
+                const first = deps.now ? deps.now() : Date.now();
+                const second = deps.now ? deps.now() : Date.now();
+                const setting = deps.settings !== undefined ? deps.settings : deps.getSetting();
+            }
+        `),
+        ["members:now", "members:now", "members:settings"],
+    );
+});
+
+Deno.test("conditional seam keys identify direct and multi-member bag gates", () => {
+    assertEquals(
+        collectConditionalSeamKeys(`
+            const first = __deps ? fake : real;
+            const second = (__deps?.createWorktree && __deps?.updateRegistry) ? fake : real;
+        `),
+        ["bags:__deps", "members:createWorktree+updateRegistry"],
+    );
+});
+
 Deno.test("collectConditionalSeams ignores unconditional seams and non-ternary question marks", () => {
     assertEquals(
         conditionalLines(
@@ -101,4 +173,227 @@ Deno.test("collectConditionalSeams ignores optional syntax in comments and type 
         ),
         [],
     );
+});
+
+Deno.test("collectSeamNames follows a renamed destructure off an aliased bag", () => {
+    // The shape load-plan/index.js uses. The bag is reached through a local alias and
+    // then destructured with every binding renamed, which hid 38 names — ten of them
+    // machinery — behind a green ratchet.
+    const names = collectSeamNames(`
+        export async function runLoadPlanCommand(argv, options = {}) {
+            const deps = (options).__testDeps || {};
+            const {
+                recordPlanEvent: recordPlanEventDep,
+                mergeExecutionWorktree: mergeExecutionWorktreeDep,
+                parseArgs: parseArgsDep,
+            } = deps;
+        }
+    `);
+    assertEquals(names, ["mergeExecutionWorktree", "parseArgs", "recordPlanEvent"]);
+});
+
+Deno.test("collectSeamNames follows an aliased bag declared through a type cast", () => {
+    // The cast is a comment, so the initializer is mostly whitespace by the time this
+    // scan sees it. The alias still has to be recognised.
+    const names = collectSeamNames(`
+        const deps = /** @type {LoadPlanTestDeps} */ ((/** @type {any} */ (options)).__testDeps || {});
+        const { savePlan: savePlanDep } = deps;
+    `);
+    assertEquals(names, ["savePlan"]);
+});
+
+Deno.test("collectSeamNames does not treat a value read out of the bag as another bag", () => {
+    // `runLocalCI` is the seam; `result` is its return value. Counting `result.exitCode`
+    // would invent a seam that nothing injects.
+    const names = collectSeamNames(`
+        const runLocalCI = __deps.runLocalCI || runLocalCIImpl;
+        const result = __deps.runLocalCI ? await runLocalCI() : null;
+        if (result.exitCode === 0) return;
+    `);
+    assertEquals(names, ["runLocalCI"]);
+});
+
+Deno.test("collectSeamNames does not alias the result of a call that receives the bag", () => {
+    // `loadSlicerAgentDef(__deps)` returns an agent definition, not the bag. Treating it
+    // as one counted `displayName` as a seam that nothing injects.
+    const names = collectSeamNames(`
+        const loadEpic = __deps?.loadPlan || loadPlan;
+        const slicerAgentDef = await loadSlicerAgentDef(__deps);
+        const slicerDisplay = slicerAgentDef.displayName;
+    `);
+    assertEquals(names, ["loadPlan"]);
+});
+
+Deno.test("collectSeamNames follows a bag handed over as a typed parameter", () => {
+    // Splitting a command into modules passes the bag on as an ordinary argument, and
+    // the reads travel with it. Counting only bags literally named `__deps` let four
+    // seams leave load-plan/index.js and stop being counted anywhere at all.
+    const names = collectSeamNames(`
+        interface PlanSessionSurfaceDeps {
+            executePlan?: (options: unknown) => Promise<unknown>;
+            runPlanningAgent?: (options: unknown) => Promise<unknown>;
+        }
+        export function createSurface(runtime: Runtime, deps: PlanSessionSurfaceDeps) {
+            return {
+                executePlan: (options) => deps.executePlan ? deps.executePlan(options) : runtime.executePlan(options),
+                runPlanningAgent: (options) => deps.runPlanningAgent?.(options),
+            };
+        }
+    `);
+    assertEquals(names, ["executePlan", "runPlanningAgent"]);
+});
+
+Deno.test("collectSeamNames leaves required dependencies alone", () => {
+    // A type whose members are required is constructor injection, not an override bag:
+    // the caller must supply them, so nothing is being swapped out from underneath.
+    // That is the shape this check tells people to move to, and flagging it would
+    // punish the fix.
+    const names = collectSeamNames(`
+        interface TuiManagerDeps {
+            TerminalCtor: TerminalConstructor;
+            installCrashGuards(): void;
+            restoreTitle?: () => void;
+        }
+        export function createTuiManager(deps: TuiManagerDeps) {
+            const { TerminalCtor, installCrashGuards, restoreTitle = defaultRestoreTitle } = deps;
+            return { TerminalCtor, installCrashGuards, restoreTitle };
+        }
+    `);
+    assertEquals(names, []);
+});
+
+Deno.test("collectSeamNames does not read a bag name out of a module specifier", () => {
+    // `deps` occurs inside "./load-plan-test-deps.ts". Matching it there invented a
+    // seam called `ts` — a file extension, not anything injected.
+    const names = collectSeamNames(`
+        import type { LoadPlanTestDeps } from "./load-plan-test-deps.ts";
+        const deps = __testDeps || {};
+        const loadPlan = deps.loadPlan || loadPlanFn;
+    `);
+    assertEquals(names, ["loadPlan"]);
+});
+
+Deno.test("collectSeamNames follows a bag through a merge helper", () => {
+    // The bag is merged into an all-required shape before use, so the parameter type
+    // is not itself optional. The file names `__deps`, which settles it: what travels
+    // through the helper is the bag, and the reads on the far side are seams.
+    const names = collectSeamNames(`
+        interface NotifierDeps { env?: Env; writeTerminal?: (bytes: Uint8Array) => void; }
+        interface RequiredNotifierDeps { env: Env; writeTerminal: (bytes: Uint8Array) => void; }
+        interface Options { __deps?: NotifierDeps; }
+        function emit(deps: RequiredNotifierDeps) {
+            deps.writeTerminal(BELL);
+            return deps.env.TERM;
+        }
+    `);
+    assertEquals(names, ["env", "writeTerminal"]);
+});
+
+Deno.test("collectSeamNames follows optional bags named deps or dependencies", () => {
+    const names = collectSeamNames(`
+        export function switchAgent(options, dependencies = {}) {
+            const build = dependencies.ensureRootAgentSession || ensureRootAgentSession;
+            return build(options);
+        }
+        export function record(metric, deps = {}) {
+            return (deps.writeTextFile || Deno.writeTextFile)(deps.path, metric);
+        }
+    `);
+
+    assertEquals(names, ["ensureRootAgentSession", "path", "writeTextFile"]);
+});
+
+Deno.test("collectSeamNames detects fallbacks hidden in ordinary options and nested singular ports", () => {
+    const names = collectSeamNames(`
+        export function createRuntime(options = {}) {
+            const switchAgent = options.switchActiveAgent || switchActiveAgent;
+            const build = options._buildAgentSession || buildAgentSession;
+            return { switchAgent, build };
+        }
+        export function review(args) {
+            const run = args.semanticReviewPort?.runIsolatedAgentSession || runIsolatedAgentSession;
+            const diff = args.semanticReviewPort?.getDiffText;
+            return diff ? diff() : run();
+        }
+        export function recover({
+            recordWorkflowMetric: recordWorkflowMetricImpl = recordWorkflowMetric,
+            finalizePlanImplementation = finalizePlanImplementationFn,
+        }) {}
+    `);
+
+    assertEquals(names, [
+        "_buildAgentSession",
+        "finalizePlanImplementation",
+        "getDiffText",
+        "recordWorkflowMetric",
+        "runIsolatedAgentSession",
+        "switchActiveAgent",
+    ]);
+});
+
+Deno.test("collectSeamNames detects mutable dependency registries and individual test override hooks", () => {
+    const names = collectSeamNames(`
+        const defaultClipboardDeps = { Command, remove };
+        let clipboardDeps = defaultClipboardDeps;
+        let binaryProbeOverride = null;
+        export function read() {
+            return new clipboardDeps.Command();
+        }
+        export function __setClipboardDepsForTest(deps = {}) {
+            clipboardDeps = { ...defaultClipboardDeps, ...deps };
+        }
+        export function __resetRuntimePreflightForTest(probe = null) {
+            binaryProbeOverride = probe;
+        }
+    `);
+
+    assertEquals(names, ["Command", "binaryProbeOverride"]);
+});
+
+Deno.test("collectSeamNames detects explicitly test-named option members", () => {
+    assertEquals(
+        collectSeamNames(`
+            export function ensureIdentity(options = {}) {
+                const idGenerator = options.idGenerator || options.__testGenerateId || crypto.randomUUID;
+                return idGenerator();
+            }
+        `),
+        ["__testGenerateId"],
+    );
+});
+
+Deno.test("collectSeamNames detects required RunWield machinery in option shapes", () => {
+    const names = collectSeamNames(`
+        export interface RecoveryOptions {
+            recordPlanEvent: typeof recordPlanEvent;
+            updateWorktreeRegistryEntry: typeof updateWorktreeRegistryEntry;
+            runValidationTransition: typeof runValidationTransition;
+            commandOutput: CommandPort;
+        }
+    `);
+
+    assertEquals(names, ["recordPlanEvent", "runValidationTransition", "updateWorktreeRegistryEntry"]);
+});
+
+Deno.test("collectSeamNames ignores data overrides and required external ports without fallbacks", () => {
+    const names = collectSeamNames(`
+        export function injectFrontMatter(markdown, overrides = {}) {
+            return { ...markdown, ...overrides };
+        }
+        export function resolveData(resource, attrs, options) {
+            const planId = resource.planId || attrs.planId;
+            const cwd = options.cwd || project.cwd;
+            return { planId, cwd };
+        }
+        export function format(details: Details | null = null, length = source.length) {
+            const missing = details?.missingDependencies?.length || 0;
+            return { details, length, missing };
+        }
+        interface BrowserPort { open(url: string): Promise<void>; }
+        export function show(port: BrowserPort, url: string) {
+            return port.open(url);
+        }
+    `);
+
+    assertEquals(names, []);
 });

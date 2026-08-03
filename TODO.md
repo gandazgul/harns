@@ -1,7 +1,81 @@
 # TODO
 
+## Slop trends
+
+- fake tests
+  - tests that do nothing
+  - tests that inject real local dependencies thus hiding real interaction bugs, internal machinery should not be mocked
+    in a test
+  - test that dont fail if you change how the function is called (mutation checks)
+- All things into 1 file
+  - massive files with 1 deep module responsibility but many submodules all cramed into 1 file
+- Bad types
+  - any, unknown, object, Record<string, any>, Record<string, unknown>, Record<string, object>
+
+## Followup for Claude
+
+- [plan-recovery-flow.ts: splitting `handlePlanRecovery`](PLAN-RECOVERY-SPLIT.md) — what the 1,073-line function does,
+  why it needs a control-flow change rather than a move, and the order to do it in
+- move load-plan modules to a plans module and keep load-plan as a command module that calls into plans module
+
+- [ ] 5 plans to execute next, in series:
+  - [x] run-objective-checks-in-mechanical-validation
+  - [x] baseline-objective-checks-before-execution (depends on 1)
+  - [x] formalize-subagent-definitions
+  - [x] delegate-agent-roles (depends on 3)
+  - [ ] re-anchor-agents-after-compaction (independent)
+
+- [ ] planner is just spitting its execution policy intructions into the plan instead of recommending an execution mode
+
+      Execution Policy Planned Change Plans may omit executionAgent; omission defaults to engineer. executionAgent:
+      "engineer" takes collaborationRecommendation: "autonomous" or omits it. pair is invalid for Engineer-owned
+      execution. executionAgent: "frontend-engineer" takes collaborationRecommendation: "autonomous" or "pair". Use
+      frontend-engineer for browser-rendered UI work whose primary outcome is materially visual or interactive;
+      otherwise use engineer (including TUI work and incidental frontend-file edits). Recommend pair only when live
+      visual judgment is valuable; use autonomous otherwise. Include known dev-server hints and exact headed-browser
+      checks. Real-browser verification is mandatory for Frontend Engineer unless externally blocked. PROJECT Epics are
+      non-executable containers and must not define executionAgent or collaborationRecommendation; execution policy
+      belongs only on child Plans.
+
+  Architect is doing something similar:
+
+      Execution Policy This PROJECT Epic is a non-executable container. It must not proceed to executable Attached children
+      until the separately planned session-independent validation-engine prerequisite is approved, implemented, and
+      mechanically and semantically verified. Later decomposition must preserve the module boundaries and observable
+      outcomes above rather than organizing work only by files or Claude extension primitives.
+
+- [ ] Improve engineer with [./agent-prompt-architecture-notes.md]
+
+## __deps refactor
+
+One gap in the checker worth knowing about
+
+Three shapes are now detected: literal __deps, typed …Deps parameter, optional-fallback ports. A fourth isn't —
+default-parameter injection with no bag at all:
+
+async function f(a, b, probeGitRepository = probeGitRepositoryFn) { … }
+
+I found 11 of these across 6 files (plan-recovery-flow.ts 4, model-welcome.js 2, tui-crash-guards.js 2, plus
+auto-generation.ts, boot-banner.ts, runtime-adapter.js). None are machinery today, so nothing is unsound — but it's the
+obvious place for a machinery seam to reappear invisibly once the named bags are gone, since it's the natural thing to
+reach for when you delete a bag. Worth teaching the scanner before you finish, not after.
+
+One nuance if you do: finalizePlanImplementation is injectable this way in plan-recovery-flow.ts, and it calls
+runImplementationCheckpointTransition internally. It isn't machinery by name, but replacing it does bypass a transaction
+— the transitive case the denylist can't express.
+
 ## Bugs
 
+- [ ] when resuming a quickfix, a followup message kicks up the CI run, it shouldn't we should record in the session
+      that CI ran
+- [ ] when resuming the session name (tab title on the terminal) should be set to the session's name which is in the
+      file not the UUID
+- [ ] Add a Golden TUI scenario for a brand-new Plan being stashed out of main during execution: when Engineer calls
+      `task_completed`, verify the missing-Plan guidance and Retry/Stop menu, restore the Plan, choose Retry, and
+      confirm Workflow Validation continues without rerunning Engineer.
+- [ ] providing feedback and approving a plan now reopens it as if I did send feedback this is wrong, approve feedback
+      should be sent to engineer and start the plan normally.
+- [ ] Implement plannotator's plan diff view after feedback re-writes the plan.
 - [ ] The persistent review loop card above the footer is still gone after the refactors
 - [ ] we need to examine ALL of the lifecycle error messages and revise them:
 
@@ -14,14 +88,20 @@
 
 - [x] LLMs are completly ignoring ! bash commands, ensure they are being seen - verified
 
-- [ ] Improve engineer with [./agent-prompt-architecture-notes.md]
+- [ ] Split Golden TUI scenarios into smaller scheduling units
 
-- [ ] 5 plans to execute next, in series:
-  1. run-objective-checks-in-mechanical-validation
-  2. baseline-objective-checks-before-execution (depends on 1)
-  3. formalize-subagent-definitions
-  4. delegate-agent-roles (depends on 3)
-  5. re-anchor-agents-after-compaction (independent)
+  Hypothesis: The test runner parallelizes by file, but each golden scenario file runs several expensive child-process
+  scenarios serially. The slowest file creates the critical path.
+
+  Experiment: Run each golden scenario as its own scheduler unit without weakening process isolation. Options:
+
+  - generate one Deno test file per scenario, or
+  - teach run-tests.js a “scenario unit” adapter for golden TUI exports.
+
+  Expected win: Large. If the 85s planned-change file is really 3 serial scenarios, wall time could drop toward the
+  slowest individual scenario instead of the sum.
+
+  Risk: Must preserve subprocess isolation and cleanup semantics. Don’t revert to shared in-process TUI tests.
 
 - [ ] P0
 
@@ -252,34 +332,41 @@ effects, make sure this doesnt now break something downstream that required plan
 
 ## Backlog
 
-### P1 - Close the Local Planning Loop
+### P1 - big files
 
-- [ ] Implement Guided Reviews using Plannotator:
-      [plans/guided-review-validation-code-reviews.md](plans/guided-review-validation-code-reviews.md).
-  - Keep Guided Review v1 independent from Work Records.
-  - Later: share review-analysis machinery with Recorder.
+Break up these files into smaller ones, each with a single responsibility. The goal is to make the codebase easier to
+navigate and maintain.
 
-- [ ] Make Plan Objective-Failing Checks executable:
-      [plans/run-objective-checks-in-mechanical-validation.md](plans/run-objective-checks-in-mechanical-validation.md).
-  - Planner submits checks through `plan_written`; RunWield baselines them red against the pre-change tree and requires
-    them green in Mechanical Validation.
-  - Replaces the rejected Plan Finalizer / blocking Plan Quality Gate direction: the defect those were aimed at was
-    unfalsifiable acceptance criteria, not insufficient planning process.
-
-- [x] Slicer child drafts are seeds; Planner owns final executable child Plan detail.
-  - Slicer prompt and the `slicer_finalize_decomposition` `content` description both say a child draft is a seed shaped
-    like a Plan, with un-writable checks left for Planner. There was never any structural validation of child content to
-    loosen — the contract was prompt text in those two places.
-  - No lifecycle risk from loose seeds: children materialize as `draft`, and `actionForStatus` routes `draft` to
-    Planner. `approved`/`ready_for_work` are the only execution entry points, and neither is reachable without Planner
-    calling `plan_written`. The Objective-Failing Check requirement therefore lands on Planner, not Slicer.
-  - Independent of the rejected Finalizer phase; the ownership question was real on its own.
-
-- [ ] Implement Semantic Code Review convergence:
-      [docs/prd/semantic-code-review-convergence-prd.md](docs/prd/semantic-code-review-convergence-prd.md).
-  - Add structured Reviewer results, a validation-owned Review Issue Ledger, stable issue identities, Engineer repair
-    claims, and a two-cycle automatic semantic review limit.
-  - Persist only final advisories into a managed Verified Plan appendix after successful validation/merge-back.
+| Lines | File                                           |
+| ----: | ---------------------------------------------- |
+|  4460 | `src/cmd/load-plan/index.js`                   |
+|  3591 | `src/plan-store.js`                            |
+|  3108 | `src/shared/session/session.js`                |
+|  2931 | `src/shared/session/session-runtime.js`        |
+|  2869 | `src/shared/workflow/workflow.test.js`         |
+|  2773 | `src/plan-store.test.js`                       |
+|  2342 | `src/shared/workflow/validation.ts`            |
+|  2150 | `src/shared/session/session-runtime.test.js`   |
+|  1754 | `src/shared/workflow/workflow.js`              |
+|  1678 | `src/cmd/load-plan/load-plan-recovery.test.js` |
+|  1652 | `src/ui/tui/chat-session.js`                   |
+|  1612 | `src/shared/workflow/state-transition.ts`      |
+|  1580 | `src/ui/tui/testing/scenario-runner.js`        |
+|  1514 | `src/ui/workspace/static/workspace.css`        |
+|  1487 | `src/cmd/load-plan/load-plan-review.test.js`   |
+|  1315 | `src/shared/work-records/work-records.test.js` |
+|  1295 | `src/shared/worktree.js`                       |
+|  1268 | `src/acp/server.test.js`                       |
+|  1254 | `src/shared/workflow/plan-lifecycle.js`        |
+|  1249 | `src/shared/workflow/state-transition.test.js` |
+|  1247 | `src/shared/workflow/plan-lifecycle.test.js`   |
+|  1174 | `src/shared/session/agent-handler.test.js`     |
+|  1166 | `src/ui/workspace/server.js`                   |
+|  1133 | `src/ui/workspace/react/CodeReviewSurface.tsx` |
+|  1090 | `src/ui/tui/blocks.js`                         |
+|  1074 | `src/shared/workflow/orchestrator.test.js`     |
+|  1043 | `docs/architecture.md`                         |
+|  1008 | `src/ui/workspace/server/plan-adapter.js`      |
 
 ### P2 - Frontend Execution UX
 

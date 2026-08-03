@@ -55,7 +55,7 @@ import cymbalExtension, {
 } from "../../extensions/cymbal/index.js";
 import snipExtension from "../../extensions/snip/index.js";
 import { ensureCymbalBinary, ensureMnemosyneBinary, hasSnipBinary } from "../runtime-preflight.js";
-import { executeReturnToRouter, returnToRouterTool } from "../../tools/return-to-router.js";
+import { executeReturnToRouter, returnToRouterTool } from "../../tools/return-to-router.ts";
 import { createUserInterviewTool } from "../../tools/user-interview.js";
 import { createSeeImageTool } from "../../tools/see-image.js";
 import { discoverProviderModel, getModelRegistry, getModelRuntime } from "../models/model-registry.js";
@@ -1622,7 +1622,7 @@ export async function assembleFinalSystemPrompt(
  * @param {string} [opts.modelOverride]
  * @param {"off"|"minimal"|"low"|"medium"|"high"|"xhigh"|"max"} [opts.thinkingLevelOverride]
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager]
- * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta]
+ * @param {import('../../tools/plan-written.ts').TriageMeta} [opts.triageMeta]
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride]
  * @param {boolean} [opts.allowReturnToRouter]
  * @param {string} [opts.cwd] - Execution cwd for file tools and agent operations. Defaults to primary project root.
@@ -1718,13 +1718,12 @@ export async function buildAgentSession({
         tools.includes("plan_written") && targetHostedSession &&
         !finalCustomTools.find((t) => t.name === "plan_written")
     ) {
-        const { createPlanWrittenTool } = await import("../../tools/plan-written.js");
+        const { createPlanWrittenTool } = await import("../../tools/plan-written.ts");
         finalCustomTools.push(
             createPlanWrittenTool({
                 triageMeta,
                 agentName,
                 hostedSession: targetHostedSession || undefined,
-                __deps: { cwd: sessionCwd },
             }),
         );
     }
@@ -1740,11 +1739,11 @@ export async function buildAgentSession({
 
     const workRecordAccessMode = [AGENTS.GUIDE, AGENTS.RECORDER].includes(agentName) ? "all" : "current";
     if (tools.includes("work_record_search") && !finalCustomTools.find((t) => t.name === "work_record_search")) {
-        const { createWorkRecordSearchTool } = await import("../../tools/work-record-search.js");
+        const { createWorkRecordSearchTool } = await import("../../tools/work-record-search.ts");
         finalCustomTools.push(createWorkRecordSearchTool({ cwd: sessionCwd, accessMode: workRecordAccessMode }));
     }
     if (tools.includes("work_record_read") && !finalCustomTools.find((t) => t.name === "work_record_read")) {
-        const { createWorkRecordReadTool } = await import("../../tools/work-record-read.js");
+        const { createWorkRecordReadTool } = await import("../../tools/work-record-read.ts");
         finalCustomTools.push(createWorkRecordReadTool({ cwd: sessionCwd, accessMode: workRecordAccessMode }));
     }
 
@@ -2605,6 +2604,25 @@ export function getRootSessionSwitchState(hostedSession) {
 
 /**
  * @param {import('./hosted-session.js').HostedSession} hostedSession
+ * @returns {Partial<import('./agent-switching.js').AgentSwitchOptions>}
+ */
+export function getRootSessionRebuildOptions(hostedSession) {
+    const session = /** @type {any} */ (hostedSession?.getRootAgentSession?.());
+    if (!session) return {};
+    const meta = rootSessionMetadata.get(session);
+    if (!meta) return {};
+    return {
+        allowReturnToRouter: meta.allowReturnToRouter,
+        cwd: meta.cwd,
+        agentDef: meta.agentDef,
+        customTools: meta.finalCustomTools,
+        toolNames: meta.tools,
+        projectStateContext: meta.projectStateContext,
+    };
+}
+
+/**
+ * @param {import('./hosted-session.js').HostedSession} hostedSession
  * @returns {{ projection: import('./session-context-report.js').SessionContextProjection, activeMessageTokens: number, agentName: string, agentDisplayName: string, model?: string } | null}
  */
 export function getRootSessionContextProjection(hostedSession) {
@@ -2909,7 +2927,7 @@ export async function runNonInteractiveAgentPrompt({
  * @param {"off"|"minimal"|"low"|"medium"|"high"|"xhigh"|"max"} [opts.thinkingLevelOverride]
  * @param {string} opts.userRequest - The user-facing request/instruction to send to the agent
  * @param {Array<{base64: string, mimeType: string}>} [opts.images]
- * @param {import('../../tools/plan-written.js').TriageMeta} [opts.triageMeta] - Optional triage metadata threaded into auto-wired plan_written.
+ * @param {import('../../tools/plan-written.ts').TriageMeta} [opts.triageMeta] - Optional triage metadata threaded into auto-wired plan_written.
  * @param {import('./types.js').AgentDefinition} [opts._agentDefOverride] - Internal: skip loadAgentDef() and use this pre-loaded definition.
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} [opts.sessionManager] - Optional manager to carry
  *   context across successive isolated invocations (e.g. nudging a Reviewer that omitted its terminal tool call).

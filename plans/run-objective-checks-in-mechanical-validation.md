@@ -21,20 +21,26 @@ affectedPaths:
 executionAgent: "engineer"
 collaborationRecommendation: "autonomous"
 createdAt: "2026-08-01T01:39:35-04:00"
-updatedAt: "2026-08-01T20:48:07.440Z"
-status: "validated_reviewer"
+updatedAt: "2026-08-02T15:21:28.304Z"
+status: "verified"
 origin: "internal"
 implementedAt: "2026-08-01T18:51:26.646Z"
+verifiedAt: "2026-08-01T20:56:47.371Z"
 userVerifiedAt: null
+workRecord:
+    status: "generated"
+    recordId: "bc9715b9-5a63-410b-b690-fc596e9a6ca9"
+    path: "docs/work-records/2026-08-01-objective-checks-now-run-in-mechanical-validation.md"
+    lastAttemptAt: "2026-08-02T15:21:28.249Z"
 humanReviewMode: "ask"
 humanReviewDecision: "skipped"
 executionMode: "worktree"
-executionBaselineTree: "7513eea0cf864dbddea6cd5d7c6fa798c0110fa7"
-worktreeId: "000300da"
-worktreePath: "/Users/gandazgul/.wld/worktrees/--Users-gandazgul-Documents-web-runwield--/runwield-runwield-run-objective-checks-in-mechanical-validation-000300da"
-worktreeBranch: "runwield/worktree/run-objective-checks-in-mechanical-validation-000300da"
-worktreeBaseBranch: "main"
-worktreeStatus: "completed"
+deliveryEvidence:
+    version: 1
+    mode: "worktree_merge"
+    executionCommit: "7e7d3a99cce691df4c8b935cff6097f10b6d3d0b"
+    targetBranch: "main"
+    targetHeadBeforeMerge: "586b5a3a4700fbe188bb5c5239dbdf419db59c0c"
 validationCiAttempts: 0
 validationSemanticRounds: 1
 ---
@@ -66,8 +72,8 @@ Mechanical Validation phase: submitted through `plan_written`, persisted in Fron
 failing the phase when unmet.
 
 This Plan makes the checks _run_. Proving they were red before the work is
-[`baseline-objective-checks-before-execution`](baseline-objective-checks-before-execution.md), which depends on this
-one.
+[`baseline-objective-checks-before-execution`](archived/baseline-objective-checks-before-execution.md), which depends on
+this one.
 
 ## Approach
 

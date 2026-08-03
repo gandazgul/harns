@@ -1,0 +1,35 @@
+// @ts-nocheck: extracted from checked JSDoc workflow.js; tightening types is out of scope for this structural split.
+import { readLatestPlanOutcome } from "./workflow-results.js";
+import { runActiveAgentTurn } from "../session/agent-switching.js";
+
+/**
+ * @typedef {"approved_execute" | "approved_decompose" | "saved" | "feedback" | "canceled" | "repair_required" | "no_call"} PlanOutcome
+ */
+
+/**
+ * @typedef {Object} PlanOutcomeResult
+ * @property {PlanOutcome} outcome
+ * @property {string} [planName]
+ * @property {import('../../tools/plan-written.ts').TriageMeta} [triageMeta]
+ * @property {string} [feedback]
+ * @property {Array<{base64: string, mimeType: string}>} [images]
+ */
+
+export async function runPlanningAgent(
+    { agentName, initialRequest, triageMeta, sessionManager, hostedSession, images },
+) {
+    if (!hostedSession) throw new Error("runPlanningAgent: hostedSession is required");
+
+    const messages = await runActiveAgentTurn({
+        hostedSession,
+        agentName,
+        userRequest: initialRequest,
+        images,
+        sessionManager,
+        triageMeta,
+        allowReturnToRouter: false,
+    });
+
+    const result = readLatestPlanOutcome(messages);
+    return result || { outcome: "no_call" };
+}

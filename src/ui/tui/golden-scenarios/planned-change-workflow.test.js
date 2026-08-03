@@ -1,14 +1,24 @@
 import { assertEquals } from "@std/assert";
 import {
     plannedChangeBlockedMergePauseScenario,
+    plannedChangeCiRepairReentryScenario,
+    plannedChangeNonGitInPlaceScenario,
     plannedChangeReviewRepairValidationScenario,
+    plannedChangeValidationExhaustedScenario,
+    plannedChangeValidationFailureRetryScenario,
     plannedChangeWorkflowScenarios,
 } from "./planned-change-workflow.js";
 
-const scenarioExportNames = new Map([
-    [plannedChangeReviewRepairValidationScenario, "plannedChangeReviewRepairValidationScenario"],
-    [plannedChangeBlockedMergePauseScenario, "plannedChangeBlockedMergePauseScenario"],
-]);
+const scenarioExportNames = new Map(
+    /** @type {Array<[object, string]>} */ ([
+        [plannedChangeReviewRepairValidationScenario, "plannedChangeReviewRepairValidationScenario"],
+        [plannedChangeBlockedMergePauseScenario, "plannedChangeBlockedMergePauseScenario"],
+        [plannedChangeCiRepairReentryScenario, "plannedChangeCiRepairReentryScenario"],
+        [plannedChangeNonGitInPlaceScenario, "plannedChangeNonGitInPlaceScenario"],
+        [plannedChangeValidationFailureRetryScenario, "plannedChangeValidationFailureRetryScenario"],
+        [plannedChangeValidationExhaustedScenario, "plannedChangeValidationExhaustedScenario"],
+    ]),
+);
 
 for (const scenario of plannedChangeWorkflowScenarios) {
     Deno.test({
