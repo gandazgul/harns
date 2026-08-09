@@ -13,6 +13,16 @@
 - Very long functions, see huge loops and all in the same file, similar symptoms
 - Bad types
   - any, unknown, object, Record<string, any>, Record<string, unknown>, Record<string, object>
+- Locally reasonable changes create system-level unknown unknowns.
+
+### Antislop
+
+- deep modules with small interfaces;
+- explicit information ownership;
+- complexity absorbed at the lowest appropriate layer;
+- alternatives considered before implementation;
+- design quality reviewed separately from test correctness;
+- removal of unnecessary concepts, not only removal of duplicate code.
 
 ## Idea sources for better engineering, testing and refactoring practices
 
@@ -140,6 +150,7 @@ redesign. Say the word if you would rather do it inside this move.
 
 ### Others
 
+- [ ] when creating a worktree run cymbal index . on it.
 - [ ] collapse the tool calls between thinking to 1 block with 1 line per tool call the current header. On click on that
       block expand them to separate blocks with the full tool call result.
 - [ ] Upgrade PI docs/plans/upgrade-pi-0-84-and-latex-rendering.md
