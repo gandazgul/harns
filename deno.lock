@@ -84,7 +84,6 @@
     "npm:class-variance-authority@~0.7.1": "0.7.1",
     "npm:clsx@^2.1.1": "2.1.1",
     "npm:codemirror@^6.0.2": "6.0.2",
-    "npm:diff@8.0.4": "8.0.4",
     "npm:diff@9": "9.0.0",
     "npm:dockview-react@^7.0.2": "7.0.4_react@19.2.7_react-dom@19.2.7__react@19.2.7",
     "npm:dompurify@*": "3.4.11",
@@ -106,7 +105,7 @@
     "npm:strip-ansi@^7.2.0": "7.2.0",
     "npm:tailwind-merge@^3.6.0": "3.6.0",
     "npm:tailwindcss@^4.3.3": "4.3.3",
-    "npm:tidewave@~0.8.1": "0.8.2_typescript@5.9.3",
+    "npm:tidewave@~0.8.2": "0.8.3_typescript@5.9.3",
     "npm:typescript@^5.9.3": "5.9.3",
     "npm:unique-username-generator@^1.5.1": "1.5.1",
     "npm:vite@^8.1.5": "8.2.0_esbuild@0.28.1"
@@ -1393,7 +1392,7 @@
       ],
       "scripts": true
     },
-    "@hono/node-server@2.0.12_hono@4.12.34": {
+    "@hono/node-server@2.0.12_hono@4.13.1": {
       "integrity": "sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg==",
       "dependencies": [
         "hono"
@@ -5098,8 +5097,8 @@
     "highlight.js@11.11.1": {
       "integrity": "sha512-Xwwo44whKBVCYoliBQwaPvtd/2tYFkRQtXDWj1nackaV2JPXx3L0+Jvd8/qCJ2p+ML0/XVkJ2q+Mr+UVdpJK5w=="
     },
-    "hono@4.12.34": {
-      "integrity": "sha512-GqXJqY/xJkJmuloTrnV1ZEXG3fqte+VjkUqoRNZXcrUidiUOP4fMSIHHY4tsqZBK++kVyWmt/AAfSUuy57/eSA=="
+    "hono@4.13.1": {
+      "integrity": "sha512-kdJoFVv2xmayw6cY09H7AbMJMt8Jn5jdlEdXsP7AGBdF2DIptVlKlOLKXP41yPip4/a3yQPv9gVcJYI8YY04dw=="
     },
     "hosted-git-info@9.0.3": {
       "integrity": "sha512-Hc+ghLoSt6QaYZUv0WBiIvmMDZuZZ7oaDvdH8MbfOO4lOsxdXLEvuC6ePoGs9H1X9oCLyq6+NVN0MKqD+ydxyg==",
@@ -6276,8 +6275,8 @@
     "tapable@2.3.3": {
       "integrity": "sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A=="
     },
-    "tidewave@0.8.2_typescript@5.9.3": {
-      "integrity": "sha512-jStQ5VijrNuD/C2GHKy17Qz2bdBSf8gz72TPhFZ/TNYzbj10Mq9HI1QoIGewR6vi2wojQ1/MpuKDSZywtONAnw==",
+    "tidewave@0.8.3_typescript@5.9.3": {
+      "integrity": "sha512-jRImwQCIU16hpNemNdLpAunyEYmD6LwrHLSAe/+vZb52hbU2hmx9HXSDfZjQhqbaWq5wE8JZksyfr31l9U1ASg==",
       "dependencies": [
         "@modelcontextprotocol/sdk",
         "body-parser",
@@ -6845,15 +6844,10 @@
       "npm:strip-ansi@^7.2.0",
       "npm:tailwind-merge@^3.6.0",
       "npm:tailwindcss@^4.3.3",
-      "npm:tidewave@~0.8.1",
+      "npm:tidewave@~0.8.2",
       "npm:typescript@^5.9.3",
       "npm:unique-username-generator@^1.5.1",
       "npm:vite@^8.1.5"
-    ],
-    "packageJson": {
-      "dependencies": [
-        "npm:diff@8.0.4"
-      ]
-    }
+    ]
   }
 }
