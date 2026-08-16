@@ -4,6 +4,7 @@ import { NO_OPEN_BROWSER_PORT } from "../../shared/browser-port.ts";
 import { withRuntimeCommandFixture } from "../../cmd/testing/runtime-command-fixture.ts";
 import { openOwnerCoordinationStore } from "../../shared/owner-coordination/index.js";
 import { createSessionRuntime } from "../../shared/session/session-runtime.js";
+import { getRunWieldSessionDir } from "../../shared/session/root-session.js";
 import { createInteractiveTuiComposition, type InteractiveTuiComposition } from "./interactive-tui-composition.ts";
 import { createInteractiveCompositionHarness } from "./testing/interactive-composition-fixture.ts";
 import { VirtualTerminal } from "./testing/virtual-terminal.js";
@@ -38,6 +39,19 @@ async function submitText(terminal: VirtualTerminal, text: string): Promise<void
     terminal.typeText(text);
     terminal.pressEnter();
     await terminal.flush();
+}
+
+async function countSessionTranscripts(projectRoot: string): Promise<number> {
+    let count = 0;
+    try {
+        for await (const entry of Deno.readDir(getRunWieldSessionDir(projectRoot))) {
+            if (entry.isFile && entry.name.endsWith(".jsonl")) count++;
+        }
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return 0;
+        throw error;
+    }
+    return count;
 }
 
 async function startComposition(
@@ -131,6 +145,59 @@ Deno.test("chat input controller sends accepted editor input through the real co
             await composition.waitForIdle();
             assert(modelRequests.some((request) => request.includes("hello from tui")));
         } finally {
+            await composition.dispose();
+        }
+    });
+});
+
+Deno.test("slash new replaces the TUI with an unpersisted shell until its first message", async () => {
+    await withRuntimeCommandFixture("chat-input-slash-new-lazy-", async ({ setModelResponseFactory }) => {
+        const modelRequests: string[] = [];
+        const releaseModel = deferredSignal();
+        setModelResponseFactory(async (context) => {
+            modelRequests.push(JSON.stringify(context.messages));
+            await releaseModel.promise;
+            return fauxAssistantMessage(fauxText("New Session response."));
+        });
+        const { composition, terminal } = await startComposition();
+        try {
+            const originalSessionId = composition.sessionId;
+            const sessionRoot = composition.runtime.getSessionSnapshot(originalSessionId)?.cwd;
+            if (!sessionRoot) throw new Error("Composed Session root is unavailable");
+            assertEquals(await countSessionTranscripts(sessionRoot), 0);
+
+            await submitText(terminal, "/new quick notes");
+            await waitFor(() => composition.sessionId !== originalSessionId, "new in-memory Session replacement");
+
+            const replacement = composition.runtime.getSessionSnapshot(composition.sessionId);
+            assertEquals(replacement?.name, "quick notes");
+            assertEquals(replacement?.activeAgent, "router");
+            assertEquals(replacement?.sessionManagerId, null);
+            assertEquals(replacement?.managed, null);
+            assertEquals(await countSessionTranscripts(sessionRoot), 0);
+
+            await submitText(terminal, "persist this Session now");
+            await waitFor(
+                () => modelRequests.some((request) => request.includes("persist this Session now")),
+                "new Session model request",
+            );
+            await waitFor(
+                () =>
+                    terminal.getScreenText().includes("persist this Session now") &&
+                    terminal.getScreenText().includes("Thinking..."),
+                "first message and thinking frame",
+            );
+            assertStringIncludes(terminal.getScreenText(), "persist this Session now");
+            assertStringIncludes(terminal.getScreenText(), "Thinking...");
+            releaseModel.resolve();
+            await composition.waitForIdle();
+            assertEquals(
+                typeof composition.runtime.getSessionSnapshot(composition.sessionId)?.sessionManagerId,
+                "string",
+            );
+            assertEquals(await countSessionTranscripts(sessionRoot), 1);
+        } finally {
+            releaseModel.resolve();
             await composition.dispose();
         }
     });
@@ -250,6 +317,27 @@ Deno.test("chat input controller preflights pasted image attachments through the
             }
         },
     );
+});
+
+Deno.test("chat input controller shows safe text when submit fails", async () => {
+    await withRuntimeCommandFixture("chat-input-safe-submit-error-", async () => {
+        const { composition, terminal } = await startComposition();
+        try {
+            const rawMessage = "Session Manager create is blocked: project_identity_unavailable";
+            composition.runtime.promptUserTurn = () => Promise.reject(new Error(rawMessage));
+            await submitText(terminal, "keep this draft");
+            await waitFor(
+                () => terminal.getScrollbackText().includes("RunWield could not send that message"),
+                "safe submit failure message",
+            );
+            assertStringIncludes(terminal.getScrollbackText(), "RunWield could not send that message");
+            await waitFor(() => terminal.getScreenText().includes("keep this draft"), "restored failed-submit draft");
+            assertStringIncludes(terminal.getScreenText(), "keep this draft");
+            assertEquals(terminal.getScrollbackText().includes("project_identity_unavailable"), false);
+        } finally {
+            await composition.dispose();
+        }
+    });
 });
 
 Deno.test("chat input controller preserves input while model setup blocks through the composed TUI", async () => {
