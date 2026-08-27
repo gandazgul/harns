@@ -1,8 +1,10 @@
 import { assertEquals } from "@std/assert";
 import { handlePlanRecovery } from "./plan-recovery-flow.ts";
-import { inspectRecoveryPlan, settleRecoveryRecords } from "./plan-recovery-actions.ts";
-import { loadPlan, savePlan, updatePlanFrontMatter } from "../../plan-store.js";
+import { inspectRecoveryPlan, openFollowUpRecoveryPlan, settleRecoveryRecords } from "./plan-recovery-actions.ts";
+import { getStoredPlanPath, listPlans, loadPlan, savePlan, updatePlanFrontMatter } from "../../plan-store.js";
 import { getTransitionJournalDir } from "../../shared/workflow/state-transition.ts";
+import { readControllerRecord, writeControllerState } from "../../shared/workflow/controller-registry.ts";
+import { resolvePlanWithPrimaryRecovery } from "./primary-plan-recovery.ts";
 import {
     addEntry as addWorktreeRegistryEntry,
     findById as findWorktreeRegistryEntryById,
@@ -22,6 +24,7 @@ interface PromptOption {
 interface TestUi extends UiAPI {
     prompts: string[];
     messages: string[];
+    optionLabels: string[][];
 }
 
 interface RunRecoveryResult {
@@ -34,6 +37,10 @@ interface RealRecoveryProject {
     projectRoot: string;
     plan: RecoveryFlowPlan;
     baselineTree: string;
+}
+
+interface RecoveryProjectOptions {
+    legacyUnregisteredRecovery?: boolean;
 }
 
 function makePlan(overrides: Partial<PlanFrontMatter> = {}): RecoveryFlowPlan {
@@ -56,11 +63,14 @@ function makePlan(overrides: Partial<PlanFrontMatter> = {}): RecoveryFlowPlan {
 function makeUi(answers: (string | null)[], textAnswers: (string | null)[] = []): TestUi {
     const prompts: string[] = [];
     const messages: string[] = [];
+    const optionLabels: string[][] = [];
     const ui: Partial<TestUi> = {
         prompts,
         messages,
+        optionLabels,
         promptSelect: (prompt: string, options: PromptOption[]) => {
             prompts.push(`${prompt}:${options.map((option) => option.value).join(",")}`);
+            optionLabels.push(options.map((option) => option.label));
             return Promise.resolve(answers.shift() ?? null);
         },
         promptText: (prompt: string) => {
@@ -83,7 +93,10 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
     return new TextDecoder().decode(output.stdout).trim();
 }
 
-async function makeRealRecoveryProject(attrs: Partial<PlanFrontMatter> = {}): Promise<RealRecoveryProject> {
+async function makeRealRecoveryProject(
+    attrs: Partial<PlanFrontMatter> = {},
+    options: RecoveryProjectOptions = {},
+): Promise<RealRecoveryProject> {
     const projectRoot = await Deno.makeTempDir({ prefix: "runwield-recovery-real-" });
     await runGit(projectRoot, ["init", "-b", "main"]);
     await runGit(projectRoot, ["config", "user.email", "runwield@example.test"]);
@@ -100,6 +113,39 @@ async function makeRealRecoveryProject(attrs: Partial<PlanFrontMatter> = {}): Pr
     await runGit(projectRoot, ["add", "."]);
     await runGit(projectRoot, ["commit", "-m", "initial fixture"]);
     const baselineTree = await runGit(projectRoot, ["rev-parse", "HEAD^{tree}"]);
+    if (attrs.worktreeId && options.legacyUnregisteredRecovery) {
+        await writeControllerState(
+            projectRoot,
+            { planName: "recovery-contract", planId: attrs.planId || "plan-1" },
+            {},
+            {
+                recovery: {
+                    worktreeId: attrs.worktreeId,
+                    worktreePath: attrs.worktreePath,
+                    worktreeBranch: attrs.worktreeBranch,
+                    worktreeBaseBranch: attrs.worktreeBaseBranch,
+                    worktreeStatus: attrs.worktreeStatus || "active",
+                    executionBaselineTree: baselineTree,
+                },
+            },
+        );
+    } else if (attrs.worktreeId) {
+        await addWorktreeRegistryEntry(projectRoot, {
+            id: attrs.worktreeId,
+            planId: attrs.planId || "plan-1",
+            planName: "recovery-contract",
+            path: attrs.worktreePath || `${projectRoot}/gone`,
+            branch: attrs.worktreeBranch || "rw/gone",
+            baseBranch: attrs.targetBranch || attrs.worktreeBaseBranch || "main",
+            baseRef: "main",
+            baseCommit: await runGit(projectRoot, ["rev-parse", "HEAD"]),
+            baseTree: baselineTree,
+            executionBaselineTree: baselineTree,
+            status: "active",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+        });
+    }
     const loadedPlan = await loadPlan(projectRoot, "recovery-contract");
     if (!loadedPlan) throw new Error("fixture plan was not saved");
     const plan: RecoveryFlowPlan = { ...loadedPlan, planName: "recovery-contract" };
@@ -204,6 +250,7 @@ function makeSession(projectRoot: string): PlanSessionSurface {
         runSlicerAgent: () => Promise.resolve({ kind: "done" }),
         getActiveExecutionWorkflow: () => null,
         setActiveExecutionWorkflow: async () => {},
+        replaceWithExecutionSession: async () => {},
         clearActiveExecutionWorkflow: async () => {},
         reviewPlan: () => Promise.resolve({ canceled: true, approved: false }),
         rename: async () => {},
@@ -223,6 +270,53 @@ function makeActionContext(projectRoot: string, plan: RecoveryFlowPlan, uiAPI: U
         refreshRecoveryWorktree: () => Promise.resolve(null),
         recordRecoveryResult: () => Promise.resolve(),
     };
+}
+
+async function prepareImplementedWorktree(
+    project: RealRecoveryProject,
+    executionAgent: "engineer" | "frontend-engineer" = "engineer",
+): Promise<{ path: string; id: string }> {
+    const path = await Deno.makeTempDir({ prefix: "runwield-recovery-follow-up-worktree-" });
+    await Deno.remove(path);
+    const id = `follow-up-${executionAgent}`;
+    const branch = `rw/follow-up-${executionAgent}`;
+    const baseCommit = await runGit(project.projectRoot, ["rev-parse", "HEAD"]);
+    await runGit(project.projectRoot, ["worktree", "add", "-b", branch, path, "HEAD"]);
+    const currentPlan = await loadPlan(project.projectRoot, project.plan.planName);
+    if (!currentPlan) throw new Error("follow-up fixture Plan disappeared");
+    project.plan.attrs = await updatePlanFrontMatter(
+        project.projectRoot,
+        project.plan.planName,
+        {
+            status: "implemented",
+            executionAgent,
+            executionMode: "worktree",
+            executionBaselineTree: project.baselineTree,
+            worktreeId: id,
+            worktreePath: path,
+            worktreeBranch: branch,
+            worktreeBaseBranch: "main",
+            worktreeStatus: "completed",
+        },
+        currentPlan.attrs,
+        { expectedRevision: currentPlan.revision },
+    );
+    await addWorktreeRegistryEntry(project.projectRoot, {
+        id,
+        planName: project.plan.planName,
+        planId: String(project.plan.attrs.planId),
+        path,
+        branch,
+        baseBranch: "main",
+        baseRef: "main",
+        baseCommit,
+        baseTree: project.baselineTree,
+        executionBaselineTree: project.baselineTree,
+        status: "completed",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    });
+    return { path, id };
 }
 
 async function runRealRecovery(
@@ -309,11 +403,6 @@ Deno.test("Plan Recovery menu outcomes re-prompt without fallthrough", async () 
     assertEquals(continueBlocked.result, "handled");
     assertEquals(continueBlocked.ui.prompts.length, 2);
 
-    const mergePreflight = await runRecovery(["merge", null], { status: "implemented" });
-    assertEquals(mergePreflight.result, "handled");
-    assertEquals(mergePreflight.ui.messages.some((message) => message.includes("Manual worktree merge")), true);
-    assertEquals(mergePreflight.ui.prompts.length, 2);
-
     const abandonDecline = await runRecovery(["abandon", "cancel", null], {
         worktreeId: "worktree-1",
     });
@@ -344,13 +433,81 @@ Deno.test("Plan Recovery handled and review outcomes exit once", async () => {
 
     const resetSuccess = await runRealRecovery(
         ["reset", "clear"],
-        { executionBaselineTree: "baseline-tree" },
+        { executionMode: "worktree", worktreeId: "lost-before-reset", worktreeBranch: "rw/gone" },
         (options) => {
             options.ports.probeGitRepository = () =>
                 Promise.resolve({ ok: false, state: "not_git", cwd: options.projectRoot });
         },
     );
     assertEquals(resetSuccess.result, "handled");
+});
+
+Deno.test("implemented recovery places follow-up second and restores the execution Agent workflow", async () => {
+    const engineer = await runRealRecovery(
+        ["cancel"],
+        { status: "implemented", executionMode: "worktree", executionAgent: "engineer" },
+        async (_options, project) => {
+            await prepareImplementedWorktree(project, "engineer");
+        },
+    );
+    const engineerOptions = engineer.ui.optionLabels[0] || [];
+    const retryIndex = engineerOptions.indexOf("Retry Workflow Validation");
+    assertEquals(retryIndex >= 0, true);
+    assertEquals(engineerOptions[retryIndex + 1], "Open Plan Engineer for follow-up");
+
+    const frontendProject = await makeRealRecoveryProject({ status: "implemented" });
+    const frontendWorktree = await prepareImplementedWorktree(frontendProject, "frontend-engineer");
+    const activeWorkflows: import("../../shared/types.js").ActiveExecutionWorkflow[] = [];
+    const replacementWorkflows: import("../../shared/types.js").ActiveExecutionWorkflow[] = [];
+    let executeCalls = 0;
+    let validationCalls = 0;
+    const frontendUi = makeUi([]);
+    const frontendContext = makeActionContext(frontendProject.projectRoot, frontendProject.plan, frontendUi);
+    frontendContext.worktreeContext = {
+        id: frontendWorktree.id,
+        path: frontendWorktree.path,
+        branch: "rw/follow-up-frontend-engineer",
+        baseBranch: "main",
+        status: "completed",
+    };
+    frontendContext.refreshRecoveryWorktree = () => Promise.resolve(frontendContext.worktreeContext);
+    frontendContext.session.setActiveExecutionWorkflow = (workflow) =>
+        Promise.resolve(activeWorkflows.push(workflow)).then(() => {});
+    frontendContext.session.replaceWithExecutionSession = (workflow) =>
+        Promise.resolve(replacementWorkflows.push(workflow)).then(() => {});
+    frontendContext.session.executePlan = () => {
+        executeCalls++;
+        return Promise.resolve({ result: "complete" });
+    };
+    frontendContext.session.runValidation = () => {
+        validationCalls++;
+        return Promise.resolve({ status: "passed" });
+    };
+
+    assertEquals(await openFollowUpRecoveryPlan(frontendContext), { kind: "handled" });
+    const activeWorkflow = activeWorkflows[0];
+    if (!activeWorkflow) throw new Error("follow-up did not restore an active workflow");
+    assertEquals(activeWorkflow.planName, frontendProject.plan.planName);
+    assertEquals(activeWorkflow.executionAgent, "frontend-engineer");
+    assertEquals(activeWorkflow.executionCwd, frontendWorktree.path);
+    assertEquals(activeWorkflow.worktreeId, frontendWorktree.id);
+    assertEquals(replacementWorkflows.length, 1);
+    assertEquals(replacementWorkflows[0]?.executionCwd, frontendWorktree.path);
+    assertEquals(executeCalls, 0);
+    assertEquals(validationCalls, 0);
+    assertEquals(frontendProject.plan.attrs.status, "implemented");
+});
+
+Deno.test("follow-up recovery keeps the menu available when the recorded worktree is incomplete", async () => {
+    const result = await runRecovery(["follow_up", "cancel"], {
+        status: "implemented",
+        executionMode: "worktree",
+        worktreeId: "missing-worktree",
+        worktreePath: "/tmp/missing-worktree",
+    });
+    assertEquals(result.result, "handled");
+    assertEquals(result.ui.prompts.length, 2);
+    assertEquals(result.ui.messages.some((message) => message.includes("worktree facts are missing")), true);
 });
 
 Deno.test("continuing an in-progress worktree keeps its Plan authoritative and rebuilds missing attempt data", async () => {
@@ -385,6 +542,60 @@ Deno.test("continuing an in-progress worktree keeps its Plan authoritative and r
             executionPlan.attrs,
             { expectedRevision: executionPlan.revision },
         );
+        const now = new Date().toISOString();
+        await addWorktreeRegistryEntry(project.projectRoot, {
+            id: attempt.worktreeId,
+            planName: project.plan.planName,
+            planId: "plan-1",
+            path: worktreePath,
+            branch: attempt.worktreeBranch,
+            baseBranch: attempt.worktreeBaseBranch,
+            baseRef: attempt.worktreeBaseBranch,
+            baseCommit: await runGit(project.projectRoot, ["rev-parse", "HEAD"]),
+            baseTree: project.baselineTree,
+            executionBaselineTree: project.baselineTree,
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+        });
+        const recoveryDirectory = getTransitionJournalDir(worktreePath);
+        const recoveryPath = `${recoveryDirectory}/interrupted-execution-setup.json`;
+        await Deno.mkdir(recoveryDirectory, { recursive: true });
+        await Deno.writeTextFile(
+            recoveryPath,
+            `${
+                JSON.stringify(
+                    {
+                        version: 1,
+                        transitionId: "interrupted-execution-setup",
+                        operation: "execution_preparation",
+                        planName: project.plan.planName,
+                        state: "needs_recovery",
+                        resources: [
+                            { kind: "plan", id: project.plan.planName },
+                            { kind: "attempt", id: attempt.worktreeId },
+                        ],
+                        completedEffects: [
+                            {
+                                effect: "git_worktree_reused",
+                                proof: {
+                                    worktreeId: attempt.worktreeId,
+                                    path: worktreePath,
+                                    branch: attempt.worktreeBranch,
+                                },
+                            },
+                            {
+                                effect: "worktree_registry_updated",
+                                proof: { worktreeId: attempt.worktreeId, status: "active" },
+                            },
+                            { effect: "plan_event_recorded", proof: { planName: project.plan.planName } },
+                        ],
+                    },
+                    null,
+                    2,
+                )
+            }\n`,
+        );
         project.plan.attrs = primaryAttrs;
         let executeCalls = 0;
         const ui = makeUi(["continue"]);
@@ -396,6 +607,7 @@ Deno.test("continuing an in-progress worktree keeps its Plan authoritative and r
 
         assertEquals(await handlePlanRecovery(options), "handled");
         assertEquals(executeCalls, 1);
+        assertEquals(await Deno.stat(recoveryPath).then(() => true).catch(() => false), false);
         assertEquals((await loadPlan(project.projectRoot, project.plan.planName))?.attrs.status, "ready_for_work");
         assertEquals((await loadPlan(worktreePath, project.plan.planName))?.attrs.status, "ready_for_work");
         assertEquals((await findWorktreeRegistryEntryById(project.projectRoot, attempt.worktreeId))?.status, "active");
@@ -409,6 +621,50 @@ Deno.test("continuing an in-progress worktree keeps its Plan authoritative and r
         await Deno.remove(project.projectRoot, { recursive: true }).catch(() => {});
         await Deno.remove(worktreePath, { recursive: true }).catch(() => {});
     }
+});
+
+Deno.test("validated work already contained in its target branch is complete without a worktree record", async () => {
+    const project = await makeRealRecoveryProject({ status: "validated", executionMode: "worktree" });
+    const executionCommit = await runGit(project.projectRoot, ["rev-parse", "HEAD"]);
+    const currentPlan = await loadPlan(project.projectRoot, project.plan.planName);
+    if (!currentPlan) throw new Error("published fixture Plan disappeared");
+    await updatePlanFrontMatter(
+        project.projectRoot,
+        project.plan.planName,
+        {
+            status: "validated",
+            executionMode: "worktree",
+            deliveryEvidence: {
+                version: 1,
+                mode: "worktree_merge",
+                executionCommit,
+                targetBranch: "main",
+                targetHeadBeforeMerge: executionCommit,
+            },
+        },
+        currentPlan.attrs,
+        { expectedRevision: currentPlan.revision },
+    );
+    assertEquals(
+        await runGit(project.projectRoot, ["status", "--porcelain"]),
+        "",
+        "delivery bookkeeping creates no Plan commit",
+    );
+    const publishedPlan = await loadPlan(project.projectRoot, project.plan.planName);
+    if (!publishedPlan) throw new Error("published fixture Plan was not saved");
+    project.plan = { ...publishedPlan, planName: project.plan.planName };
+    const ui = makeUi([]);
+    const options = makeOptions(project.plan, ui, project.projectRoot);
+    let validationCalls = 0;
+    options.session.runValidation = () => {
+        validationCalls += 1;
+        return Promise.resolve({ status: "blocked" });
+    };
+
+    assertEquals(await handlePlanRecovery(options), "settled");
+    assertEquals(validationCalls, 0);
+    assertEquals(ui.prompts.length, 0);
+    assertEquals(ui.messages.includes(`${project.plan.planName} is on main.`), true);
 });
 
 Deno.test("Plan Recovery actions preserve live context", async () => {
@@ -440,7 +696,11 @@ Deno.test("Plan Recovery actions preserve live context", async () => {
     assertEquals(inspect.result, "handled");
     assertEquals(inspect.ui.prompts.length, 2);
 
+    let abandonedProjectRoot = "";
+    let primaryBeforeAbandon = "";
     const abandonSuccess = await runRealRecovery(["abandon", "confirm", null], {}, async (_options, project) => {
+        abandonedProjectRoot = project.projectRoot;
+        primaryBeforeAbandon = await Deno.readTextFile(project.plan.path);
         const worktreePath = await Deno.makeTempDir({ prefix: "runwield-recovery-abandon-worktree-" });
         await Deno.remove(worktreePath);
         await runGit(project.projectRoot, ["worktree", "add", "-b", "rw/test", worktreePath, "HEAD"]);
@@ -461,7 +721,13 @@ Deno.test("Plan Recovery actions preserve live context", async () => {
         const attrs = await updatePlanFrontMatter(
             project.projectRoot,
             project.plan.planName,
-            { worktreeId: "worktree-1", worktreePath, worktreeBranch: "rw/test" },
+            {
+                documentWorktreeId: "worktree-1",
+                executionMode: "worktree",
+                worktreeId: "worktree-1",
+                worktreePath,
+                worktreeBranch: "rw/test",
+            },
             project.plan.attrs,
             { expectedRevision: project.plan.revision },
         );
@@ -473,6 +739,18 @@ Deno.test("Plan Recovery actions preserve live context", async () => {
     assertEquals(abandonSuccess.result, "handled");
     assertEquals(Boolean(abandonSuccess.plan.attrs.worktreeId), false);
     assertEquals(abandonSuccess.ui.prompts.filter((prompt) => prompt.startsWith("Plan recovery")).length, 2);
+    const abandonedController = await readControllerRecord(abandonedProjectRoot, {
+        planName: abandonSuccess.plan.planName,
+        planId: abandonSuccess.plan.attrs.planId,
+    });
+    assertEquals(abandonedController?.state.documentWorktreeId, undefined);
+    const primaryPath = getStoredPlanPath(abandonedProjectRoot, abandonSuccess.plan.planName);
+    assertEquals((await listPlans(abandonedProjectRoot)).map((plan) => plan.path), [primaryPath]);
+    assertEquals(
+        (await resolvePlanWithPrimaryRecovery(abandonedProjectRoot, abandonSuccess.plan.planName)).plan.path,
+        primaryPath,
+    );
+    assertEquals(await Deno.readTextFile(primaryPath), primaryBeforeAbandon);
 
     const abandonMissingRegistry = await runRealRecovery(
         ["abandon", "confirm", null],
@@ -480,6 +758,14 @@ Deno.test("Plan Recovery actions preserve live context", async () => {
         async (_options, project) => {
             const worktreePath = await Deno.makeTempDir({ prefix: "runwield-recovery-missing-registry-" });
             await Deno.remove(worktreePath);
+            await writeControllerState(
+                project.projectRoot,
+                { planName: project.plan.planName, planId: project.plan.attrs.planId },
+                {},
+                {
+                    recovery: { worktreeId: "missing-worktree-1", worktreePath, worktreeBranch: "rw/missing-registry" },
+                },
+            );
             const attrs = await updatePlanFrontMatter(
                 project.projectRoot,
                 project.plan.planName,
@@ -501,40 +787,77 @@ Deno.test("Plan Recovery actions preserve live context", async () => {
         ),
         true,
     );
-
-    const mergeAttemptFailure = await runRealRecovery(["merge"], {
-        status: "implemented",
-        executionMode: "worktree",
-        worktreeStatus: "merge_conflict",
-    }, async (_options, project) => {
-        const worktreePath = await Deno.makeTempDir({ prefix: "runwield-recovery-merge-worktree-" });
-        await Deno.remove(worktreePath);
-        await runGit(project.projectRoot, ["worktree", "add", "-b", "rw/test", worktreePath, "HEAD"]);
-        const attrs = await updatePlanFrontMatter(
-            project.projectRoot,
-            project.plan.planName,
-            {
-                status: "implemented",
-                executionMode: "worktree",
-                worktreeId: "worktree-1",
-                worktreePath,
-                worktreeBranch: "rw/test",
-                worktreeBaseBranch: "main",
-                worktreeStatus: "merge_conflict",
-            },
-            project.plan.attrs,
-            { expectedRevision: project.plan.revision },
-        );
-        project.plan.attrs = attrs;
-        const reloaded = await loadPlan(project.projectRoot, project.plan.planName);
-        if (!reloaded) throw new Error("merge fixture plan disappeared");
-        project.plan.revision = reloaded.revision;
-    });
-    assertEquals(mergeAttemptFailure.result, "handled");
-    assertEquals(mergeAttemptFailure.ui.messages.length > 0, true);
 });
 
-Deno.test("lost worktree recovery offers User Verification for implemented plans", async () => {
+Deno.test("discarded execution refreshes the surviving Plan before reopening review", async () => {
+    const project = await makeRealRecoveryProject({ status: "ready_for_work" });
+    const primary = await loadPlan(project.projectRoot, project.plan.planName);
+    if (!primary) throw new Error("primary Plan fixture disappeared");
+    const worktreePath = `${project.projectRoot}-discard`;
+    await runGit(project.projectRoot, ["worktree", "add", "-b", "rw/discard-review", worktreePath, "HEAD"]);
+    try {
+        await addWorktreeRegistryEntry(project.projectRoot, {
+            id: "discard-review",
+            planId: "plan-1",
+            planName: project.plan.planName,
+            path: worktreePath,
+            branch: "rw/discard-review",
+            baseBranch: "main",
+            baseRef: "main",
+            baseCommit: await runGit(project.projectRoot, ["rev-parse", "HEAD"]),
+            baseTree: project.baselineTree,
+            status: "execution_failed",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        });
+        const execution = await loadPlan(worktreePath, project.plan.planName);
+        if (!execution) throw new Error("execution Plan fixture disappeared");
+        await updatePlanFrontMatter(
+            worktreePath,
+            project.plan.planName,
+            {
+                status: "failed",
+                documentWorktreeId: "discard-review",
+            },
+            {},
+            { expectedRevision: execution.revision },
+        );
+        await Deno.writeTextFile(execution.path, `${await Deno.readTextFile(execution.path)}\nExecution-only edits.\n`);
+        const ui = makeUi(["abandon", "confirm", "review"]);
+        const select = ui.promptSelect;
+        ui.promptSelect = async (...args) => {
+            if (ui.prompts.length === 2) {
+                assertEquals(
+                    await Deno.readTextFile(primary.path),
+                    primary.markdown,
+                    "discard preserves primary bytes",
+                );
+                assertEquals(project.plan.path, primary.path);
+                assertEquals(project.plan.body, primary.body);
+                assertEquals(project.plan.revision, primary.revision);
+                assertEquals(project.plan.attrs.status, "ready_for_work");
+                assertEquals(project.plan.attrs.documentWorktreeId, undefined);
+            }
+            return await select(...args);
+        };
+        const options = makeOptions(project.plan, ui, project.projectRoot);
+        let clearedExecution = false;
+        options.session.clearActiveExecutionWorkflow = () => {
+            clearedExecution = true;
+            return Promise.resolve();
+        };
+        assertEquals(await handlePlanRecovery(options), "review");
+        assertEquals(clearedExecution, true);
+        assertEquals((await loadPlan(project.projectRoot, project.plan.planName))?.attrs.status, "feedback");
+        assertEquals((await loadPlan(project.projectRoot, project.plan.planName))?.body, primary.body);
+        assertEquals((await findWorktreeRegistryEntryById(project.projectRoot, "discard-review"))?.status, "abandoned");
+    } finally {
+        await runGit(project.projectRoot, ["worktree", "remove", "--force", worktreePath]).catch(() => {});
+        await Deno.remove(project.projectRoot, { recursive: true });
+    }
+});
+
+Deno.test("unregistered legacy recovery offers User Verification for implemented plans with lost worktrees", async () => {
     const project = await makeRealRecoveryProject({
         status: "implemented",
         executionMode: "worktree",
@@ -542,7 +865,8 @@ Deno.test("lost worktree recovery offers User Verification for implemented plans
         worktreePath: `${await Deno.makeTempDir()}/gone`,
         worktreeBranch: "rw/gone",
         worktreeBaseBranch: "main",
-    });
+    }, { legacyUnregisteredRecovery: true });
+    assertEquals(await findWorktreeRegistryEntryById(project.projectRoot, "lost-worktree"), null);
     const ui = makeUi(["user_verify"], ["Accepted from staging check."]);
     const options = makeOptions(project.plan, ui);
     options.projectRoot = project.projectRoot;
@@ -561,14 +885,15 @@ Deno.test("lost worktree recovery offers User Verification for implemented plans
     assertEquals(loadedPlan?.attrs.verifiedAt, undefined);
 });
 
-Deno.test("lost worktree recovery omits User Verification for failed plans", async () => {
+Deno.test("unregistered legacy recovery omits User Verification for failed plans with lost worktrees", async () => {
     const project = await makeRealRecoveryProject({
         executionMode: "worktree",
         worktreeId: "lost-worktree",
         worktreePath: `${await Deno.makeTempDir()}/gone`,
         worktreeBranch: "rw/gone",
         worktreeBaseBranch: "main",
-    });
+    }, { legacyUnregisteredRecovery: true });
+    assertEquals(await findWorktreeRegistryEntryById(project.projectRoot, "lost-worktree"), null);
     const ui = makeUi(["stop_lost"]);
     const options = makeOptions(project.plan, ui);
     options.projectRoot = project.projectRoot;

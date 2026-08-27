@@ -1,10 +1,11 @@
 ---
-import WorkspaceLayout from "../../../../layouts/WorkspaceLayout.astro";
+import ReviewLayout from "../../../../layouts/ReviewLayout.astro";
 import { PlanDetail } from "../../../../components/PlanDetail.jsx";
 import { PlanReviewSurface } from "../../../../react/PlanReviewSurface.tsx";
 import { serializeCanonicalPlanError } from "../../../../server/astro-canonical-data.js";
 import {
     getAstroOwnerWorkspaceSessionContinuation,
+    getAstroOwnerWorkspaceStore,
     loadOwnerProjectPlanDetail,
 } from "../../../../server/astro-owner-data.js";
 
@@ -16,6 +17,8 @@ const interactionId = Astro.url.searchParams.get("interaction") || "";
 let liveReview = null;
 let plan = null;
 let error = null;
+let recoveryGeneration = null;
+let recoveryCurrentSegmentId = null;
 try {
     plan = await loadOwnerProjectPlanDetail(projectId, planId);
     if (runwieldSessionId && operationId && interactionId) {
@@ -26,6 +29,9 @@ try {
             operationId,
             interactionId,
         }) || null;
+        const inspected = getAstroOwnerWorkspaceStore()?.inspectSessionActivation?.(runwieldSessionId);
+        recoveryGeneration = inspected?.generation?.generation ?? null;
+        recoveryCurrentSegmentId = inspected?.generation?.currentSegmentId ?? null;
     }
 } catch (caught) {
     error = await serializeCanonicalPlanError(caught);
@@ -36,6 +42,8 @@ const reviewPayload = plan && liveReview
         mode: "workspace",
         plan: plan.markdown || plan.body || "",
         previousPlan: liveReview.request?.planReview?.previousPlan || undefined,
+        planVersions: liveReview.request?.planReview?.planVersions || undefined,
+        projectId,
         planPath: plan.path,
         classification: liveReview.request?.planReview?.classification,
         runwieldSessionId,
@@ -48,14 +56,18 @@ const reviewPayload = plan && liveReview
         interactionAnswerUrl: `/api/owner/projects/${encodeURIComponent(projectId)}/session-operations/${
             encodeURIComponent(operationId)
         }/interactions/${encodeURIComponent(interactionId)}/answer`,
+        recoveryUrl: `/api/owner/projects/${encodeURIComponent(projectId)}/sessions/${
+            encodeURIComponent(runwieldSessionId)
+        }/force-recovery`,
+        recoveryExpectedGeneration: recoveryGeneration,
+        recoveryExpectedCurrentSegmentId: recoveryCurrentSegmentId,
+        progressUrl: `/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/progress?session=${
+            encodeURIComponent(runwieldSessionId)
+        }`,
     }
     : null;
 ---
-<WorkspaceLayout
-    title={plan ? `${plan.planName} · RunWield Workspace` : "Project Plan · RunWield Workspace"}
-    selectedTab="projects"
-    url={Astro.url.href}
->
+<ReviewLayout title={plan ? `${plan.planName} · RunWield Workspace` : "Project Plan · RunWield Workspace"}>
     {error ? (
         <section class="error-panel">
             <h2>Project Plan lookup failed</h2>
@@ -67,4 +79,4 @@ const reviewPayload = plan && liveReview
     ) : (
         <PlanDetail plan={plan} url={Astro.url.href} editIntent={false} client:load />
     )}
-</WorkspaceLayout>
+</ReviewLayout>

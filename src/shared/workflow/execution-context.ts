@@ -24,9 +24,7 @@ const VALIDATION_ELIGIBLE_WORKTREE_STATUSES = new Set([
     "active",
     "completed",
     "validation_failed",
-    "merge_conflict",
     "validated",
-    "publication_failed",
 ]);
 
 type PlanFrontMatter = import("../../plan-store.js").PlanFrontMatter;
@@ -211,8 +209,18 @@ export async function resolveValidationExecutionContext({
     const executionPlan = selectedExecutionCwd
         ? await loadPlan(selectedExecutionCwd, planName).catch(() => null)
         : null;
-    const projectPlan = await loadPlan(projectRoot, planName);
-    let plan = executionPlan || projectPlan;
+    let plan;
+    try {
+        // Resolve the controller's directory before opening any primary Plan.
+        // The identity/Git recovery below owns validation's legacy-ID repair.
+        const recorded = await findWorktreeRegistryEntryByPlanName(projectRoot, planName);
+        plan = (recorded ? await loadPlan(recorded.path, planName) : null) || executionPlan ||
+            await loadPlan(projectRoot, planName);
+    } catch (error) {
+        const described = describeRegistryAmbiguity(error);
+        if (!described) throw error;
+        return blocked("worktree_registry_ambiguous", described);
+    }
     let attrs = plan?.attrs || triageMeta || {};
     if (!plan && isPlannedChangeClassification(attrs.classification)) {
         await recordResolutionMetric({
@@ -427,8 +435,10 @@ export async function resolveValidationExecutionContext({
         );
     }
     if (!baselineTree) baselineTree = asString(registryEntry.executionBaselineTree) || asString(registryEntry.baseTree);
-    const candidateBaseCommit = asString(candidate.worktreeBaseCommit) || asString(candidate.baseCommit);
-    const candidateBaseRef = asString(candidate.worktreeBaseRef) || asString(candidate.baseRef);
+    const candidateBaseCommit = asString(registryEntry.baseCommit) || asString(candidate.worktreeBaseCommit) ||
+        asString(candidate.baseCommit);
+    const candidateBaseRef = asString(registryEntry.baseRef) || asString(candidate.worktreeBaseRef) ||
+        asString(candidate.baseRef);
     if (!baselineTree) {
         const baselineRef = candidateBaseCommit || asString(registryEntry.baseCommit) || candidateBaseRef ||
             asString(registryEntry.baseRef);
@@ -559,40 +569,21 @@ export async function resolveValidationExecutionContext({
         selfHealNotices.push({ kind: "review_range_fixed", planName });
     }
 
-    const hasStoredMergeRepairCandidate = ["validated_reviewer", "validated"].includes(String(attrs.status || "")) &&
-        typeof attrs.validationMergeRepairWorktree === "string" &&
-        attrs.validationMergeRepairWorktree.length > 0;
-    let restoredPlanFile: { relativePath: string } | undefined;
-    if (!hasStoredMergeRepairCandidate) {
-        const planFile = await prepareExecutionPlanFile({
-            projectRoot,
-            executionCwd: canonicalWorktreePath,
-            planName,
-            executionAuthoritative: true,
-        });
-        // "reconciled" is as usable as "present": ensureExecutionPlanFile has already
-        // synchronized the RunWield-owned metadata with the locked canonical Plan and
-        // verified the bytes on disk. Rejecting it here strands validation at
-        // "implemented" even though the execution copy is exactly what was approved.
-        if (planFile.kind !== "present" && planFile.kind !== "restored" && planFile.kind !== "reconciled") {
-            return blocked(
-                `execution_plan_${planFile.kind}`,
-                `Execution worktree Plan file ${planFile.relativePath} is not usable: ${
-                    planFile.reason || planFile.kind
-                }`,
-            );
-        }
-        restoredPlanFile = planFile.kind === "restored" ? { relativePath: planFile.relativePath } : undefined;
-        if (planFile.healedPlanId) {
-            selfHealNotices.push({ kind: "execution_plan_fixed", planName });
-        }
-    } else {
-        // The detached repair merge already contains the execution Plan metadata
-        // staged by the successful validation attempt. The canonical Plan
-        // intentionally remains validated_reviewer until that merge is published.
-        // Reconciling its status back into the execution branch would create a new
-        // metadata commit that the repaired merge cannot possibly contain.
-        selfHealNotices.push({ kind: "merge_plan_preserved", planName });
+    const planFile = await prepareExecutionPlanFile({
+        projectRoot,
+        executionCwd: canonicalWorktreePath,
+        planName,
+        executionAuthoritative: true,
+    });
+    if (planFile.kind !== "present" && planFile.kind !== "restored" && planFile.kind !== "reconciled") {
+        return blocked(
+            `execution_plan_${planFile.kind}`,
+            `Execution worktree Plan file ${planFile.relativePath} is not usable: ${planFile.reason || planFile.kind}`,
+        );
+    }
+    const restoredPlanFile = planFile.kind === "restored" ? { relativePath: planFile.relativePath } : undefined;
+    if (planFile.healedPlanId) {
+        selfHealNotices.push({ kind: "execution_plan_fixed", planName });
     }
 
     let persistedLegacyExecutionMode = false;

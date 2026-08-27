@@ -81,12 +81,13 @@ import {
     _AGENT_ATTENTION_NUDGES,
     ATTENTION_NUDGE_TURN_INTERVAL,
     loadAgentDef,
+    normalizeAgentInternalName,
     resolveAgentDefsDir as _resolveAgentDefsDir,
     resolveSessionToolNames,
 } from "./agents.js";
 import { getCustomSetting, getMergedCustomSetting, getSettingsDir, getSettingsManager } from "../settings.js";
 import { modelSupportsImageInput, prepareImagesForModel, resolveVisionFallbackModel } from "./image-attachments.js";
-import { recordActiveAgent } from "./active-agent-session.js";
+import { readPersistedActiveAgentName, readPersistedModelState, recordActiveAgent } from "./active-agent-session.js";
 import { extractBundledSkills, getBundledAgentDefsPath } from "./agent-assets.js";
 import { getPackagePromptTemplatePaths, resolveInstalledPackagePromptResources } from "../package-resources.js";
 import { getWldExtensionPaths, resolveInstalledWldExtensionResources } from "../extensions/wld-extension-manifest.js";
@@ -95,6 +96,7 @@ import { describeRuntimeTool } from "./tool-event-title.js";
 import { createSessionContextProjection, estimateContextTextTokens } from "./session-context-report.js";
 import { installEarlySteeringInterruption } from "./early-steering.js";
 import { loadSubAgentDefinition } from "./subagent-definitions.ts";
+import { formatGitPromptState, readGitPromptState } from "../git.js";
 
 /** @returns {string | null} */
 function homePromptsDir() {
@@ -156,7 +158,7 @@ function sanitizeApiErrorMessage(msg) {
  * @param {string | undefined} debugLogPath
  * @param {string} text
  */
-function appendDebugLog(debugLogPath, text) {
+export function appendDebugLog(debugLogPath, text) {
     if (!debugLogPath) return;
     try {
         Deno.mkdirSync(dirname(debugLogPath), { recursive: true });
@@ -1023,11 +1025,15 @@ async function resolveModel(
     /** @type {Array<{ model: string, source: string, strict: boolean }>} */
     const candidateModels = [];
 
-    // Only use the active model if the user explicitly selected it via /model.
-    // After agent switches, clearUserModelOverride() clears the flag but the
-    // activeModel may still hold the previous agent's model — we must skip it.
+    // A manual choice is scoped to the current Agent. Build a replacement
+    // without borrowing that choice, while retaining it if construction fails.
     const activeModelState = hostedSession?.getActiveModelState?.() || { model: "", provider: "" };
-    if (activeModelState.model && hostedSession?.isUserModelOverride?.()) {
+    const activeAgentName = hostedSession?.getRootAgentName?.() ||
+        readPersistedActiveAgentName(hostedSession?.getRootSessionManager?.() || undefined) ||
+        hostedSession?.getActiveAgentInfo?.()?.agentName;
+    const sameAgent = !activeAgentName || !agentName ||
+        normalizeAgentInternalName(activeAgentName) === normalizeAgentInternalName(agentName);
+    if (activeModelState.model && hostedSession?.isUserModelOverride?.() && sameAgent) {
         candidateModels.push({
             model: formatProviderModelReference(activeModelState),
             source: "manual /model override",
@@ -1491,8 +1497,12 @@ export async function assembleFinalSystemPromptWithContextProjection(
     }
     finalSystemPrompt = finalSystemPrompt.replace("{{PROJECT_AGENTSMD}}", projectAgentsMd);
 
-    const projectStateContextSection = hasProjectStatePlaceholder && projectStateContext
-        ? ["### Project State", "", projectStateContext, ""].join("\n")
+    const gitPromptState = hasProjectStatePlaceholder ? await readGitPromptState(cwd) : null;
+    const projectStateSections = [];
+    if (projectStateContext) projectStateSections.push(["### Project State", "", projectStateContext].join("\n"));
+    if (gitPromptState) projectStateSections.push(formatGitPromptState(gitPromptState));
+    const projectStateContextSection = hasProjectStatePlaceholder && projectStateSections.length > 0
+        ? `${projectStateSections.join("\n\n")}\n`
         : "";
     finalSystemPrompt = finalSystemPrompt.replace("{{PROJECT_STATE_CONTEXT}}", projectStateContextSection);
 
@@ -3051,6 +3061,27 @@ export function applyAttentionNudge(agentName, userRequest, rootTurnCount) {
 /** @type {WeakMap<import('@earendil-works/pi-coding-agent').AgentSession, { agentDef: import('./types.js').AgentDefinition, subAgentDefinition?: { id: import('./subagent-definitions.ts').SubAgentDefinitionId, options?: import('./subagent-definitions.ts').LoadSubAgentDefinitionOptions }, promptState: { text: string }, subscriberState: SubscriberState, agentName: string, tools: string[], finalCustomTools: import('@earendil-works/pi-coding-agent').ToolDefinition[], rootTurnCount: number, projectStateContext: string, cwd: string, model?: string, contextProjection?: import('./session-context-report.js').SessionContextProjection, imageMode?: string, visionFallbackModelRef?: string, steeringTargetId?: string }>} */
 const rootSessionMetadata = new WeakMap();
 
+/** @type {WeakMap<import('./hosted-session.js').HostedSession, { agentName: string, debugLogPath?: string }>} */
+const pendingAgentSwitchLogs = new WeakMap();
+
+/**
+ * @param {import('./hosted-session.js').HostedSession} hostedSession
+ * @param {{ agentName: string, debugLogPath?: string }} state
+ */
+export function markRootAgentSwitch(hostedSession, state) {
+    pendingAgentSwitchLogs.set(hostedSession, state);
+}
+
+/**
+ * @param {import('./hosted-session.js').HostedSession} hostedSession
+ * @returns {{ agentName: string, debugLogPath?: string } | undefined}
+ */
+function consumePendingAgentSwitchLog(hostedSession) {
+    const state = pendingAgentSwitchLogs.get(hostedSession);
+    pendingAgentSwitchLogs.delete(hostedSession);
+    return state;
+}
+
 /**
  * Test-only access to root session metadata.
  * @param {import('@earendil-works/pi-coding-agent').AgentSession} session
@@ -3236,8 +3267,26 @@ export async function ensureRootAgentSession(opts) {
     );
     hostedSession.setRootAgentName(opts.agentName, opts.managedOperationCapability || null);
     if (opts.activeHandler) hostedSession.setActiveOnMessage(opts.activeHandler);
+    const activeSessionManager = /** @type {import('@earendil-works/pi-coding-agent').SessionManager | undefined} */ (
+        opts.sessionManager || hostedSession.getRootSessionManager?.() ||
+        /** @type {{ sessionManager?: import('@earendil-works/pi-coding-agent').SessionManager }} */ (session)
+            .sessionManager
+    );
+    // Pi writes the initial model, but does not write model changes when a
+    // replacement root shares an existing transcript. Always save the selected
+    // model, including preset reloads of the same Agent. Hydration selects the
+    // saved model, so rebuilding an unchanged root adds no duplicate entry.
+    if (activeSessionManager && resolvedModel) {
+        const persistedModel = readPersistedModelState(activeSessionManager);
+        if (
+            !persistedModel || persistedModel.provider !== resolvedModel.provider ||
+            persistedModel.model !== resolvedModel.id
+        ) {
+            activeSessionManager.appendModelChange(resolvedModel.provider, resolvedModel.id);
+        }
+    }
     recordActiveAgent(
-        /** @type {any} */ (opts.sessionManager || hostedSession.getRootSessionManager() || undefined),
+        /** @type {any} */ (activeSessionManager),
         opts.agentName,
     );
     rootSessionMetadata.set(rootSession, {
@@ -3312,6 +3361,27 @@ export async function runRootTurn({
     }
 
     const priorMessages = getRootExecutionMessages(session);
+    const pendingAgentSwitch = consumePendingAgentSwitchLog(targetHostedSession);
+    if (pendingAgentSwitch) {
+        const activeSessionManager = isExecutionSession(session)
+            ? session.session.sessionManager
+            : session.sessionManager;
+        appendDebugLog(
+            pendingAgentSwitch.debugLogPath,
+            [
+                "",
+                "----------------------------------------",
+                "Event: FIRST TURN AFTER AGENT SWITCH",
+                `Timestamp: ${new Date().toISOString()}`,
+                `Agent: ${pendingAgentSwitch.agentName}`,
+                `Session: ${activeSessionManager.getSessionId()}`,
+                `Dispatch Kind: ${dispatchKind}`,
+                "The user request and current system prompt are logged by AGENT INVOCATION START below.",
+                "----------------------------------------",
+                "",
+            ].join("\n"),
+        );
+    }
     const sessionManager = isExecutionSession(session) ? session.session.sessionManager : session.sessionManager;
     const backend = isExecutionSession(session) ? session.kind : "pi";
     const dispatch = prepareRequestDispatch(sessionManager, { userRequest, dispatchKind, backend });

@@ -3,7 +3,7 @@
 import { ownerErrorJson, ownerJson, sanitizeOwnerError } from "./owner-api.js";
 import { requireOwnerProjectRoot } from "../server/owner-projects.js";
 
-const MAX_JSON_BYTES = 64 * 1024;
+const MAX_JSON_BYTES = 12 * 1024 * 1024;
 
 /** @param {Request} request */
 async function readJson(request) {
@@ -25,6 +25,26 @@ function requireExpectedGeneration(value) {
     const generation = Number(value);
     if (!Number.isInteger(generation) || generation < 0) throw new Error("expectedGeneration is invalid.");
     return generation;
+}
+
+/** @param {string | null} value @param {string} field @param {number} fallback @param {number} max */
+function readPageValue(value, field, fallback, max) {
+    if (value === null || value === "") return fallback;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > max) throw new Error(`${field} is invalid.`);
+    return parsed;
+}
+
+/** @param {unknown} value */
+function readSubmittedImages(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map((image) => {
+        const source = image && typeof image === "object" ? /** @type {Record<string, unknown>} */ (image) : {};
+        const base64 = requireBoundedString(source.base64, "image.base64", 10 * 1024 * 1024);
+        const mimeType = requireBoundedString(source.mimeType, "image.mimeType", 80);
+        if (!mimeType.startsWith("image/")) throw new Error("Only image attachments are supported.");
+        return { base64, mimeType };
+    });
 }
 
 /** @param {unknown} value */
@@ -60,7 +80,9 @@ function safeTimelineResult(result) {
 export async function ownerProjectSessionsApi(ctx) {
     try {
         requireOwnerProjectRoot(ctx.state.store, ctx.params.projectId);
-        const result = await ctx.state.sessionContinuation.listSessions(ctx.params.projectId);
+        const page = readPageValue(ctx.url.searchParams.get("page"), "page", 0, 10_000);
+        const pageSize = readPageValue(ctx.url.searchParams.get("pageSize"), "pageSize", 30, 100);
+        const result = await ctx.state.sessionContinuation.listSessions(ctx.params.projectId, { page, pageSize });
         return ownerJson({ ...result, diagnostics: (result.diagnostics || []).map(safeDiagnostic) });
     } catch (error) {
         return ownerErrorJson(error, 400);
@@ -134,7 +156,10 @@ export async function ownerSessionContinuationStartApi(ctx) {
             runwieldSessionId: ctx.params.runwieldSessionId,
             requestId: requireBoundedString(body.requestId, "requestId", 128),
             expectedGeneration: requireExpectedGeneration(body.expectedGeneration),
-            text: requireBoundedString(body.text, "text", 32_000),
+            text: typeof body.text === "string" && body.text.length === 0
+                ? " "
+                : requireBoundedString(body.text, "text", 32_000),
+            images: readSubmittedImages(body.images),
         });
         return ownerJson(result, 202);
     } catch (error) {
@@ -179,7 +204,7 @@ export async function ownerSessionInteractionAnswerApi(ctx) {
             requestId: requireBoundedString(body.requestId, "requestId", 128),
             response: body.response,
         });
-        return ownerJson(result, 202);
+        return ownerJson(result, result?.status === "recovery_required" ? 409 : 202);
     } catch (error) {
         return ownerErrorJson(error, 409);
     }

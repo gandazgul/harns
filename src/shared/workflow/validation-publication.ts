@@ -1,7 +1,7 @@
 /**
  * @module shared/workflow/validation-publication
  * The publication phase: merging the validated worktree into the target branch
- * inside the Direct Delivery transaction, settling the worktree registry, running
+ * through the durable publication state machine, settling the worktree registry, running
  * post-verification handoffs, and building the verified result.
  *
  * Ordering invariant: prepareEpicChildManualQaArtifact runs before checkpointExecutionWorktree
@@ -9,25 +9,14 @@
  */
 
 import { AGENTS, isPlannedChangeClassification } from "../../constants.js";
-import { loadPlan } from "../../plan-store.js";
+import { loadPlan, withPlanLock } from "../../plan-store.js";
 import { createQaChecklistGeneratedTool } from "../../tools/qa-checklist-generated.ts";
-import { loadDirectDeliveryHierarchySnapshot } from "./validation-delivery-hierarchy.ts";
-import {
-    checkpointExecutionWorktree,
-    deleteMergedWorktreeBranch,
-    deleteRemotelyPublishedWorktreeBranch,
-    removeWorktreeGitArtifacts,
-} from "../worktree.js";
+import { findEpicManualQaSection } from "../epic-artifacts.ts";
+import { checkpointExecutionWorktree } from "../worktree.js";
 import { publishExecutionWorktreeIsolated } from "../isolated-publication.ts";
-import {
-    findById as findWorktreeRegistryEntryById,
-    pruneEntry as pruneWorktreeRegistryEntry,
-    updateEntry as updateWorktreeRegistryEntry,
-} from "../worktree-registry.js";
+import { findById as findWorktreeRegistryEntryById } from "../worktree-registry.js";
 import { ensureRunWieldOwnedGitignoreBlock } from "../runwield-owned-paths.ts";
 import { stageValidationPassedInExecutionWorktree } from "./plan-lifecycle.js";
-import { runDirectDeliveryPublicationTransition } from "./state-transition.ts";
-import { readRepairedMergeCandidate } from "./validation-merge-verification.ts";
 import { shouldContinueParentEpicAfterValidation } from "./validation-scope.ts";
 import type {
     HumanReviewMetadata,
@@ -39,16 +28,16 @@ import type {
 import type { OpaqueToolDefinition } from "./validation-ports.ts";
 import { MAX_AGENT_MERGE_REPAIRS } from "./validation-types.ts";
 import {
+    annotatePublicationStage,
     describeMergePause,
     dispatchMergeRepair,
     finalizeMergeRepair,
     getMergeFailureKind,
     getMergeWorktreePath,
     normalizePublicationFailure,
-    persistValidationMergeRepairWorktree,
     type PublicationFailure,
     publicationFailureNeedsUserAction,
-    resolveStoredValidationMergeRepairWorktree,
+    type PublicationStage,
 } from "./validation-merge-repair.ts";
 import { recordLifecycleEvent } from "./validation-context.ts";
 import { completeProgressRecord, emitProgress, emitStatus } from "./validation-emit.ts";
@@ -65,6 +54,15 @@ import {
     recordOperationalRecoveryMetric,
     waitForValidationRetryWithSessionCancellation,
 } from "./validation-recovery.ts";
+import {
+    advanceStoredPublication,
+    cleanupStoredPublication,
+    failStoredPublication,
+    loadPublicationAttempt,
+    reconcileStoredPublication,
+    startPublicationAttempt,
+} from "./publication-machine.ts";
+import type { PublicationAttempt } from "./publication-attempt.ts";
 
 type DeliveryEvidence = import("../../plan-store.js").DeliveryEvidence;
 type WorktreeDeliveryEvidence = import("../../plan-store.js").WorktreeDeliveryEvidence;
@@ -75,7 +73,7 @@ function firstMarkdownHeading(markdown: string, fallback: string): string {
     return heading ? heading.replace(/^#\s+/, "").trim() : fallback;
 }
 
-function publicationFailureKindFromMergeKind(failureKind: string | undefined): GitPublicationErrorKind {
+export function publicationFailureKindFromMergeKind(failureKind: string | undefined): GitPublicationErrorKind {
     switch (failureKind) {
         case "target_reference_race":
             return "target_reference_race";
@@ -85,6 +83,7 @@ function publicationFailureKindFromMergeKind(failureKind: string | undefined): G
         case "isolated_publication_conflict":
         case "detached_merge_conflict":
         case "current_checkout_merge_conflict":
+        case "local_publication_conflict":
         case "content_conflict":
             return "content_conflict";
         case "primary_checkout_dirty":
@@ -139,6 +138,16 @@ async function prepareEpicChildManualQaArtifact(
     if (!parentPlan) return { kind: "ready" };
     const parent = await loadPlan(cwd, parentPlan).catch(() => null);
     if (parent?.attrs.classification !== "PROJECT") return { kind: "ready" };
+
+    const existing = await findEpicManualQaSection(cwd, parentPlan, args.planName);
+    if (existing.exists) {
+        emitStatus(
+            args,
+            buildValidationUserMessage({ kind: "qa_ready", path: existing.relativePath, existed: true }),
+            "info",
+        );
+        return { kind: "ready" };
+    }
 
     let attempt = 1;
     for (;;) {
@@ -228,6 +237,18 @@ export async function runPublicationPhase(
     context: PhaseContext,
     humanReviewMetadata: HumanReviewMetadata,
 ): Promise<PublicationOutcome> {
+    return await withPlanLock(
+        context.projectRoot,
+        args.planName,
+        async () => await runLockedPublicationPhase(args, context, humanReviewMetadata),
+    );
+}
+
+async function runLockedPublicationPhase(
+    args: ValidationLoopArgs,
+    context: PhaseContext,
+    humanReviewMetadata: HumanReviewMetadata,
+): Promise<PublicationOutcome> {
     if (context.nonGitInPlace || !context.worktreeBranch) {
         const manualQa = await prepareEpicChildManualQaArtifact(
             args,
@@ -264,31 +285,35 @@ export async function runPublicationPhase(
         return outcome;
     }
 
-    // A remotely verified publication spends its execution attempt. Keeping a
-    // merged registry entry would make operational publication ambiguous.
+    // A remotely verified publication spends its execution attempt. The registry
+    // entry remains the only publication authority until cleanup completes.
     const cleanupMergedWorktrees = true;
     const planPath = `docs/plans/${args.planName}.md`;
-    const storedRepairWorktree = await resolveStoredValidationMergeRepairWorktree(args, context);
-    if (storedRepairWorktree.kind === "blocked") return storedRepairWorktree.outcome;
-    let repairMergeWorktreePath = storedRepairWorktree.path;
-    let agentRepairs = 0;
-    // A restarted validation can inherit a repair checkout that is still inside
-    // Git's merge transaction. Normalize it before attempting another merge.
-    // This accepts staged resolutions, unstaged repair files, and commits an Agent
-    // may already have created; unresolved conflicts remain for the repair path.
-    if (repairMergeWorktreePath) await finalizeMergeRepair(repairMergeWorktreePath);
-    let publicationOperationalAttempt = 1;
     // Captured once, as plain strings: the guards above narrowed both, but TypeScript
     // drops that narrowing inside the hoisted helpers below.
     const targetBranch: string = worktreeBaseBranch;
     const executionBranch: string = context.worktreeBranch;
-    const storedAttempt = context.worktreeId
+    if (!context.worktreeId) {
+        throw new Error(`Worktree publication for ${args.planName} requires an execution attempt id.`);
+    }
+    const worktreeId = context.worktreeId;
+    const storedAttempt = worktreeId
         ? await findWorktreeRegistryEntryById(context.projectRoot, context.worktreeId, { migrate: false }).catch(() =>
             null
         )
         : null;
-    let publicationArtifactsPrepared = storedAttempt?.status === "publication_failed" ||
-        storedAttempt?.status === "validated";
+    let publicationAttempt: PublicationAttempt | null = storedAttempt?.publication ||
+        await loadPublicationAttempt(context.projectRoot, worktreeId);
+    let repairMergeWorktreePath = publicationAttempt?.failure?.repairRoot;
+    if (repairMergeWorktreePath) {
+        const exists = await Deno.stat(repairMergeWorktreePath).then((value) => value.isDirectory).catch(() => false);
+        if (!exists) repairMergeWorktreePath = undefined;
+    }
+    let agentRepairs = 0;
+    // A restarted validation can inherit a repair checkout that is still inside
+    // Git's merge transaction. Normalize it before attempting another merge.
+    if (repairMergeWorktreePath) await finalizeMergeRepair(repairMergeWorktreePath);
+    let publicationOperationalAttempt = 1;
 
     for (;;) {
         const attempt = await attemptPublication();
@@ -301,8 +326,6 @@ export async function runPublicationPhase(
         // finish rather than dispatching an Agent to repair a conflict that is gone.
         const nextRepairMergeWorktreePath = getMergeWorktreePath(failure);
         if (nextRepairMergeWorktreePath) {
-            const persisted = await persistValidationMergeRepairWorktree(args, context, nextRepairMergeWorktreePath);
-            if (persisted.kind === "blocked") return persisted.outcome;
             repairMergeWorktreePath = nextRepairMergeWorktreePath;
         }
         const failureKind = getMergeFailureKind(failure);
@@ -386,11 +409,24 @@ export async function runPublicationPhase(
             };
         }
         if (!publicationFailureNeedsUserAction(failure)) {
+            // A transient lock or interrupted transition can disappear immediately.
+            // Retry once in-process; publicationArtifactsPrepared prevents completed
+            // LLM handoffs from running again.
+            if (publicationOperationalAttempt === 1) {
+                publicationOperationalAttempt += 1;
+                continue;
+            }
             const blockedMessage = buildValidationUserMessage({
                 kind: "publication_blocked",
                 planName: args.planName,
+                stage: failure.publicationStage || "git_publication",
             });
-            emitStatus(args, blockedMessage, "error");
+            console.error("[RunWield] publication_resume_failed", {
+                planName: args.planName,
+                stage: failure.publicationStage || "git_publication",
+                error: failure.reason,
+            });
+            emitStatus(args, blockedMessage, "warning");
             return {
                 recorded: false,
                 result: {
@@ -430,113 +466,170 @@ export async function runPublicationPhase(
             return { kind: "published", outcome: await publishOnce() };
         } catch (caught) {
             const error = caught instanceof Error ? caught : new Error(String(caught));
-            return { kind: "failed", failure: normalizePublicationFailure(error) };
+            const failure = normalizePublicationFailure(error);
+            if (publicationAttempt) {
+                publicationAttempt = await failStoredPublication(context.projectRoot, publicationAttempt, {
+                    kind: getMergeFailureKind(failure) || "publication_failed",
+                    message: failure.reason,
+                    ...(getMergeWorktreePath(failure) ? { repairRoot: getMergeWorktreePath(failure) } : {}),
+                }).catch(() => publicationAttempt);
+            }
+            return { kind: "failed", failure };
         }
     }
 
     async function publishOnce(): Promise<PublicationOutcome> {
-        if (!repairMergeWorktreePath && !publicationArtifactsPrepared) {
-            const manualQa = await prepareEpicChildManualQaArtifact(args, context.executionCwd, context.projectRoot);
-            if (manualQa.kind === "blocked") return manualQa.outcome;
-        }
-        await ensureRunWieldOwnedGitignoreBlock(context.executionCwd);
-        const repairedCandidate = repairMergeWorktreePath
-            ? await readRepairedMergeCandidate(repairMergeWorktreePath)
-            : null;
-        const targetHeadBeforeMerge = repairedCandidate?.targetHeadBeforeMerge ||
-            await args.git.branchHead(context.projectRoot, targetBranch);
-        const checkpoint = repairedCandidate || await checkpointExecutionWorktree({
-            worktreePath: context.executionCwd,
-            branch: executionBranch,
-            planName: args.planName,
-            planDescription: args.triageMeta?.summary,
-            mergeTargetRef: targetHeadBeforeMerge,
-        });
-        const deliveryEvidence: WorktreeDeliveryEvidence = {
-            version: 1,
-            mode: "worktree_merge",
-            executionCommit: checkpoint.executionCommit,
-            targetBranch,
-            targetHeadBeforeMerge,
+        const atStage = async <T>(stage: PublicationStage, action: () => Promise<T>): Promise<T> => {
+            try {
+                return await action();
+            } catch (caught) {
+                const error = caught instanceof Error ? caught : new Error(String(caught));
+                throw annotatePublicationStage(error, stage);
+            }
         };
-        const hierarchy = await loadDirectDeliveryHierarchySnapshot(context.executionCwd, args.planName)
-            .catch(() => ({ revision: undefined, parentPlan: undefined, siblingPlans: [] }));
-        // Repair may have happened before the latest lifecycle state was written.
-        // Always stage the current validated Plan in the execution worktree; the
-        // repaired publication clone imports that later commit before it publishes.
-        const staging = await stageValidationPassedInExecutionWorktree({
-            projectRoot: context.projectRoot,
-            executionCwd: context.executionCwd,
-            planName: args.planName,
-            details: {
-                triageMeta: args.triageMeta,
-                executionMode: "worktree",
-                deliveryEvidence,
-                worktreeStatus: "merged",
-                cleanupMergedWorktrees,
-                ...humanReviewMetadata,
-            },
-        });
-        // The validated Plan and Work Record are the final Git-visible lifecycle
-        // state. Generate them in the execution worktree before publication so a
-        // failed push leaves one complete, retryable branch.
-        if (!publicationArtifactsPrepared) {
-            await runPostVerificationHandoffs(args, context.executionCwd);
-            publicationArtifactsPrepared = true;
+        if (publicationAttempt) {
+            publicationAttempt = await atStage(
+                "git_publication",
+                async () => await reconcileStoredPublication(context.projectRoot, publicationAttempt!),
+            );
+            if (publicationAttempt.phase === "cleanup_complete") {
+                await cleanupStoredPublication(context.projectRoot, publicationAttempt);
+                return {
+                    recorded: true,
+                    result: buildVerifiedResult(args, context.projectRoot, undefined, targetBranch),
+                };
+            }
         }
-        const validatedCandidate = await checkpointExecutionWorktree({
-            worktreePath: context.executionCwd,
-            branch: executionBranch,
-            planName: args.planName,
-            planDescription: args.triageMeta?.summary,
-            mergeTargetRef: targetHeadBeforeMerge,
-        });
-        if (context.worktreeId) {
-            await updateWorktreeRegistryEntry(context.projectRoot, context.worktreeId, { status: "validated" });
+        if (!publicationAttempt) {
+            await atStage(
+                "candidate_checkpoint",
+                async () => await ensureRunWieldOwnedGitignoreBlock(context.executionCwd),
+            );
+            const targetHeadAtSeal = await args.git.branchHead(context.projectRoot, targetBranch);
+            const candidate = await atStage("candidate_checkpoint", async () =>
+                await checkpointExecutionWorktree({
+                    worktreePath: context.executionCwd,
+                    branch: executionBranch,
+                    planName: args.planName,
+                    planDescription: args.triageMeta?.summary,
+                    mergeTargetRef: targetHeadAtSeal,
+                }));
+            publicationAttempt = await startPublicationAttempt({
+                projectRoot: context.projectRoot,
+                attemptId: worktreeId,
+                planName: args.planName,
+                targetBranch,
+                executionBranch,
+                executionCwd: context.executionCwd,
+                validatedCommit: candidate.executionCommit,
+                targetHeadAtSeal,
+            });
         }
-        // The merge is the only irreversible act in the system: a commit that reaches
-        // the target branch cannot be taken back. It therefore runs inside the
-        // publication transaction, which locks the attempt and the target ref, holds
-        // the Plan revision it decided on, and — the part that matters most — journals
-        // `direct_delivery_target_ref_moved` the moment the branch moves. Without that
-        // journal an interrupted publication leaves no evidence the merge happened, so
-        // recovery cannot tell "never merged" from "merged, bookkeeping behind", and
-        // the failure path below would report a merge failure for work already on the
-        // target branch.
+
+        if (publicationAttempt.phase === "candidate_sealed") {
+            const manualQa = await atStage(
+                "artifact_preparation",
+                async () => await prepareEpicChildManualQaArtifact(args, context.executionCwd, context.projectRoot),
+            );
+            if (manualQa.kind === "blocked") return manualQa.outcome;
+            const deliveryEvidence: WorktreeDeliveryEvidence = {
+                version: 1,
+                mode: "worktree_merge",
+                executionCommit: publicationAttempt.validatedCommit,
+                targetBranch,
+                targetHeadBeforeMerge: publicationAttempt.targetHeadAtSeal,
+            };
+            const staging = await atStage(
+                "lifecycle_staging",
+                async () =>
+                    await stageValidationPassedInExecutionWorktree({
+                        projectRoot: context.projectRoot,
+                        executionCwd: context.executionCwd,
+                        planName: args.planName,
+                        details: {
+                            triageMeta: args.triageMeta,
+                            executionMode: "worktree",
+                            deliveryEvidence,
+                            cleanupMergedWorktrees,
+                            ...humanReviewMetadata,
+                        },
+                    }),
+            );
+            await atStage(
+                "artifact_preparation",
+                async () => await runPostVerificationHandoffs(args, context.executionCwd),
+            );
+            const artifactCandidate = await atStage("candidate_sealing", async () =>
+                await checkpointExecutionWorktree({
+                    worktreePath: context.executionCwd,
+                    branch: executionBranch,
+                    planName: args.planName,
+                    planDescription: args.triageMeta?.summary,
+                    mergeTargetRef: publicationAttempt?.targetHeadAtSeal,
+                    publicationAttemptId: publicationAttempt?.attemptId,
+                    publicationPlanPaths: staging.planPaths.length > 0 ? staging.planPaths : [planPath],
+                }));
+            publicationAttempt = await advanceStoredPublication(
+                context.projectRoot,
+                publicationAttempt,
+                "artifacts_committed",
+                {
+                    artifactCommit: artifactCandidate.executionCommit,
+                    planPaths: staging.planPaths.length > 0 ? staging.planPaths : [planPath],
+                },
+            );
+        }
+
+        const artifactCommit = publicationAttempt.artifactCommit;
+        if (!artifactCommit) throw new Error(`Publication artifacts are missing for ${args.planName}.`);
+        const planPaths = publicationAttempt.planPaths || [planPath];
         const epicResolution = shouldContinueParentEpicAfterValidation(args.triageMeta)
             ? await import("./epic-continuation.ts").then(({ resolveEpicContinuation }) =>
                 resolveEpicContinuation({ cwd: context.executionCwd, completedPlanName: args.planName })
             )
             : undefined;
-        const publication = await runDirectDeliveryPublicationTransition({
-            projectRoot: context.projectRoot,
-            planName: args.planName,
-            immutablePlan: true,
-            worktreeId: context.worktreeId,
-            targetRef: worktreeBaseBranch,
-            parentPlan: hierarchy.parentPlan,
-            siblingPlanNames: hierarchy.siblingPlans.map((sibling) => sibling.name),
-            publicationProof: { deliveryEvidence, cleanupMergedWorktrees, phase: "stage_merge_settle" },
-            publish: async ({ markEffect }) => {
-                await markEffect("direct_delivery_publication_started", {
-                    planName: args.planName,
-                    worktreeId: context.worktreeId,
-                    worktreeBranch: executionBranch,
-                    targetBranch: worktreeBaseBranch,
-                    expectedTargetHead: deliveryEvidence.targetHeadBeforeMerge,
-                    sealedExecutionCommit: validatedCandidate.executionCommit,
-                    preservedPlanPaths: staging.planPaths,
-                });
-                const mergeResult = await publishExecutionWorktreeIsolated({
+        if (publicationAttempt.phase !== "publication_verified") {
+            await atStage("git_publication", async () =>
+                await publishExecutionWorktreeIsolated({
                     projectRoot: context.projectRoot,
                     executionCwd: context.executionCwd,
                     executionBranch,
                     targetBranch,
                     planName: args.planName,
                     planDescription: args.triageMeta?.summary,
-                    sealedExecutionCommit: validatedCandidate.executionCommit,
-                    allowedPlanPaths: staging.planPaths.length > 0 ? staging.planPaths : [planPath],
+                    sealedExecutionCommit: artifactCommit,
+                    allowedPlanPaths: planPaths,
+                    publicationRoot: publicationAttempt?.publicationRoot,
                     repairedPublicationRoot: repairMergeWorktreePath || undefined,
+                    onIntegrated: async (evidence) => {
+                        if (!publicationAttempt) throw new Error("Publication attempt disappeared before integration.");
+                        publicationAttempt = await advanceStoredPublication(
+                            context.projectRoot,
+                            publicationAttempt,
+                            "target_integrated",
+                            evidence,
+                        );
+                    },
+                    onPublished: async (evidence) => {
+                        if (!publicationAttempt) throw new Error("Publication attempt disappeared before publication.");
+                        publicationAttempt = await advanceStoredPublication(
+                            context.projectRoot,
+                            publicationAttempt,
+                            "target_published",
+                            evidence,
+                        );
+                    },
+                    onVerified: async () => {
+                        if (!publicationAttempt) {
+                            throw new Error("Publication attempt disappeared before verification.");
+                        }
+                        publicationAttempt = await advanceStoredPublication(
+                            context.projectRoot,
+                            publicationAttempt,
+                            "publication_verified",
+                            { verifiedAt: new Date().toISOString() },
+                        );
+                    },
                     onProgress: (phase) => {
                         const message = buildValidationUserMessage({
                             kind: "publication_progress",
@@ -554,148 +647,33 @@ export async function runPublicationPhase(
                         }
                         emitStatus(args, message);
                     },
-                });
-                await markEffect("direct_delivery_target_ref_moved", {
-                    planName: args.planName,
-                    worktreeId: context.worktreeId,
-                    worktreeBranch: executionBranch,
-                    targetBranch: worktreeBaseBranch,
-                    updatedPrimaryCheckout: mergeResult?.updatedPrimaryCheckout,
-                    executionMetadataCommit: mergeResult?.executionMetadataCommit,
-                    sealedExecutionCommit: deliveryEvidence.executionCommit,
-                    expectedTargetHead: mergeResult.targetHeadBeforeMerge,
-                    publicationCommit: mergeResult.publicationCommit,
-                    publicationMode: mergeResult.publicationMode,
-                    ...(mergeResult.publicationMode === "remote"
-                        ? {
-                            upstreamRemote: mergeResult.upstreamRemote,
-                            upstreamBranch: mergeResult.upstreamBranch,
-                        }
-                        : {}),
-                });
-                emitStatus(
-                    args,
-                    buildValidationUserMessage({ kind: "publication_progress", phase: "cleanup", targetBranch }),
-                );
-                const cleanup = await settlePublishedWorktree(args, context, cleanupMergedWorktrees, mergeResult);
-                if (!cleanup.finished) {
-                    emitStatus(
-                        args,
-                        buildValidationUserMessage({
-                            kind: "publication_cleanup_incomplete",
-                            targetBranch,
-                            worktreePath: cleanup.worktreeKept ? context.executionCwd : undefined,
-                            worktreeBranch: cleanup.branchKept ? context.worktreeBranch : undefined,
-                            details: cleanup.details,
-                        }),
-                        "warning",
-                    );
-                }
-                if (context.worktreeId) {
-                    await markEffect("worktree_registry_updated", { worktreeId: context.worktreeId, status: "merged" });
-                }
-                return { mergeResult };
-            },
-        });
-        if (publication.status !== "committed") {
-            if (context.worktreeId) {
-                await updateWorktreeRegistryEntry(context.projectRoot, context.worktreeId, {
-                    status: "publication_failed",
-                }).catch(() => {});
-            }
-            // Rethrow the original failure rather than a summary of it: callers
-            // classify typed merge failures to pick the right repair worktree, and
-            // flattening to `message` silently downgrades that to a generic repair.
-            if (publication.cause !== undefined) throw publication.cause;
-            throw new Error(publication.message || `Direct Delivery publication did not commit for ${args.planName}.`);
+                }));
+        }
+        emitStatus(
+            args,
+            buildValidationUserMessage({ kind: "publication_progress", phase: "cleanup", targetBranch }),
+        );
+        const cleanup = await cleanupStoredPublication(context.projectRoot, publicationAttempt);
+        publicationAttempt = cleanup.attempt;
+        if (!cleanup.complete) {
+            emitStatus(
+                args,
+                buildValidationUserMessage({
+                    kind: "publication_cleanup_incomplete",
+                    targetBranch,
+                    worktreePath: cleanup.worktreeKept ? context.executionCwd : undefined,
+                    worktreeBranch: cleanup.branchKept ? context.worktreeBranch : undefined,
+                    details: cleanup.details,
+                }),
+                "warning",
+            );
+            return {
+                recorded: true,
+                result: buildVerifiedResult(args, context.projectRoot, epicResolution, targetBranch),
+            };
         }
         return { recorded: true, result: buildVerifiedResult(args, context.projectRoot, epicResolution, targetBranch) };
     }
-}
-
-export async function settlePublishedWorktree(
-    _args: ValidationLoopArgs,
-    context: PhaseContext,
-    cleanupMergedWorktrees: boolean,
-    publication?: {
-        publicationMode: "local" | "remote";
-        publicationCommit: string;
-        upstreamRemote?: string;
-        upstreamBranch?: string;
-    },
-): Promise<{ finished: boolean; worktreeKept: boolean; branchKept: boolean; details: string[] }> {
-    if (context.worktreeId) {
-        await updateWorktreeRegistryEntry(context.projectRoot, context.worktreeId, { status: "merged" });
-    }
-
-    let cleanupFinished = true;
-    let worktreeKept = false;
-    let branchKept = false;
-    const details: string[] = [];
-    if (cleanupMergedWorktrees && context.executionCwd) {
-        try {
-            await removeWorktreeGitArtifacts({
-                projectRoot: context.projectRoot,
-                path: context.executionCwd,
-                force: false,
-            });
-        } catch (error) {
-            if (error instanceof Deno.errors.NotFound) cleanupFinished = true;
-            else {
-                cleanupFinished = false;
-                worktreeKept = true;
-                details.push(
-                    `Git kept worktree ${context.executionCwd}: ${
-                        error instanceof Error ? error.message : String(error)
-                    }`,
-                );
-            }
-        }
-    }
-    if (cleanupMergedWorktrees && context.worktreeBranch) {
-        try {
-            const branchCleanup = publication?.publicationMode === "remote" &&
-                    publication.upstreamRemote && publication.upstreamBranch
-                ? await deleteRemotelyPublishedWorktreeBranch({
-                    projectRoot: context.projectRoot,
-                    branch: context.worktreeBranch,
-                    remote: publication.upstreamRemote,
-                    upstreamBranch: publication.upstreamBranch,
-                    publicationCommit: publication.publicationCommit,
-                })
-                : await deleteMergedWorktreeBranch({
-                    projectRoot: context.projectRoot,
-                    branch: context.worktreeBranch,
-                });
-            cleanupFinished = cleanupFinished && branchCleanup.deleted;
-            if (!branchCleanup.deleted) {
-                branchKept = true;
-                details.push(`Git kept source branch ${context.worktreeBranch}: ${branchCleanup.reason}`);
-            }
-        } catch (error) {
-            cleanupFinished = false;
-            branchKept = true;
-            details.push(
-                `Git could not delete source branch ${context.worktreeBranch}: ${
-                    error instanceof Error ? error.message : String(error)
-                }`,
-            );
-        }
-    }
-
-    if (context.worktreeId && cleanupFinished) {
-        try {
-            await pruneWorktreeRegistryEntry(context.projectRoot, context.worktreeId);
-        } catch (error) {
-            cleanupFinished = false;
-            details.push(
-                `Git cleanup finished, but the saved recovery record remains: ${
-                    error instanceof Error ? error.message : String(error)
-                }`,
-            );
-        }
-    }
-    return { finished: cleanupFinished, worktreeKept, branchKept, details };
 }
 
 export async function runPostVerificationHandoffs(args: ValidationLoopArgs, projectRoot: string): Promise<void> {

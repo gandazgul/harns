@@ -1,7 +1,8 @@
 ---
 classification: "PROJECT"
 complexity: "LOW|MEDIUM|HIGH"
-summary: "<Brief summary of the project-level change>"
+# High-signal paths you have evidence for. RunWield uses these for drift warnings and Plan presentation; they are not
+# an exhaustive list and never limit what a child Plan may change.
 affectedPaths:
     - "path/to/file1"
     - "path/to/file2"
@@ -12,8 +13,8 @@ devServerCommand: null
 devServerUrl: null
 devServerHmr: null
 # Optional: target execution branch for child Plans when explicitly requested by the user.
-# worktreeBaseBranch: "feature/base-branch"
-createdAt: "<ISO-8601 timestamp>"
+# targetBranch: "feature/base-branch"
+createdAt: "<ISO-8601 date or timestamp>"
 status: "draft"
 ---
 
@@ -33,7 +34,12 @@ would have cost.
 Brief summary of what you traced deeply and how it informs the plan. Show the paths you walked — a call path, a small
 `mermaid` flow or state diagram, a before/after of a boundary — wherever that reads faster than prose.
 
-## Files to Modify
+## Expected Change Surface
+
+The boundaries this Epic is expected to touch. This list is guidance, not an allowlist: each child Plan verifies the
+real footprint during implementation and changes whatever its Implementation Steps need. Discovery that changes approved
+intent — another subsystem joins the Epic, public behavior or architecture shifts, migration risk grows — comes back to
+the user, not to the file list.
 
 - `path/to/file` — what changes here and why
 - `path/to/another-file` — what changes here and why

@@ -39,6 +39,211 @@ html[class*="theme-"] {
     border-radius: 0;
 }
 
+.fixed.inset-0.z-50.bg-black\/50.backdrop-blur-\[2px\] {
+    z-index: 1090 !important;
+}
+
+[data-popout="true"] {
+    z-index: 1100 !important;
+}
+
+[data-popout="true"] diffs-container {
+    display: block;
+    min-height: 0;
+}
+
+.review-toolbar .review-toolbar-btn.primary,
+body:has(.rw-code-review) button.review-toolbar-btn.primary,
+.rw-code-review button.review-toolbar-btn.primary,
+.fixed.inset-0[class*="z-"] button.review-toolbar-btn.primary,
+[data-radix-popper-content-wrapper] button.review-toolbar-btn.primary {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.375rem !important;
+    flex: none !important;
+    min-height: 2.25rem !important;
+    border: 1px solid color-mix(in srgb, var(--primary, var(--rw-accent)) 56%, transparent) !important;
+    border-radius: 0.625rem !important;
+    padding: 0.5rem 0.9rem !important;
+    background: color-mix(in srgb, var(--primary, var(--rw-accent)) 84%, var(--rw-surface-raised, transparent))
+        !important;
+    color: var(--primary-foreground, var(--rw-accent-contrast)) !important;
+    box-shadow: none !important;
+    font-size: 0.78rem !important;
+    font-weight: 650 !important;
+    line-height: 1.2 !important;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, opacity 150ms ease !important;
+}
+
+.review-toolbar .review-toolbar-btn.primary:hover:not(:disabled),
+.review-toolbar .review-toolbar-btn.primary:focus-visible:not(:disabled),
+body:has(.rw-code-review) button.review-toolbar-btn.primary:hover:not(:disabled),
+body:has(.rw-code-review) button.review-toolbar-btn.primary:focus-visible:not(:disabled),
+.rw-code-review button.review-toolbar-btn.primary:hover:not(:disabled),
+.rw-code-review button.review-toolbar-btn.primary:focus-visible:not(:disabled),
+.fixed.inset-0[class*="z-"] button.review-toolbar-btn.primary:hover:not(:disabled),
+.fixed.inset-0[class*="z-"] button.review-toolbar-btn.primary:focus-visible:not(:disabled),
+[data-radix-popper-content-wrapper] button.review-toolbar-btn.primary:hover:not(:disabled),
+[data-radix-popper-content-wrapper] button.review-toolbar-btn.primary:focus-visible:not(:disabled) {
+    border-color: color-mix(in srgb, var(--primary, var(--rw-accent)) 76%, transparent) !important;
+    background: color-mix(in srgb, var(--primary, var(--rw-accent)) 92%, var(--rw-surface-raised, transparent))
+        !important;
+}
+
+.review-toolbar .review-toolbar-btn.primary:focus-visible,
+body:has(.rw-code-review) button.review-toolbar-btn.primary:focus-visible,
+.rw-code-review button.review-toolbar-btn.primary:focus-visible,
+.fixed.inset-0[class*="z-"] button.review-toolbar-btn.primary:focus-visible,
+[data-radix-popper-content-wrapper] button.review-toolbar-btn.primary:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary, var(--rw-accent)) 70%, transparent) !important;
+    outline-offset: 2px !important;
+}
+
+.review-toolbar .review-toolbar-btn.primary:disabled,
+body:has(.rw-code-review) button.review-toolbar-btn.primary:disabled,
+.rw-code-review button.review-toolbar-btn.primary:disabled,
+.fixed.inset-0[class*="z-"] button.review-toolbar-btn.primary:disabled,
+[data-radix-popper-content-wrapper] button.review-toolbar-btn.primary:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.5 !important;
+}
+
+.review-toolbar textarea.suggested-code-input {
+    width: 100% !important;
+    min-height: 4.5rem !important;
+    max-height: calc(var(--pn-viewport-height, 100vh) - 16rem) !important;
+    border: 0 !important;
+    border-radius: 0.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+    background: var(--muted, var(--rw-surface-raised)) !important;
+    color: var(--foreground, var(--rw-text)) !important;
+    font-size: 0.75rem !important;
+    line-height: 1.5rem !important;
+    resize: vertical !important;
+}
+
+.review-toolbar textarea.suggested-code-input:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary, var(--rw-accent)) 50%, transparent) !important;
+}
+
+.fixed.inset-0.z-\[2000\] textarea.suggested-code-input {
+    width: 100% !important;
+    min-height: 4.875rem !important;
+    max-height: calc(var(--pn-viewport-height, 100vh) - 16rem) !important;
+    border: 1px solid color-mix(in srgb, var(--primary, var(--rw-accent)) 82%, transparent) !important;
+    border-radius: 0 !important;
+    padding: 0.5rem 0.5rem !important;
+    background: var(--background, var(--rw-page-bg)) !important;
+    color: var(--foreground, var(--rw-text)) !important;
+    font-size: 0.875rem !important;
+    line-height: 1.5rem !important;
+    resize: vertical !important;
+}
+
+.fixed.inset-0.z-\[2000\] textarea.suggested-code-input:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary, var(--rw-accent)) 72%, transparent) !important;
+}
+
+.fixed.inset-0.z-\[2000\] > .relative:has(.suggestion-modal-original):has(.suggested-code-input) {
+    width: min(72rem, 96vw) !important;
+    height: min(52rem, calc(100vh - 3rem)) !important;
+    max-height: calc(100vh - 3rem) !important;
+    overflow: hidden !important;
+}
+
+.fixed.inset-0.z-\[2000\] > .relative:has(.suggestion-modal-original):has(.suggested-code-input) > .flex.flex-1.min-h-0 {
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+.fixed.inset-0.z-\[2000\] > .relative:has(.suggestion-modal-original):has(.suggested-code-input) > .flex.flex-1.min-h-0.flex-col > .flex-1 {
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+.fixed.inset-0.z-\[2000\] > .relative:has(.suggestion-modal-original):has(.suggested-code-input) .suggestion-modal-original,
+.fixed.inset-0.z-\[2000\] > .relative:has(.suggestion-modal-original):has(.suggested-code-input) .suggested-code-input.flex-1 {
+    min-height: 0 !important;
+    overflow: auto !important;
+}
+
+.rw-code-review .review-comment,
+.rw-code-review .review-comment-markdown {
+    max-width: 100%;
+    min-width: 0;
+    font-family: var(--font-sans, var(--rw-font-sans)) !important;
+}
+
+.rw-code-review .review-comment-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    min-width: 0 !important;
+    margin-bottom: 0.25rem !important;
+    font-size: 0.6875rem !important;
+    line-height: 1rem !important;
+    color: var(--muted-foreground, var(--rw-text-muted)) !important;
+    white-space: nowrap !important;
+}
+
+.rw-code-review .review-comment-header > * {
+    min-width: 0 !important;
+}
+
+.rw-code-review .review-comment-body,
+.rw-code-review .review-comment-markdown {
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+}
+
+.rw-code-review .review-comment-body {
+    font-size: 0.8125rem !important;
+    line-height: 1.5 !important;
+}
+
+.rw-code-review .suggestion-block {
+    max-width: 100% !important;
+    overflow: hidden !important;
+}
+
+.rw-code-review .suggestion-block-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.375rem !important;
+    min-width: 0 !important;
+    padding: 0.375rem 0.625rem !important;
+    font-size: 0.6875rem !important;
+    line-height: 1rem !important;
+    white-space: nowrap !important;
+}
+
+.rw-code-review .suggestion-block-code,
+.rw-code-review .suggestion-diff {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    font-size: 0.6875rem !important;
+    line-height: 1.5 !important;
+}
+
+.rw-code-review .suggestion-block-code code,
+.rw-code-review .suggestion-diff,
+.rw-code-review .suggestion-diff * {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace) !important;
+    font-size: 0.6875rem !important;
+}
+
+.rw-code-review .suggestion-diff-inner {
+    width: fit-content !important;
+    min-width: 100% !important;
+}
+
+.rw-code-review .suggestion-diff-content {
+    white-space: pre !important;
+}
+
 .rw-plannotator-toolbar {
     display: flex;
     align-items: center;
@@ -154,6 +359,33 @@ html[class*="theme-"] {
     border-color: color-mix(in srgb, var(--rw-error, #ef4444) 62%, var(--rw-border, #2d3748));
 }
 
+.rw-plan-review-draft-notice {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    border-color: color-mix(in srgb, var(--rw-accent, #38bdf8) 55%, var(--rw-border, #2d3748));
+}
+
+.rw-plan-review-draft-notice > div:first-child {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.rw-plan-review-draft-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+@media (max-width: 680px) {
+    .rw-plan-review-draft-notice {
+        grid-template-columns: 1fr;
+    }
+
+    .rw-plan-review-draft-actions {
+        justify-content: flex-start;
+    }
+}
+
 .rw-review-error {
     margin: 0;
     padding: 0.75rem 1rem;
@@ -189,52 +421,10 @@ html[class*="theme-"] {
     border: 0;
 }
 
-.rw-plan-review-segmented-policy > div {
-    display: flex;
-    gap: 0.08rem;
-    padding: 0.14rem;
-    border: 1px solid color-mix(in srgb, var(--rw-border-strong) 68%, transparent);
-    border-radius: 0.5rem;
-    background: color-mix(in srgb, var(--rw-surface-muted) 58%, var(--rw-page-bg));
-    box-shadow: inset 0 1px 2px color-mix(in srgb, var(--rw-page-bg) 52%, transparent);
-}
-
-.rw-plan-review-segmented-policy button {
-    min-height: 1.55rem;
-    border: 0;
-    border-radius: 0.34rem;
-    padding: 0.18rem 0.48rem;
-    color: var(--rw-text-muted);
-    font-size: 0.66rem;
-    font-weight: 700;
-    white-space: nowrap;
-    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-}
-
-.rw-plan-review-segmented-policy button.active {
-    background: color-mix(in srgb, var(--rw-accent) 30%, var(--rw-surface-raised));
-    color: var(--rw-text-strong);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rw-accent) 62%, transparent),
-        0 1px 2px color-mix(in srgb, var(--rw-page-bg) 44%, transparent);
-}
-
-.rw-plan-review-segmented-policy button:hover:not(:disabled),
-.rw-plan-review-segmented-policy button:focus-visible:not(:disabled) {
-    background: color-mix(in srgb, var(--rw-accent) 18%, var(--rw-surface-strong));
-    color: var(--rw-text-strong);
-}
-
-.rw-plan-review-segmented-policy button:focus-visible,
 .rw-approval-primary:focus-visible,
 .rw-approval-caret:focus-visible {
     outline: 2px solid var(--rw-accent);
     outline-offset: 2px;
-}
-
-.rw-plan-review-segmented-policy button:disabled {
-    cursor: not-allowed;
-    color: var(--rw-text-dim);
-    opacity: 0.45;
 }
 
 .rw-approval-split-menu {
@@ -304,29 +494,44 @@ html[class*="theme-"] {
     border-left: 0;
 }
 
-.rw-plan-review-annotation-heading {
+.rw-plan-review-annotation-heading,
+.rw-review-annotation-heading {
     display: flex;
-    min-height: 2.5rem;
+    box-sizing: border-box;
+    height: var(--rw-review-toolbar-h, 4rem);
+    min-height: var(--rw-review-toolbar-h, 4rem);
     align-items: center;
     justify-content: space-between;
-    padding: 0 0.75rem;
+    padding: var(--rw-review-toolbar-padding, 0.75rem);
     border-bottom: 1px solid color-mix(in srgb, var(--rw-border) 50%, transparent);
+    background: color-mix(in oklab, var(--plannotator-surface) 92%, transparent);
 }
 
-.rw-plan-review-annotation-heading > div {
+.rw-plan-review-annotation-heading > div,
+.rw-review-annotation-heading > div {
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
 
-.rw-plan-review-annotation-heading h2 {
+.rw-plan-review-annotation-heading h2,
+.rw-review-annotation-heading h2 {
     margin: 0;
     color: var(--rw-text);
     font-size: 0.75rem;
     font-weight: 500;
 }
 
-.rw-plan-review-annotation-heading span {
+.rw-plan-review-annotation-heading > div > svg,
+.rw-review-annotation-heading > div > svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex: none;
+    color: var(--rw-text-muted);
+}
+
+.rw-plan-review-annotation-heading span,
+.rw-review-annotation-heading span {
     display: inline-flex;
     min-width: 1.125rem;
     height: 1.125rem;
@@ -342,55 +547,69 @@ html[class*="theme-"] {
     font-weight: 500;
 }
 
-.rw-plan-review-annotation-close {
-    display: none;
+.rw-plan-review-annotation-close,
+.rw-plan-review-sidebar-collapse,
+.rw-code-annotation-sidebar-close,
+.rw-code-file-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: 0;
     border-radius: 0.375rem;
     padding: 0.375rem;
     color: var(--rw-text-muted);
 }
 
+.rw-plan-review-sidebar-collapse {
+    position: absolute;
+    top: calc((var(--rw-review-toolbar-h, 4rem) - 1.75rem) / 2);
+    left: calc(17.5rem - 2.25rem);
+    z-index: 65;
+    background: color-mix(in oklab, var(--rw-surface) 86%, transparent);
+}
+
 .rw-plan-review-annotation-close:hover,
-.rw-plan-review-annotation-close:focus-visible {
+.rw-plan-review-annotation-close:focus-visible,
+.rw-plan-review-sidebar-collapse:hover,
+.rw-plan-review-sidebar-collapse:focus-visible,
+.rw-code-annotation-sidebar-close:hover,
+.rw-code-annotation-sidebar-close:focus-visible,
+.rw-code-file-sidebar-close:hover,
+.rw-code-file-sidebar-close:focus-visible {
     background: var(--rw-surface-muted);
     color: var(--rw-text-strong);
 }
 
-.rw-plan-review-feedback-action {
+.rw-review-feedback-action {
     padding: 0.65rem 0.75rem;
     border-bottom: 1px solid color-mix(in srgb, var(--rw-border) 72%, transparent);
     background: color-mix(in srgb, var(--rw-accent) 5%, var(--rw-surface));
 }
 
-.rw-plan-review-feedback-action [data-slot="button"] {
-    width: 100%;
-    min-height: 2.25rem;
-    border-color: color-mix(in srgb, var(--rw-accent) 78%, var(--rw-border));
-    background: color-mix(in srgb, var(--rw-accent) 88%, var(--rw-surface-raised));
-    color: var(--rw-page-bg);
-    box-shadow: 0 0.25rem 0.8rem color-mix(in srgb, var(--rw-accent) 18%, transparent);
-    font-weight: 750;
+.rw-code-review-annotation-sidebar {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    border-left: 1px solid color-mix(in srgb, var(--rw-border) 50%, transparent);
+    background: var(--card);
 }
 
-.rw-plan-review-feedback-action [data-slot="button"]:hover:not(:disabled) {
-    border-color: var(--rw-accent);
-    background: color-mix(in srgb, var(--rw-accent) 76%, var(--rw-text-strong));
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-accent) 20%, transparent),
-        0 0.35rem 1rem color-mix(in srgb, var(--rw-accent) 20%, transparent);
+.rw-code-review-annotation-sidebar > aside {
+    width: 100% !important;
+    min-height: 0;
+    flex: 1;
+    border-left: 0;
+    background: var(--card) !important;
 }
 
-.rw-plan-review-feedback-action [data-slot="button"]:focus-visible {
-    border-color: var(--rw-accent);
-    outline: 2px solid var(--rw-accent);
-    outline-offset: 2px;
-}
-
-.rw-plan-review-feedback-action [data-slot="button"] > span:not([data-slot="button-icon"]) {
-    display: inline;
+.rw-code-review-annotation-sidebar > aside > div:first-child {
+    display: none;
 }
 
 .rw-plannotator-plan-layout,
 .rw-plannotator-code-layout {
+    position: relative;
     display: grid;
     flex: 1;
     height: 100%;
@@ -404,12 +623,40 @@ html[class*="theme-"] {
     height: 100%;
 }
 
+.rw-plan-review .rw-plannotator-plan-layout > aside:not([data-annotation-panel]) > div:first-child {
+    box-sizing: border-box;
+    height: var(--rw-review-toolbar-h, 4rem);
+    min-height: var(--rw-review-toolbar-h, 4rem);
+    align-items: center;
+    padding: var(--rw-review-toolbar-padding, 0.75rem);
+    background: color-mix(in oklab, var(--plannotator-surface) 92%, transparent);
+}
+
+.rw-plan-review .rw-plannotator-plan-layout:has(> .rw-plan-sidebar-tab-toggle) > aside:not([data-annotation-panel]) > div:first-child > button {
+    display: none;
+}
+
+.rw-plan-sidebar-tab-toggle {
+    position: absolute;
+    top: calc((var(--rw-review-toolbar-h, 4rem) - 2.25rem) / 2);
+    left: 0.75rem;
+    z-index: 70;
+}
+
 .rw-plannotator-plan-layout {
-    grid-template-columns: 17.5rem 0 minmax(0, 1fr) 20rem;
+    grid-template-columns: 17.5rem minmax(0, 1fr) 20rem;
 }
 
 .rw-plannotator-plan-layout[data-sidebar-open="false"] {
     grid-template-columns: minmax(0, 1fr) 20rem;
+}
+
+.rw-plannotator-plan-layout[data-annotations-open="false"] {
+    grid-template-columns: 17.5rem minmax(0, 1fr);
+}
+
+.rw-plannotator-plan-layout[data-sidebar-open="false"][data-annotations-open="false"] {
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .rw-artifact-read-layout,
@@ -454,26 +701,8 @@ html[class*="theme-"] {
 }
 
 .rw-artifact-close-button {
-    border: 1px solid color-mix(in oklab, var(--primary) 58%, var(--border));
-    border-radius: 999px;
-    padding: 0.5rem 0.9rem;
-    background: color-mix(in oklab, var(--primary) 18%, var(--rw-surface-raised, #1e293b));
-    color: var(--foreground);
-    font-size: 0.78rem;
-    font-weight: 700;
-    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
-}
-
-.rw-artifact-close-button:hover:not(:disabled),
-.rw-artifact-close-button:focus-visible:not(:disabled) {
-    border-color: var(--primary);
-    background: color-mix(in oklab, var(--primary) 28%, var(--rw-surface-raised, #1e293b));
-    color: var(--rw-text-strong, var(--foreground));
-}
-
-.rw-artifact-close-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.64;
+    width: auto;
+    flex: none;
 }
 
 .rw-artifact-notices,
@@ -507,7 +736,7 @@ html[class*="theme-"] {
 }
 
 .rw-plannotator-code-layout {
-    grid-template-columns: minmax(13rem, 18rem) minmax(0, 1fr) minmax(16rem, 22rem);
+    grid-template-columns: minmax(13rem, var(--rw-code-review-files-width, 18rem)) minmax(0, 1fr) minmax(16rem, 22rem);
     min-height: 0;
 }
 
@@ -516,7 +745,7 @@ html[class*="theme-"] {
 }
 
 .rw-plannotator-code-layout[data-annotations-open="false"] {
-    grid-template-columns: minmax(13rem, 18rem) minmax(0, 1fr);
+    grid-template-columns: minmax(13rem, var(--rw-code-review-files-width, 18rem)) minmax(0, 1fr);
 }
 
 .rw-plannotator-code-layout[data-file-tree-open="false"][data-annotations-open="false"] {
@@ -554,6 +783,63 @@ html[class*="theme-"] {
     display: flex;
     flex-direction: column;
     height: 100%;
+    background: var(--card);
+}
+
+.rw-review-toolbar {
+    display: grid;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem 1rem;
+    flex: none;
+    min-height: var(--rw-review-toolbar-h, 4rem);
+    padding: var(--rw-review-toolbar-padding, 0.75rem);
+    border-bottom: 1px solid var(--rw-review-toolbar-border, color-mix(in oklab, var(--rw-border, #2d3748) 70%,
+        transparent));
+    background: color-mix(in oklab, var(--plannotator-surface) 92%, transparent);
+}
+
+.rw-review-toolbar-edge,
+.rw-review-toolbar-center,
+.rw-code-diff-sidebar-restore {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.rw-review-toolbar-edge-left,
+.rw-code-diff-sidebar-restore-left {
+    grid-column: 1;
+    justify-self: start;
+}
+
+.rw-review-toolbar-edge-right,
+.rw-code-diff-sidebar-restore-right {
+    grid-column: 3;
+    justify-self: end;
+}
+
+.rw-review-toolbar-center {
+    grid-column: 2;
+    justify-self: center;
+}
+
+.rw-code-diff-toolbar {
+    color: var(--muted-foreground);
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.rw-code-diff-stage {
+    min-height: 0;
+    flex: 1;
+    background: var(--card);
+}
+
+.rw-code-review diffs-container {
+    background: var(--card);
 }
 
 .rw-review-all-files-host .overflow-y-auto > div {
@@ -572,43 +858,76 @@ html[class*="theme-"] {
 }
 
 .rw-review-file-tree {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
     border-right: 1px solid var(--rw-border, #2d3748);
-    background: var(--plannotator-surface);
+    background: var(--card);
+}
+
+.rw-code-file-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -0.25rem;
+    z-index: 20;
+    width: 0.5rem;
+    height: 100%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: col-resize;
+}
+
+.rw-code-file-resize-handle::after {
+    position: absolute;
+    top: 0;
+    right: 0.1875rem;
+    width: 1px;
+    height: 100%;
+    background: transparent;
+    content: "";
+    transition: background-color 120ms ease;
+}
+
+.rw-code-file-resize-handle:hover::after,
+.rw-code-file-resize-handle:focus-visible::after,
+.rw-plannotator-code-layout[data-resizing-file-panel="true"] .rw-code-file-resize-handle::after {
+    background: var(--rw-accent, var(--primary));
+}
+
+.rw-code-file-resize-handle:focus-visible {
+    outline: 2px solid var(--rw-accent, var(--primary));
+    outline-offset: -2px;
+}
+
+.rw-plannotator-code-layout[data-resizing-file-panel="true"] {
+    cursor: col-resize;
+    user-select: none;
 }
 
 .rw-code-file-tabs {
     display: flex;
+    box-sizing: border-box;
+    height: var(--rw-review-toolbar-h, 4rem);
+    min-height: var(--rw-review-toolbar-h, 4rem);
     align-items: center;
-    gap: 0.25rem;
+    justify-content: space-between;
+    gap: 0.5rem;
     flex: none;
-    min-height: var(--panel-header-h, 2.5rem);
-    padding: 0.35rem 0.5rem;
+    padding: var(--rw-review-toolbar-padding, 0.75rem);
     border-bottom: 1px solid color-mix(in oklab, var(--rw-border, #2d3748) 70%, transparent);
+    background: color-mix(in oklab, var(--plannotator-surface) 92%, transparent);
 }
 
-.rw-code-file-tabs button {
-    border: 1px solid transparent;
-    border-radius: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    color: var(--muted-foreground);
-    font-size: 0.7rem;
-    font-weight: 600;
+.rw-code-file-tabs .rw-segmented-toggle {
+    min-width: 0;
 }
 
-.rw-code-file-tabs button:hover {
-    background: var(--muted);
-    color: var(--foreground);
-}
-
-.rw-code-file-tabs button.active {
-    border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
-    background: color-mix(in oklab, var(--primary) 12%, transparent);
-    color: var(--primary);
+.rw-code-file-sidebar-close {
+    flex: none;
 }
 
 .rw-code-file-panel {
@@ -639,9 +958,9 @@ html[class*="theme-"] {
 }
 
 .rw-plannotator-code-layout > aside:last-child > div:first-child {
-    min-height: var(--panel-header-h, 2.5rem);
-    height: var(--panel-header-h, 2.5rem) !important;
-    padding: 0.35rem 0.5rem;
+    min-height: var(--rw-review-toolbar-h, 4rem);
+    height: var(--rw-review-toolbar-h, 4rem) !important;
+    padding: var(--rw-review-toolbar-padding, 0.75rem);
     background: var(--plannotator-surface);
 }
 
@@ -653,84 +972,70 @@ html[class*="theme-"] {
     text-transform: none;
 }
 
-.rw-code-review-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    min-height: 3rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--rw-border, #2d3748);
-    background: color-mix(in oklab, var(--plannotator-surface) 92%, transparent);
+.rw-plan-review-controls {
+    --rw-review-toolbar-border: var(--rw-border, #2d3748);
+    grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.rw-code-review-controls p {
-    min-width: 0;
-    margin: 0;
-    overflow: hidden;
-    color: var(--muted-foreground);
-    font-size: 0.72rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.rw-plan-review-sidebar-restore,
+.rw-plan-review-mode-actions {
+    gap: 0.55rem;
 }
 
-.rw-code-control-button {
+.rw-plan-review-mode-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    justify-self: start;
+}
+
+.rw-affected-files-trigger {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    flex: none;
-    border: 1px solid color-mix(in oklab, var(--rw-border, #2d3748) 75%, transparent);
-    border-radius: 0.45rem;
-    padding: 0.35rem 0.55rem;
-    background: color-mix(in oklab, var(--plannotator-surface) 88%, var(--rw-surface-raised));
-    color: var(--foreground);
-    font-size: 0.72rem;
-    font-weight: 600;
-}
-
-.rw-code-control-button:hover {
-    border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
-    color: var(--primary);
-}
-
-.rw-plan-review-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem 1rem;
-    flex-wrap: wrap;
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--rw-border, #2d3748);
-    background: color-mix(in oklab, var(--plannotator-surface) 92%, transparent);
-}
-
-.rw-document-mode-toggle,
-.rw-editor-save-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.rw-document-mode-toggle button,
-.rw-editor-save-controls button {
-    border: 1px solid transparent;
+    gap: 0.35rem;
+    border: 1px solid var(--rw-border);
     border-radius: 0.375rem;
-    padding: 0.35rem 0.6rem;
-    color: var(--muted-foreground);
+    padding: 0.35rem 0.55rem;
+    background: color-mix(in oklab, var(--rw-surface-muted) 78%, transparent);
+    color: var(--rw-text-muted);
     font-size: 0.75rem;
     font-weight: 500;
     transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }
 
-.rw-document-mode-toggle button:hover,
-.rw-editor-save-controls button:hover:not(:disabled) {
-    background: var(--muted);
-    color: var(--foreground);
+.rw-affected-files-trigger:hover,
+.rw-affected-files-trigger.active {
+    border-color: color-mix(in oklab, var(--rw-accent) 55%, var(--rw-border));
+    background: color-mix(in oklab, var(--rw-accent) 12%, var(--rw-surface));
+    color: var(--rw-text);
 }
 
-.rw-document-mode-toggle button.active {
-    border-color: var(--plannotator-accent);
-    color: var(--plannotator-accent);
+.rw-affected-files-count {
+    display: inline-flex;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding-inline: 0.25rem;
+    background: color-mix(in oklab, var(--rw-accent) 18%, transparent);
+    color: var(--rw-accent-strong);
+    font-size: 0.66rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.rw-affected-files-menu-heading {
+    padding: 0.4rem 0.75rem 0.3rem;
+    color: var(--rw-text-muted);
+    font-size: 0.65rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.rw-editor-save-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .rw-plan-diff-context {
@@ -741,17 +1046,6 @@ html[class*="theme-"] {
 .rw-editor-save-controls {
     color: var(--muted-foreground);
     font-size: 0.75rem;
-}
-
-.rw-editor-save-controls button {
-    border-color: color-mix(in oklab, var(--plannotator-accent) 55%, var(--border));
-    background: color-mix(in oklab, var(--plannotator-accent) 16%, transparent);
-    color: var(--foreground);
-}
-
-.rw-editor-save-controls button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
 }
 
 .rw-plannotator-scroll-area {
@@ -779,6 +1073,25 @@ html[class*="theme-"] {
 .rw-plan-diff-canvas {
     align-items: flex-start;
     padding-inline: 1rem;
+}
+
+.rw-plan-review[data-plan-width="wide"] .rw-plan-document-canvas,
+.rw-plan-review[data-plan-width="wide"] .rw-markdown-editor-pane {
+    justify-content: stretch;
+    padding: 0;
+}
+
+.rw-plan-review[data-plan-width="wide"] .rw-plan-document-canvas > .relative,
+.rw-plan-review[data-plan-width="wide"] .rw-markdown-editor-pane > .relative {
+    max-width: none !important;
+    flex: 1;
+}
+
+.rw-plan-review[data-plan-width="wide"] article[data-print-region="article"] {
+    min-height: 100%;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
 }
 
 .review-toolbar {
@@ -879,6 +1192,10 @@ html[class*="theme-"] {
         grid-template-columns: 1fr;
     }
 
+    .rw-code-file-resize-handle {
+        display: none;
+    }
+
     .rw-artifact-read .rw-plannotator-plan-layout > aside {
         height: min(18rem, 38vh);
         border-right: 0;
@@ -906,9 +1223,14 @@ html[class*="theme-"] {
 }
 .rw-guide-actions {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
+}
+
+.rw-code-diff-toolbar .rw-guide-actions {
+    flex-wrap: nowrap;
 }
 
 .rw-guide-cost-note {
@@ -916,9 +1238,10 @@ html[class*="theme-"] {
     font-size: 0.72rem;
 }
 
-.rw-guide-generate-button {
-    border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
-    color: var(--primary);
+.rw-code-diff-toolbar .rw-guide-cost-note {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .rw-guide-explainer {

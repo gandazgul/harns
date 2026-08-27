@@ -1,27 +1,29 @@
 // @ts-nocheck: Workspace React islands compile TSX, but this module uses JSDoc-style JavaScript only.
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThemeProvider } from "@plannotator/ui/components/ThemeProvider.tsx";
 import { Tooltip, TooltipProvider } from "@plannotator/ui/components/Tooltip.tsx";
 import { Viewer } from "@plannotator/ui/components/Viewer.tsx";
 import { MarkdownEditor } from "@plannotator/ui/components/MarkdownEditor.tsx";
 import { AnnotationPanel } from "@plannotator/ui/components/AnnotationPanel.tsx";
-import { AnnotationToolstrip } from "@plannotator/ui/components/AnnotationToolstrip.tsx";
+import { RunWieldAnnotationToolstrip } from "./RunWieldAnnotationToolstrip.tsx";
 import { FeedbackButton } from "@plannotator/ui/components/ToolbarButtons.tsx";
 import { PlanDiffViewer } from "@plannotator/ui/components/plan-diff/PlanDiffViewer.tsx";
 import { CompletionOverlay } from "@plannotator/ui/components/CompletionOverlay.tsx";
+import { CodeFilePopout } from "@plannotator/ui/components/CodeFilePopout.tsx";
+import { ExportModal } from "@plannotator/ui/components/ExportModal.tsx";
 import { ActionMenu, ActionMenuItem } from "@plannotator/ui/components/ActionMenu.tsx";
 import { Button } from "@plannotator/ui/components/ui/button.tsx";
 import { OverlayScrollArea } from "@plannotator/ui/components/OverlayScrollArea.tsx";
-import { ResizeHandle } from "@plannotator/ui/components/ResizeHandle.tsx";
 import { SidebarContainer } from "@plannotator/ui/components/sidebar/SidebarContainer.tsx";
-import { SidebarTabs } from "@plannotator/ui/components/sidebar/SidebarTabs.tsx";
 import { ScrollViewportContext } from "@plannotator/ui/hooks/useScrollViewport.ts";
 import { usePlanDiff } from "@plannotator/ui/hooks/usePlanDiff.ts";
+import { useCodeFilePopout } from "@plannotator/ui/hooks/useCodeFilePopout.ts";
 import { usePrintMode } from "@plannotator/ui/hooks/usePrintMode.ts";
 import { useConfigValue } from "@plannotator/ui/config/index.ts";
 import { getPlanSaveSettings } from "@plannotator/ui/utils/planSave.ts";
-import { exportAnnotations, extractFrontmatter, parseMarkdownToBlocks } from "@plannotator/ui/utils/parser.ts";
+import { extractFrontmatter, parseMarkdownToBlocks } from "@plannotator/ui/utils/parser.ts";
+import { copyTextToClipboard } from "@plannotator/ui/utils/clipboard.ts";
 import { getUIPreferences, PLAN_WIDTH_OPTIONS } from "@plannotator/ui/utils/uiPreferences.ts";
 import { PlanReviewSettings } from "./PlanReviewSettings.tsx";
 import {
@@ -33,6 +35,16 @@ import {
     PLAN_APPROVAL_ACTIONS,
     primaryPlanApprovalActionForClassification,
 } from "../../../shared/workflow/plan-approval.js";
+import {
+    createPlanReviewDraft,
+    parsePlanReviewDraft,
+    planReviewDraftDescription,
+    planReviewDraftKey,
+    serializePlanReviewDraft,
+} from "./plan-review-draft.ts";
+import { buildRunWieldDirectEditPanel } from "./plan-review-direct-edits.ts";
+import { buildPlanReviewFeedback } from "./plan-review-feedback.ts";
+import { normalizePlanReviewVersions } from "./plan-review-versions.ts";
 import "./plannotator.css";
 
 const DEFAULT_PLAN_PAYLOAD = { plan: "", token: "", mode: "dev" };
@@ -42,6 +54,8 @@ export function PlanReviewSurface({ payload }) {
     const initialPayload = useMemo(() => payload || readEmbeddedPayload("review-payload") || DEFAULT_PLAN_PAYLOAD, [
         payload,
     ]);
+    const submittedPlan = initialPayload.plan || "";
+    const reviewDraftKey = planReviewDraftKey(initialPayload.token || initialPayload.planPath || "dev-plan");
     const [plan, setPlan] = useState(initialPayload.plan || "");
     const [draftPlan, setDraftPlan] = useState(initialPayload.plan || "");
     const [editorMode, setEditorMode] = useState("view");
@@ -49,11 +63,15 @@ export function PlanReviewSurface({ payload }) {
     const [planDiffMode, setPlanDiffMode] = useState("clean");
     const [uiPreferences, setUiPreferences] = useState(() => getUIPreferences());
     const [sidebarOpen, setSidebarOpen] = useState(() => getUIPreferences().tocEnabled);
+    const [sidebarTab, setSidebarTab] = useState("toc");
     const [annotationsOpen, setAnnotationsOpen] = useState(true);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [exportOpen, setExportOpen] = useState(false);
     const [annotations, setAnnotations] = useState([]);
+    const [codeAnnotations, setCodeAnnotations] = useState([]);
     const [globalAttachments, setGlobalAttachments] = useState([]);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState(null);
+    const [selectedCodeAnnotationId, setSelectedCodeAnnotationId] = useState(null);
     const [activeSection, setActiveSection] = useState(null);
     const [annotationMode, setAnnotationMode] = useState("selection");
     const [inputMethod, setInputMethod] = useState("drag");
@@ -61,13 +79,28 @@ export function PlanReviewSurface({ payload }) {
     const [submitting, setSubmitting] = useState(null);
     const [submitted, setSubmitted] = useState(null);
     const [error, setError] = useState("");
+    const [recoveryRequest, setRecoveryRequest] = useState(null);
+    const [pendingReviewDraft, setPendingReviewDraft] = useState(null);
+    const [reviewDraftReady, setReviewDraftReady] = useState(false);
+    const [reviewDraftStorageError, setReviewDraftStorageError] = useState("");
     const editorHandleRef = useRef(null);
     const viewerHandleRef = useRef(null);
     const gridEnabled = useConfigValue("gridEnabled");
     const editorDirty = draftPlan !== plan;
+    const directlyEditedPlan = draftPlan === submittedPlan ? null : draftPlan;
+    const directEditPanel = useMemo(
+        () => buildRunWieldDirectEditPanel(submittedPlan, directlyEditedPlan ?? submittedPlan),
+        [directlyEditedPlan, submittedPlan],
+    );
+    const hasReviewFeedback = annotations.length > 0 || codeAnnotations.length > 0 || globalAttachments.length > 0 ||
+        directlyEditedPlan !== null;
+    const planWidthMode = uiPreferences.planWidth;
     const planMaxWidth = useMemo(
-        () => PLAN_WIDTH_OPTIONS.find((option) => option.id === uiPreferences.planWidth)?.px || 832,
-        [uiPreferences.planWidth],
+        () =>
+            planWidthMode === "wide"
+                ? null
+                : PLAN_WIDTH_OPTIONS.find((option) => option.id === planWidthMode)?.px || 832,
+        [planWidthMode],
     );
     const parsed = useMemo(() => {
         const frontmatterResult = extractFrontmatter(plan);
@@ -76,14 +109,68 @@ export function PlanReviewSurface({ payload }) {
             frontmatter: frontmatterResult.frontmatter,
         };
     }, [plan]);
-    const previousPlan = typeof initialPayload.previousPlan === "string" && initialPayload.previousPlan.trim()
+    const legacyPreviousPlan = typeof initialPayload.previousPlan === "string" && initialPayload.previousPlan.trim()
         ? initialPayload.previousPlan
         : null;
+    const planVersions = useMemo(
+        () =>
+            normalizePlanReviewVersions(
+                submittedPlan,
+                legacyPreviousPlan,
+                Array.isArray(initialPayload.planVersions) ? initialPayload.planVersions : null,
+            ),
+        [initialPayload.planVersions, legacyPreviousPlan, submittedPlan],
+    );
+    const versionInfo = planVersions.length > 1
+        ? { version: planVersions.length, totalVersions: planVersions.length, project: "RunWield" }
+        : null;
+    const previousPlan = planVersions.length > 1 ? planVersions.at(-2)?.plan ?? null : null;
+    const planDiffFetchers = useMemo(() => ({
+        fetchVersion: (version) => {
+            const entry = planVersions.find((candidate) => candidate.version === version);
+            if (!entry) return Promise.reject(new Error(`Plan version ${version} is unavailable.`));
+            return Promise.resolve({ plan: entry.plan, version: entry.version });
+        },
+        fetchVersions: () =>
+            Promise.resolve({
+                project: "RunWield",
+                slug: initialPayload.planPath || "plan",
+                versions: planVersions.map(({ version, timestamp }) => ({ version, timestamp })),
+            }),
+    }), [initialPayload.planPath, planVersions]);
     const planDiff = usePlanDiff(
         plan,
         previousPlan,
-        previousPlan ? { version: 2, totalVersions: 2, project: "RunWield" } : null,
+        versionInfo,
+        planDiffFetchers,
     );
+    const selectedVersionLabel = planDiff.diffBaseVersion ? `version ${planDiff.diffBaseVersion}` : "previous version";
+    const affectedPaths = useMemo(
+        () =>
+            Array.isArray(parsed.frontmatter?.affectedPaths)
+                ? parsed.frontmatter.affectedPaths
+                    .filter((path) => typeof path === "string" && path.trim())
+                    .map(normalizeReferencedPath)
+                : [],
+        [parsed.frontmatter],
+    );
+    const buildFileContentUrl = useCallback((requestedPath) => {
+        const filePath = requestedPath.replace(/#.*$/, "").replace(/:\d+(?:-\d+)?$/, "");
+        const devContents = initialPayload.linkedFiles?.[filePath];
+        if (initialPayload.mode === "dev") {
+            const body = typeof devContents === "string"
+                ? { codeFile: true, contents: devContents, filepath: filePath }
+                : { codeFile: false, error: `File not found in project: ${filePath}` };
+            return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(body))}`;
+        }
+        const params = new URLSearchParams({ path: requestedPath, base: "docs/plans" });
+        if (initialPayload.mode === "workspace" && initialPayload.projectId) {
+            return `/api/owner/projects/${encodeURIComponent(initialPayload.projectId)}/files/content?${params}`;
+        }
+        params.set("token", initialPayload.token);
+        return `/api/file-content?${params}`;
+    }, [initialPayload.linkedFiles, initialPayload.mode, initialPayload.projectId, initialPayload.token]);
+    const codeFilePopout = useCodeFilePopout({ buildUrl: buildFileContentUrl });
     const trustedPolicy = readPlanReviewExecutionPolicy(initialPayload, parsed.frontmatter);
     const planClassification = trustedPolicy.classification;
     const showExecutionPolicyControls = trustedPolicy.canSelectExecutionPolicy;
@@ -93,19 +180,81 @@ export function PlanReviewSurface({ payload }) {
     const executionAgent = executionPolicy.executionAgent;
     const collaborationRecommendation = executionPolicy.collaborationRecommendation;
 
+    const persistReviewDraftLocally = useCallback((reportError = true) => {
+        try {
+            if (!hasReviewFeedback) {
+                globalThis.localStorage?.removeItem(reviewDraftKey);
+            } else {
+                const draft = createPlanReviewDraft({
+                    basePlan: submittedPlan,
+                    annotations,
+                    codeAnnotations,
+                    globalAttachments,
+                    editedPlan: directlyEditedPlan,
+                });
+                globalThis.localStorage?.setItem(reviewDraftKey, serializePlanReviewDraft(draft));
+            }
+            if (reportError) setReviewDraftStorageError("");
+        } catch {
+            if (reportError) {
+                setReviewDraftStorageError("This review draft could not be saved in the browser.");
+            }
+        }
+    }, [
+        annotations,
+        codeAnnotations,
+        directlyEditedPlan,
+        globalAttachments,
+        hasReviewFeedback,
+        reviewDraftKey,
+        submittedPlan,
+    ]);
+
+    useEffect(() => {
+        setReviewDraftReady(false);
+        try {
+            const raw = globalThis.localStorage?.getItem(reviewDraftKey);
+            const recovered = raw ? parsePlanReviewDraft(raw, submittedPlan) : null;
+            if (raw && !recovered) globalThis.localStorage?.removeItem(reviewDraftKey);
+            setPendingReviewDraft(recovered);
+        } catch {
+            setReviewDraftStorageError("This review draft could not be read from the browser.");
+        } finally {
+            setReviewDraftReady(true);
+        }
+    }, [reviewDraftKey, submittedPlan]);
+
+    useEffect(() => {
+        if (!reviewDraftReady || pendingReviewDraft || submitted !== null) return;
+        const timer = setTimeout(() => persistReviewDraftLocally(), 500);
+        return () => clearTimeout(timer);
+    }, [pendingReviewDraft, persistReviewDraftLocally, reviewDraftReady, submitted]);
+
+    useEffect(() => {
+        if (!reviewDraftReady || pendingReviewDraft || submitted !== null) return;
+        const persistBeforeClose = () => persistReviewDraftLocally(false);
+        globalThis.addEventListener?.("pagehide", persistBeforeClose);
+        return () => globalThis.removeEventListener?.("pagehide", persistBeforeClose);
+    }, [pendingReviewDraft, persistReviewDraftLocally, reviewDraftReady, submitted]);
+
     async function submitApprove(approvalAction) {
         setSubmitting("approve");
         try {
-            await submit("decision", {
+            const result = await submit("decision", {
                 approved: true,
                 approvalAction,
                 ...buildApprovalPolicyPayload(),
                 ...buildReviewPayload(),
                 ...buildPlanSavePayload(),
             });
+            if (result?.status === "recovery_required" || result?.result?.kind === "recovery_required") return;
+            clearReviewDraft();
             setSubmitted(
                 approvalAction === PLAN_APPROVAL_ACTIONS.LATER ? "approved-later" : `approved-${approvalAction}`,
             );
+            if (approvalAction === PLAN_APPROVAL_ACTIONS.RUN && initialPayload.progressUrl) {
+                globalThis.location.assign(initialPayload.progressUrl);
+            }
         } catch {
             // submit() owns the visible error state.
         } finally {
@@ -116,10 +265,12 @@ export function PlanReviewSurface({ payload }) {
     async function submitFeedback() {
         setSubmitting("feedback");
         try {
-            await submit("deny", {
+            const result = await submit("deny", {
                 ...buildReviewPayload(),
                 ...buildPlanSavePayload(),
             });
+            if (result?.status === "recovery_required" || result?.result?.kind === "recovery_required") return;
+            clearReviewDraft();
             setSubmitted("feedback");
         } catch {
             // submit() owns the visible error state.
@@ -136,7 +287,32 @@ export function PlanReviewSurface({ payload }) {
             createdA: annotation.createdA || Date.now(),
         };
         setAnnotations((items) => [...items, next]);
+        setSelectedCodeAnnotationId(null);
         setSelectedAnnotationId(next.id);
+    }
+
+    function addCodeAnnotation(input) {
+        const next = {
+            id: `code-${crypto.randomUUID()}`,
+            type: "comment",
+            scope: "line",
+            filePath: input.filePath,
+            lineStart: input.lineStart,
+            lineEnd: input.lineEnd,
+            side: "new",
+            text: input.text,
+            images: input.images,
+            originalCode: input.originalCode,
+            createdAt: Date.now(),
+        };
+        setCodeAnnotations((items) => [...items, next]);
+        setSelectedAnnotationId(null);
+        setSelectedCodeAnnotationId(next.id);
+    }
+
+    function removeCodeAnnotation(id) {
+        setCodeAnnotations((items) => items.filter((item) => item.id !== id));
+        setSelectedCodeAnnotationId((selectedId) => selectedId === id ? null : selectedId);
     }
 
     function removeAnnotation(id) {
@@ -161,6 +337,7 @@ export function PlanReviewSurface({ payload }) {
     }
 
     function showPlanView() {
+        if (editorMode === "edit" && editorDirty) saveEditor();
         setIsPlanDiffActive(false);
         setEditorMode("view");
     }
@@ -171,8 +348,21 @@ export function PlanReviewSurface({ payload }) {
     }
 
     function showPlanChanges() {
+        if (editorMode === "edit" && editorDirty) saveEditor();
         setEditorMode("view");
         setIsPlanDiffActive(true);
+    }
+
+    async function selectPlanVersion(version) {
+        if (editorMode === "edit" && editorDirty) saveEditor();
+        await planDiff.selectBaseVersion(version);
+        setEditorMode("view");
+        setIsPlanDiffActive(true);
+    }
+
+    function openSidebarTab(tab) {
+        setSidebarTab(tab);
+        setSidebarOpen(true);
     }
 
     function applyUIPreferences(next) {
@@ -187,14 +377,58 @@ export function PlanReviewSurface({ payload }) {
     }
 
     function buildReviewPayload() {
-        const hasAnnotations = annotations.length > 0 || globalAttachments.length > 0;
+        const reviewedPlan = currentPlan();
+        const feedback = currentFeedback(reviewedPlan);
         return {
-            ...(hasAnnotations && {
-                feedback: exportAnnotations(parsed.blocks, annotations, globalAttachments),
-            }),
+            ...(hasReviewFeedback && { feedback }),
             annotations,
+            codeAnnotations,
             globalAttachments,
         };
+    }
+
+    function currentFeedback(reviewedPlan = currentPlan()) {
+        return buildPlanReviewFeedback({
+            blocks: parsed.blocks,
+            annotations,
+            codeAnnotations,
+            globalAttachments,
+            basePlan: submittedPlan,
+            reviewedPlan,
+        });
+    }
+
+    function restoreReviewDraft() {
+        if (!pendingReviewDraft) return;
+        setAnnotations(pendingReviewDraft.annotations);
+        setCodeAnnotations(pendingReviewDraft.codeAnnotations);
+        setGlobalAttachments(pendingReviewDraft.globalAttachments);
+        if (pendingReviewDraft.editedPlan !== null) {
+            setPlan(pendingReviewDraft.editedPlan);
+            setDraftPlan(pendingReviewDraft.editedPlan);
+        }
+        setPendingReviewDraft(null);
+        setReviewDraftStorageError("");
+    }
+
+    function discardReviewDraft() {
+        try {
+            globalThis.localStorage?.removeItem(reviewDraftKey);
+        } catch {
+            // The in-memory review can continue even when browser storage is unavailable.
+        }
+        setPendingReviewDraft(null);
+        setReviewDraftStorageError("");
+    }
+
+    function clearReviewDraft() {
+        try {
+            globalThis.localStorage?.removeItem(reviewDraftKey);
+        } catch {
+            // Submission succeeded; a storage cleanup failure must not change the decision.
+        }
+        setPendingReviewDraft(null);
+        setReviewDraftStorageError("");
     }
 
     function buildApprovalPolicyPayload() {
@@ -214,6 +448,36 @@ export function PlanReviewSurface({ payload }) {
         };
     }
 
+    async function runRecoveryAction() {
+        if (!recoveryRequest?.url) return;
+        const confirmed = globalThis.confirm?.(
+            "RunWield will recover the Workspace Session control record for this Plan review. Your Plan text is not changed. Continue?",
+        );
+        if (!confirmed) return;
+        setSubmitting("recovery");
+        setError("");
+        try {
+            const headers = { "content-type": "application/json" };
+            if (initialPayload.csrfToken) headers["x-runwield-csrf"] = initialPayload.csrfToken;
+            const response = await fetch(recoveryRequest.url, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                    expectedGeneration: recoveryRequest.expectedGeneration,
+                    expectedCurrentSegmentId: recoveryRequest.expectedCurrentSegmentId || null,
+                }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || `Recovery failed: ${response.status}`);
+            setRecoveryRequest(null);
+            setError("Recovery finished. Refresh the review, then send the decision again.");
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setSubmitting(null);
+        }
+    }
+
     // Plannotator supplies behavior; the Workspace bridge owns the active palette.
     return (
         <ThemeProvider
@@ -223,11 +487,16 @@ export function PlanReviewSurface({ payload }) {
             colorThemeStorageKey="runwield-review-color-theme"
         >
             <TooltipProvider>
-                <div className="rw-plannotator-host rw-plan-review" data-review-mode={initialPayload.mode}>
+                <div
+                    className="rw-plannotator-host rw-plan-review"
+                    data-review-mode={initialPayload.mode}
+                    data-plan-width={planWidthMode}
+                >
                     <header className="rw-plannotator-toolbar">
                         <div className="rw-plan-review-heading">
                             <PlanReviewOptionsMenu
                                 iconOnly
+                                onOpenExport={() => setExportOpen(true)}
                                 onOpenSettings={() => setSettingsOpen(true)}
                                 onPrint={() => globalThis.print?.()}
                             />
@@ -305,13 +574,86 @@ export function PlanReviewSurface({ payload }) {
                                 : null}
                         </section>
                     )}
+                    {pendingReviewDraft && (
+                        <section
+                            className="rw-plan-review-notice rw-plan-review-draft-notice"
+                            aria-labelledby="rw-plan-review-draft-title"
+                        >
+                            <div>
+                                <strong id="rw-plan-review-draft-title">Unfinished review found</strong>
+                                <p>
+                                    Restore {planReviewDraftDescription(pendingReviewDraft)}{" "}
+                                    from this browser, or discard it and start fresh.
+                                </p>
+                            </div>
+                            <div className="rw-plan-review-draft-actions">
+                                <Button size="xs" type="button" onClick={restoreReviewDraft}>Restore draft</Button>
+                                <Button size="xs" type="button" variant="ghost" onClick={discardReviewDraft}>
+                                    Discard
+                                </Button>
+                            </div>
+                        </section>
+                    )}
+                    {reviewDraftStorageError && (
+                        <p className="rw-review-error" role="alert">{reviewDraftStorageError}</p>
+                    )}
                     {error && <p className="rw-review-error" role="alert">{error}</p>}
+                    {recoveryRequest
+                        ? (
+                            <section className="rw-plan-review-notice state-recovery" role="alert">
+                                <strong>Recovery needed</strong>
+                                <p>{recoveryRequest.message}</p>
+                                {recoveryRequest.url
+                                    ? (
+                                        <button
+                                            type="button"
+                                            className="rw-plan-review-recovery-action"
+                                            disabled={submitting !== null}
+                                            onClick={runRecoveryAction}
+                                        >
+                                            {submitting === "recovery" ? "Recovering…" : "Recover in Workspace"}
+                                        </button>
+                                    )
+                                    : null}
+                            </section>
+                        )
+                        : null}
                     <ScrollViewportContext.Provider value={scrollViewport}>
-                        <div className="rw-plannotator-plan-layout" data-sidebar-open={sidebarOpen}>
+                        <div
+                            className="rw-plannotator-plan-layout"
+                            data-sidebar-open={sidebarOpen}
+                            data-annotations-open={annotationsOpen}
+                        >
+                            {sidebarOpen && versionInfo !== null && (
+                                <div
+                                    className="rw-plan-sidebar-tab-toggle rw-segmented-toggle"
+                                    role="tablist"
+                                    aria-label="Plan sidebar"
+                                >
+                                    <button
+                                        type="button"
+                                        aria-selected={sidebarTab === "toc"}
+                                        onClick={() => setSidebarTab("toc")}
+                                        title="Contents"
+                                    >
+                                        <ToggleIcon name="contents" />
+                                        <span>Contents</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        aria-selected={sidebarTab === "versions"}
+                                        onClick={() => setSidebarTab("versions")}
+                                        title="Versions"
+                                    >
+                                        <ToggleIcon name="versions" />
+                                        <span>Versions</span>
+                                    </button>
+                                </div>
+                            )}
                             {sidebarOpen && (
                                 <SidebarContainer
-                                    activeTab="toc"
-                                    onTabChange={() => setSidebarOpen(false)}
+                                    activeTab={sidebarTab}
+                                    onTabChange={setSidebarTab}
                                     onClose={() => setSidebarOpen(false)}
                                     width={280}
                                     blocks={parsed.blocks}
@@ -322,18 +664,18 @@ export function PlanReviewSurface({ payload }) {
                                         setActiveSection(blockId);
                                     }}
                                     showFilesTab={false}
-                                    showVersionsTab={false}
-                                    versionInfo={null}
-                                    versions={[]}
-                                    selectedBaseVersion={null}
-                                    onSelectBaseVersion={() => {}}
+                                    showVersionsTab={versionInfo !== null}
+                                    versionInfo={versionInfo}
+                                    versions={planDiff.versions}
+                                    selectedBaseVersion={planDiff.diffBaseVersion}
+                                    onSelectBaseVersion={selectPlanVersion}
                                     isPlanDiffActive={isPlanDiffActive}
                                     hasPreviousVersion={planDiff.hasPreviousVersion}
                                     onActivatePlanDiff={showPlanChanges}
-                                    isLoadingVersions={false}
-                                    isSelectingVersion={false}
-                                    fetchingVersion={null}
-                                    onFetchVersions={() => {}}
+                                    isLoadingVersions={planDiff.isLoadingVersions}
+                                    isSelectingVersion={planDiff.isSelectingVersion}
+                                    fetchingVersion={planDiff.fetchingVersion}
+                                    onFetchVersions={planDiff.fetchVersions}
                                     showArchiveTab={false}
                                     archivePlans={[]}
                                     selectedArchiveFile={null}
@@ -342,83 +684,118 @@ export function PlanReviewSurface({ payload }) {
                                 />
                             )}
                             {sidebarOpen && (
-                                <ResizeHandle
-                                    className="z-[55]"
-                                    side="left"
-                                    onCollapse={() => setSidebarOpen(false)}
-                                />
+                                <button
+                                    className="rw-plan-review-sidebar-collapse"
+                                    type="button"
+                                    onClick={() => setSidebarOpen(false)}
+                                    title="Collapse contents sidebar"
+                                    aria-label="Collapse contents sidebar"
+                                >
+                                    <PanelCollapseIcon side="left" />
+                                </button>
                             )}
                             <main className="rw-plannotator-main-pane">
-                                <div className="rw-plan-review-controls">
-                                    <div
-                                        className="rw-document-mode-toggle"
-                                        role="tablist"
-                                        aria-label="Plan review mode"
-                                    >
-                                        <button
-                                            className={editorMode === "view" && !isPlanDiffActive ? "active" : ""}
-                                            type="button"
-                                            onClick={showPlanView}
-                                        >
-                                            View
-                                        </button>
-                                        <button
-                                            className={editorMode === "edit" && !isPlanDiffActive ? "active" : ""}
-                                            type="button"
-                                            onClick={showPlanEditor}
-                                        >
-                                            Edit
-                                        </button>
-                                        {planDiff.hasPreviousVersion && (
+                                <div className="rw-review-toolbar rw-plan-review-controls">
+                                    <div className="rw-review-toolbar-edge rw-review-toolbar-edge-left rw-plan-review-sidebar-restore rw-plan-review-sidebar-restore-left">
+                                        {!sidebarOpen && (
                                             <button
-                                                className={isPlanDiffActive ? "active" : ""}
+                                                className="rw-toolbar-button"
                                                 type="button"
-                                                onClick={showPlanChanges}
-                                                title="Compare this revision with the initial Plan"
+                                                onClick={() => openSidebarTab("toc")}
                                             >
-                                                Changes
+                                                <ToggleIcon name="contents" />
+                                                <span>Contents</span>
                                             </button>
                                         )}
                                     </div>
-                                    {isPlanDiffActive
-                                        ? (
-                                            <span className="rw-plan-diff-context" role="status">
-                                                Comparing current revision with initial Plan
-                                            </span>
-                                        )
-                                        : editorMode === "view"
-                                        ? (
-                                            <AnnotationToolstrip
-                                                inputMethod={inputMethod}
-                                                onInputMethodChange={setInputMethod}
-                                                mode={annotationMode}
-                                                onModeChange={setAnnotationMode}
-                                                taterMode={false}
-                                                showHelpLink={false}
-                                            />
-                                        )
-                                        : (
+                                    <div className="rw-review-toolbar-center rw-plan-review-mode-actions">
+                                        <div
+                                            className="rw-document-mode-toggle rw-segmented-toggle"
+                                            role="tablist"
+                                            aria-label="Plan review mode"
+                                        >
+                                            <button
+                                                className={editorMode === "view" && !isPlanDiffActive ? "active" : ""}
+                                                type="button"
+                                                onClick={showPlanView}
+                                                title="View"
+                                            >
+                                                <ToggleIcon name="view" />
+                                                <span>View</span>
+                                            </button>
+                                            <button
+                                                className={editorMode === "edit" && !isPlanDiffActive ? "active" : ""}
+                                                type="button"
+                                                onClick={showPlanEditor}
+                                                title="Edit"
+                                            >
+                                                <ToggleIcon name="edit" />
+                                                <span>Edit</span>
+                                            </button>
+                                            {planDiff.hasPreviousVersion && (
+                                                <button
+                                                    className={isPlanDiffActive ? "active" : ""}
+                                                    type="button"
+                                                    onClick={showPlanChanges}
+                                                    title="Changes"
+                                                >
+                                                    <ToggleIcon name="changes" />
+                                                    <span>Changes</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                        {affectedPaths.length > 0 && (
+                                            <AffectedFilesMenu paths={affectedPaths} onOpen={codeFilePopout.open} />
+                                        )}
+                                        {isPlanDiffActive
+                                            ? (
+                                                <span className="rw-plan-diff-context" role="status">
+                                                    Comparing current revision with {selectedVersionLabel}
+                                                </span>
+                                            )
+                                            : editorMode === "view"
+                                            ? (
+                                                <RunWieldAnnotationToolstrip
+                                                    inputMethod={inputMethod}
+                                                    onInputMethodChange={setInputMethod}
+                                                    mode={annotationMode}
+                                                    onModeChange={setAnnotationMode}
+                                                    taterMode={false}
+                                                    compact
+                                                    showHelpLink={false}
+                                                />
+                                            )
+                                            : null}
+                                    </div>
+                                    <div className="rw-review-toolbar-edge rw-review-toolbar-edge-right rw-plan-review-sidebar-restore rw-plan-review-sidebar-restore-right">
+                                        {editorMode === "edit" && !isPlanDiffActive && (
                                             <div className="rw-editor-save-controls">
-                                                <span role="status">{editorDirty ? "Unsaved changes" : "Saved"}</span>
-                                                <button type="button" disabled={!editorDirty} onClick={saveEditor}>
+                                                <span role="status">
+                                                    {editorDirty ? "Unsaved changes" : "Saved"}
+                                                </span>
+                                                <button
+                                                    className="rw-toolbar-button"
+                                                    type="button"
+                                                    disabled={!editorDirty}
+                                                    onClick={saveEditor}
+                                                >
                                                     Save
                                                 </button>
                                             </div>
                                         )}
+                                        {!annotationsOpen && (
+                                            <button
+                                                className="rw-toolbar-button"
+                                                type="button"
+                                                onClick={() => setAnnotationsOpen(true)}
+                                            >
+                                                <ToggleIcon name="annotations" />
+                                                <span>Annotations</span>
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="rw-plan-content-area">
-                                    {!sidebarOpen && (
-                                        <SidebarTabs
-                                            className="rw-collapsed-sidebar-tabs"
-                                            activeTab="toc"
-                                            onToggleTab={() => setSidebarOpen(true)}
-                                            hasDiff={false}
-                                            showFilesTab={false}
-                                            showVersionsTab={false}
-                                            showMessagesTab={false}
-                                            showAgentTerminalTab={false}
-                                        />
-                                    )}
                                     {isPlanDiffActive && planDiff.diffBlocks && planDiff.diffStats
                                         ? (
                                             <OverlayScrollArea
@@ -432,8 +809,8 @@ export function PlanReviewSurface({ payload }) {
                                                         diffMode={planDiffMode}
                                                         onDiffModeChange={setPlanDiffMode}
                                                         onPlanDiffToggle={showPlanView}
-                                                        baseVersionLabel="initial Plan"
-                                                        maxWidth={planMaxWidth}
+                                                        baseVersionLabel={selectedVersionLabel}
+                                                        maxWidth={planMaxWidth ?? undefined}
                                                         annotations={annotations}
                                                         onAddAnnotation={addAnnotation}
                                                         onSelectAnnotation={setSelectedAnnotationId}
@@ -474,6 +851,9 @@ export function PlanReviewSurface({ payload }) {
                                                         gridEnabled={gridEnabled}
                                                         maxWidth={planMaxWidth}
                                                         imageBaseDir={initialPayload.imageBaseDir}
+                                                        disableCodePathValidation
+                                                        onOpenCodeFile={codeFilePopout.open}
+                                                        onOpenLinkedDoc={codeFilePopout.open}
                                                         onToggleCheckbox={toggleCheckbox}
                                                     />
                                                 </div>
@@ -502,29 +882,31 @@ export function PlanReviewSurface({ payload }) {
                                 >
                                     <div className="rw-plan-review-annotation-heading">
                                         <div>
+                                            <ToggleIcon name="annotations" />
                                             <h2 id="rw-plan-review-annotations-heading">Annotations</h2>
-                                            {annotations.length > 0 && <span>{annotations.length}</span>}
+                                            {annotations.length + codeAnnotations.length > 0 && (
+                                                <span>{annotations.length + codeAnnotations.length}</span>
+                                            )}
                                         </div>
                                         <button
                                             className="rw-plan-review-annotation-close"
                                             type="button"
                                             onClick={() => setAnnotationsOpen(false)}
-                                            title="Close annotations"
-                                            aria-label="Close annotations"
+                                            title="Collapse annotations sidebar"
+                                            aria-label="Collapse annotations sidebar"
                                         >
-                                            <CloseIcon />
+                                            <PanelCollapseIcon side="right" />
                                         </button>
                                     </div>
-                                    <div className="rw-plan-review-feedback-action">
+                                    <div className="rw-review-feedback-action rw-review-action">
                                         <FeedbackButton
                                             onClick={submitFeedback}
-                                            disabled={(annotations.length === 0 && globalAttachments.length === 0) ||
-                                                submitting !== null}
+                                            disabled={!hasReviewFeedback || submitting !== null}
                                             isLoading={submitting === "feedback"}
                                             label="Send Annotations"
                                             loadingLabel="Sending Annotations…"
-                                            title={annotations.length === 0 && globalAttachments.length === 0
-                                                ? "Add an annotation or global comment before sending annotations"
+                                            title={!hasReviewFeedback
+                                                ? "Add a Plan or file annotation, attachment, or direct Plan edit before sending annotations"
                                                 : "Send annotations"}
                                         />
                                     </div>
@@ -532,26 +914,35 @@ export function PlanReviewSurface({ payload }) {
                                         isOpen
                                         presentation="embedded"
                                         annotations={annotations}
+                                        codeAnnotations={codeAnnotations}
                                         blocks={parsed.blocks}
-                                        onSelect={setSelectedAnnotationId}
+                                        onSelect={(id) => {
+                                            setSelectedCodeAnnotationId(null);
+                                            setSelectedAnnotationId(id);
+                                        }}
                                         onDelete={removeAnnotation}
                                         onEdit={(id, updates) =>
                                             setAnnotations((items) =>
                                                 items.map((item) => item.id === id ? { ...item, ...updates } : item)
                                             )}
-                                        selectedId={selectedAnnotationId}
+                                        onSelectCodeAnnotation={(id) => {
+                                            const annotation = codeAnnotations.find((item) => item.id === id);
+                                            if (!annotation) return;
+                                            setSelectedAnnotationId(null);
+                                            setSelectedCodeAnnotationId(id);
+                                            codeFilePopout.open(annotation.filePath);
+                                        }}
+                                        onDeleteCodeAnnotation={removeCodeAnnotation}
+                                        onEditCodeAnnotation={(id, updates) =>
+                                            setCodeAnnotations((items) =>
+                                                items.map((item) => item.id === id ? { ...item, ...updates } : item)
+                                            )}
+                                        onQuickCopy={() => copyTextToClipboard(currentFeedback())}
+                                        selectedId={selectedCodeAnnotationId || selectedAnnotationId}
                                         sharingEnabled={false}
+                                        directEdits={directEditPanel}
                                     />
                                 </aside>
-                            )}
-                            {!annotationsOpen && (
-                                <button
-                                    className="rw-annotation-reopen"
-                                    type="button"
-                                    onClick={() => setAnnotationsOpen(true)}
-                                >
-                                    Annotations
-                                </button>
                             )}
                         </div>
                     </ScrollViewportContext.Provider>
@@ -560,6 +951,35 @@ export function PlanReviewSurface({ payload }) {
                         onClose={() => setSettingsOpen(false)}
                         onUIPreferencesChange={applyUIPreferences}
                     />
+                    <ExportModal
+                        isOpen={exportOpen}
+                        onClose={() => setExportOpen(false)}
+                        shareUrl=""
+                        shareUrlSize=""
+                        annotationsOutput={exportOpen ? currentFeedback() : ""}
+                        annotationCount={annotations.length + codeAnnotations.length}
+                        sharingEnabled={false}
+                        wrapCopiedAnnotations={(feedback) => feedback}
+                    />
+                    {codeFilePopout.popoutProps && (
+                        <CodeFilePopout
+                            {...codeFilePopout.popoutProps}
+                            annotations={codeAnnotations.filter((item) =>
+                                item.filePath === codeFilePopout.popoutProps?.filepath
+                            )}
+                            selectedAnnotationId={selectedCodeAnnotationId}
+                            onAddAnnotation={addCodeAnnotation}
+                            onEditAnnotation={(id, updates) =>
+                                setCodeAnnotations((items) =>
+                                    items.map((item) => item.id === id ? { ...item, ...updates } : item)
+                                )}
+                            onDeleteAnnotation={removeCodeAnnotation}
+                            onSelectAnnotation={(id) => {
+                                setSelectedAnnotationId(null);
+                                setSelectedCodeAnnotationId(id);
+                            }}
+                        />
+                    )}
                     <CompletionOverlay
                         submitted={submitted}
                         title={outcomeCopy.title}
@@ -573,9 +993,10 @@ export function PlanReviewSurface({ payload }) {
 
     async function submit(endpoint, body) {
         setError("");
+        setRecoveryRequest(null);
         if (initialPayload.mode === "dev") {
             console.log("Plan review dev decision", { endpoint, body });
-            return;
+            return { status: "accepted" };
         }
         const targetUrl = initialPayload.interactionAnswerUrl || initialPayload.submitUrl ||
             `/api/review/${endpoint}?token=${encodeURIComponent(initialPayload.token)}`;
@@ -600,11 +1021,25 @@ export function PlanReviewSurface({ payload }) {
                     : body,
             ),
         });
+        const contentType = response.headers.get("content-type") || "";
+        const payload = contentType.includes("application/json") ? await response.json().catch(() => ({})) : null;
+        const result = payload?.result || payload;
+        if (result?.status === "recovery_required" || result?.kind === "recovery_required") {
+            setRecoveryRequest({
+                message: result.message || payload?.error ||
+                    "Plan review recovery is required before this decision can be applied.",
+                url: initialPayload.recoveryUrl,
+                expectedGeneration: initialPayload.recoveryExpectedGeneration,
+                expectedCurrentSegmentId: initialPayload.recoveryExpectedCurrentSegmentId,
+            });
+            return payload;
+        }
         if (!response.ok) {
-            const message = await response.text();
+            const message = payload?.error || `Decision failed: ${response.status}`;
             setError(message || `Decision failed: ${response.status}`);
             throw new Error(message || `Decision failed: ${response.status}`);
         }
+        return payload || { status: "accepted" };
     }
 }
 
@@ -687,8 +1122,8 @@ function ExecutionPolicyControls({
                 onChange={onAgentChange}
                 disabled={disabled}
                 options={[
-                    { value: "engineer", label: "Engineer" },
-                    { value: "frontend-engineer", label: "Frontend Engineer" },
+                    { value: "engineer", label: "Engineer", icon: "engineer" },
+                    { value: "frontend-engineer", label: "Frontend Engineer", icon: "frontend" },
                 ]}
             />
             <SegmentedPolicyControl
@@ -698,8 +1133,8 @@ function ExecutionPolicyControls({
                 onChange={onRecommendationChange}
                 disabled={disabled}
                 options={[
-                    { value: "pair", label: "Pair Execution" },
-                    { value: "autonomous", label: "Autonomous" },
+                    { value: "pair", label: "Pair Execution", icon: "pair" },
+                    { value: "autonomous", label: "Autonomous", icon: "autonomous" },
                 ]}
             />
         </section>
@@ -711,7 +1146,7 @@ function SegmentedPolicyControl({ label, tooltip, value, onChange, disabled, opt
         <Tooltip content={tooltip} side="bottom" align="center" wide>
             <fieldset className="rw-plan-review-segmented-policy" aria-label={label}>
                 <legend className="rw-visually-hidden">{label}</legend>
-                <div>
+                <div className="rw-segmented-toggle">
                     {options.map((option) => (
                         <button
                             key={option.value}
@@ -720,9 +1155,10 @@ function SegmentedPolicyControl({ label, tooltip, value, onChange, disabled, opt
                             aria-pressed={value === option.value}
                             disabled={disabled}
                             onClick={() => onChange(option.value)}
-                            title={tooltip}
+                            title={option.label}
                         >
-                            {option.label}
+                            {option.icon && <ToggleIcon name={option.icon} />}
+                            <span>{option.label}</span>
                         </button>
                     ))}
                 </div>
@@ -731,11 +1167,59 @@ function SegmentedPolicyControl({ label, tooltip, value, onChange, disabled, opt
     );
 }
 
-function PlanReviewOptionsMenu({ iconOnly = false, onOpenSettings, onPrint }) {
+function AffectedFilesMenu({ paths, onOpen }) {
+    return (
+        <ActionMenu
+            panelClassName="absolute top-full left-0 mt-1 min-w-72 max-w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-border bg-popover py-1 shadow-xl z-[70]"
+            renderTrigger={({ isOpen, toggleMenu }) => (
+                <button
+                    type="button"
+                    onClick={toggleMenu}
+                    className={`rw-affected-files-trigger ${isOpen ? "active" : ""}`}
+                    aria-expanded={isOpen}
+                    title="Inspect files referenced by this Plan"
+                >
+                    <FileIcon />
+                    <span>Files</span>
+                    <span className="rw-affected-files-count">{paths.length}</span>
+                </button>
+            )}
+        >
+            {({ closeMenu }) => (
+                <>
+                    <div className="rw-affected-files-menu-heading">Affected files</div>
+                    {paths.map((path) => (
+                        <ActionMenuItem
+                            key={path}
+                            onClick={() => {
+                                closeMenu();
+                                onOpen(path);
+                            }}
+                            icon={<FileIcon />}
+                            label={path}
+                        />
+                    ))}
+                </>
+            )}
+        </ActionMenu>
+    );
+}
+
+function normalizeReferencedPath(path) {
+    const trimmed = path.trim();
+    return trimmed.length >= 2 && (
+            (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+            (trimmed.startsWith("'") && trimmed.endsWith("'"))
+        )
+        ? trimmed.slice(1, -1)
+        : trimmed;
+}
+
+function PlanReviewOptionsMenu({ iconOnly = false, onOpenExport, onOpenSettings, onPrint }) {
     return (
         <ActionMenu
             panelClassName={iconOnly
-                ? "absolute top-full left-0 mt-1 w-56 rounded-lg border border-border bg-popover py-1 shadow-xl z-[70]"
+                ? "absolute top-full left-0 mt-1 w-56 rounded-lg border border-border bg-popover py-1 shadow-xl z-[90]"
                 : undefined}
             renderTrigger={({ isOpen, toggleMenu }) => (
                 <button
@@ -762,6 +1246,14 @@ function PlanReviewOptionsMenu({ iconOnly = false, onOpenSettings, onPrint }) {
                     <ActionMenuItem
                         onClick={() => {
                             closeMenu();
+                            onOpenExport();
+                        }}
+                        icon={<ExportIcon />}
+                        label="Export review feedback"
+                    />
+                    <ActionMenuItem
+                        onClick={() => {
+                            closeMenu();
                             onPrint();
                         }}
                         icon={<PrintIcon />}
@@ -778,6 +1270,35 @@ function PlanReviewOptionsMenu({ iconOnly = false, onOpenSettings, onPrint }) {
                 </>
             )}
         </ActionMenu>
+    );
+}
+
+function ToggleIcon({ name }) {
+    const paths = {
+        contents: "M4 6h16M4 10h16M4 14h10M4 18h10",
+        versions: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+        view: "M2.25 12s3.75-6 9.75-6 9.75 6 9.75 6-3.75 6-9.75 6-9.75-6-9.75-6z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+        edit: "M16.862 4.487 19.5 7.125 8.25 18.375 5 19l.625-3.25L16.862 4.487z",
+        changes: "M7 7h10M7 12h6M7 17h10",
+        annotations: "M7 8h10M7 12h6m-8 8 3.5-4H19a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z",
+        engineer: "M14.7 6.3a4 4 0 0 0-5 5L4 17l3 3 5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-3-3 2.4-2.4z",
+        frontend: "M4 5h16v10H4z M8 19h8 M12 15v4",
+        pair:
+            "M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20a5 5 0 0 1 10 0 M11 20a5 5 0 0 1 10 0",
+        autonomous:
+            "M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1 M12 9l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.2-2.4 1.2.5-2.6-1.9-1.8 2.6-.4L12 9z",
+    };
+    return (
+        <svg
+            aria-hidden="true"
+            className="w-3.5 h-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+        >
+            <path strokeLinecap="round" strokeLinejoin="round" d={paths[name]} />
+        </svg>
     );
 }
 
@@ -809,10 +1330,13 @@ function ClockIcon() {
     );
 }
 
-function CloseIcon() {
+function PanelCollapseIcon({ side }) {
+    const path = side === "left" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6";
     return (
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor">
+            <path d="M5 4v16" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M19 4v16" strokeWidth="1.5" strokeLinecap="round" />
+            <path d={path} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -833,6 +1357,27 @@ function PrintIcon() {
                 strokeLinejoin="round"
                 d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"
             />
+        </svg>
+    );
+}
+
+function ExportIcon() {
+    return (
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+        </svg>
+    );
+}
+
+function FileIcon() {
+    return (
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+            />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v6h6" />
         </svg>
     );
 }

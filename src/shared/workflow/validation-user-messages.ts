@@ -32,20 +32,10 @@ export type ValidationMessageRequest =
     | { kind: "amendment_decision"; summary: string }
     | { kind: "amendment_approved" }
     | { kind: "ci_running"; cwd: string }
-    | { kind: "checks_passed"; objectiveChecks: boolean; waived?: boolean }
+    | { kind: "checks_passed" }
     | { kind: "repair_waiting"; agent: string }
+    | { kind: "repair_blocked"; agent: string; blockerText?: string }
     | { kind: "engineer_follow_up"; agent: string }
-    | { kind: "objective_all_waived"; planName: string }
-    | { kind: "objective_running"; planName: string; checkIds: string[]; skippedCount: number }
-    | { kind: "objective_canceled" }
-    | { kind: "objective_summary"; summary: string }
-    | { kind: "objective_report_stale" }
-    | { kind: "objective_waiver_notice"; source: "agent" | "runwield"; planName: string; reason: string }
-    | { kind: "objective_waiver_prompt"; source: "agent" | "runwield"; planName: string; reason: string }
-    | { kind: "objective_feedback_prompt" }
-    | { kind: "objective_feedback_default" }
-    | { kind: "objective_note_prompt" }
-    | { kind: "objective_repair"; agent: string }
     | { kind: "ci_repair"; agent: string }
     | { kind: "semantic_round"; round: number; maxRounds: number; mode: "discovery" | "verify" }
     | { kind: "semantic_diff_missing"; planOnly: boolean }
@@ -76,7 +66,16 @@ export type ValidationMessageRequest =
         targetBranch: string;
     }
     | { kind: "merge_dispatch" }
-    | { kind: "publication_blocked"; planName: string }
+    | {
+        kind: "publication_blocked";
+        planName: string;
+        stage:
+            | "artifact_preparation"
+            | "candidate_checkpoint"
+            | "lifecycle_staging"
+            | "candidate_sealing"
+            | "git_publication";
+    }
     | {
         kind: "publication_cleanup_incomplete";
         targetBranch: string;
@@ -156,40 +155,15 @@ export function buildValidationUserMessage(request: ValidationMessageRequest): s
         case "ci_running":
             return `Running the tests in ${request.cwd}.`;
         case "checks_passed":
-            if (request.waived) return "The build and tests passed. You waived the broken checks.";
-            return request.objectiveChecks ? "The build, tests, and checks passed." : "The build and tests passed.";
+            return "The build and tests passed.";
         case "repair_waiting":
             return `${request.agent} stopped. The repair is not done. The check will start when the work note comes.`;
+        case "repair_blocked":
+            return `${request.agent} stopped on a blocker. The repair is not done.${
+                request.blockerText ? `\n\n${request.blockerText}` : ""
+            }`;
         case "engineer_follow_up":
             return `The check is on hold. Send a note to ${request.agent} when you are ready.`;
-        case "objective_all_waived":
-            return `All checks for ${request.planName} are waived. RunWield will skip them.`;
-        case "objective_running": {
-            const skipped = request.skippedCount > 0 ? ` ${request.skippedCount} waived check(s) will be skipped.` : "";
-            return `Running checks for ${request.planName}: ${request.checkIds.join(", ")}.${skipped}`;
-        }
-        case "objective_canceled":
-            return "The checks were stopped.";
-        case "objective_summary":
-            return request.summary;
-        case "objective_report_stale":
-            return "The agent report does not match the current checks. A waiver is not ready.";
-        case "objective_waiver_notice": {
-            const lead = request.source === "agent" ? "The agent found broken checks" : "RunWield found broken checks";
-            return `${lead} for ${request.planName}.\n\n${request.reason}\n\nWaive a check only when the check is broken.`;
-        }
-        case "objective_waiver_prompt": {
-            const lead = request.source === "agent" ? "The agent found broken checks" : "RunWield found broken checks";
-            return `${lead} for ${request.planName}.\n\n${request.reason}\n\nWhat should RunWield do?`;
-        }
-        case "objective_feedback_prompt":
-            return "Tell the Engineer what to fix in these checks.";
-        case "objective_feedback_default":
-            return "The waiver was not approved. Fix the check or the work, then run it again.";
-        case "objective_note_prompt":
-            return "You can add a short note for this waiver.";
-        case "objective_repair":
-            return `The checks did not pass. ${request.agent} will fix them now.`;
         case "ci_repair":
             return `The build failed. ${request.agent} will fix it now.`;
         case "semantic_round":
@@ -261,7 +235,22 @@ export function buildValidationUserMessage(request: ValidationMessageRequest): s
         case "merge_dispatch":
             return "The repair Engineer is fixing the file clashes. The fix will be checked next.";
         case "publication_blocked":
-            return `Publication stopped because the saved copy for ${request.planName} is incomplete. The validated commits are safe. Update RunWield, then load this Plan again.`;
+            switch (request.stage) {
+                case "artifact_preparation":
+                    return `RunWield could not finish the final records for ${request.planName}. The validated commits are safe. Load this Plan and run validation again; completed records will be reused.`;
+                case "candidate_checkpoint":
+                    return `Git could not save the final validation files for ${request.planName}. The validated commits are safe. Fix the Git hook or commit error reported in the console, then load this Plan and run validation again.`;
+                case "lifecycle_staging":
+                    return `RunWield could not record the final validated state for ${request.planName}. The validated commits are safe. Load this Plan and run validation again; RunWield will rebuild this state from the execution copy.`;
+                case "candidate_sealing":
+                    return `Git could not seal the final commits for ${request.planName}. The validated commits are safe. Fix the Git hook or commit error reported in the console, then load this Plan and run validation again.`;
+                case "git_publication":
+                    return `RunWield could not finish adding ${request.planName} to its target branch. The validated commits are safe on the source branch. Load this Plan and run validation again to resume publication.`;
+                default: {
+                    const exhaustiveStage: never = request.stage;
+                    return exhaustiveStage;
+                }
+            }
         case "publication_cleanup_incomplete": {
             const facts = request.details.map((detail) => `- ${detail}`).join("\n");
             const checks = [
@@ -403,6 +392,14 @@ export type PlanRecoveryMessageRequest =
     | { kind: "git_delete_skipped" }
     | { kind: "record_already_gone" }
     | { kind: "abandon_done"; removed: boolean }
+    | { kind: "abandon_definition_missing" }
+    | {
+        kind: "publication_cleanup_resumed";
+        planName: string;
+        targetBranch: string;
+        complete: boolean;
+        details: string[];
+    }
     | {
         kind: "recovery_report";
         summary: string;
@@ -492,6 +489,14 @@ export function buildPlanRecoveryUserMessage(request: PlanRecoveryMessageRequest
             return request.removed
                 ? "The worktree is gone. The work is stopped."
                 : "The saved worktree details are clear. The files were left in place.";
+        case "abandon_definition_missing":
+            return "The worktree is gone. No saved Plan file is left. Restore the Plan from Git or a backup, then load it again.";
+        case "publication_cleanup_resumed":
+            return request.complete
+                ? `Cleanup is done for ${request.planName}. The commits are on ${request.targetBranch}.`
+                : `Cleanup stopped for ${request.planName}. ${
+                    request.details.join(" ")
+                } Your files are kept. Fix this Git issue, then load the Plan to retry.`;
         case "recovery_report": {
             const parts = [request.summary];
             if (request.lastRunStopped) parts.push("The last run stopped before it was done.");

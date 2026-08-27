@@ -4,10 +4,14 @@
  */
 
 import { createAgentHandler } from "./agent-handler.js";
+import { readPersistedActiveAgentName, readPersistedManualModelState } from "./active-agent-session.js";
+import { normalizeAgentInternalName } from "./agents.js";
 import {
+    appendDebugLog,
     ensureRootAgentSession,
     getConfiguredAgentModel,
     getRootSessionSwitchState,
+    markRootAgentSwitch,
     runRootTurn,
     shouldReuseExistingRootSession,
 } from "./session.js";
@@ -81,7 +85,22 @@ export async function switchActiveAgent(hostedSession, options) {
     const rootSwitchState = getRootSessionSwitchState(hostedSession);
     const previousSwitch = switchMetadata.get(hostedSession);
     const effectiveModel = rootSwitchState?.model ?? previousSwitch?.model ?? activeModelState.model;
-    const modelOverride = options.model;
+    const sessionManager = options.sessionManager || hostedSession.getRootSessionManager?.() || undefined;
+    const selectionAgent = previousAgentName || readPersistedActiveAgentName(sessionManager) ||
+        hostedSession.getActiveAgentInfo?.()?.agentName;
+    const changesAgent = !!selectionAgent &&
+        normalizeAgentInternalName(selectionAgent) !== normalizeAgentInternalName(agentName);
+    const inheritedManualModel = (() => {
+        if (!changesAgent && hostedSession.isUserModelOverride?.()) {
+            return activeModelState.provider && !activeModelState.model.startsWith(`${activeModelState.provider}/`)
+                ? `${activeModelState.provider}/${activeModelState.model}`
+                : activeModelState.model;
+        }
+        const persisted = readPersistedManualModelState(sessionManager, agentName);
+        if (!persisted) return undefined;
+        return persisted.provider ? `${persisted.provider}/${persisted.model}` : persisted.model;
+    })();
+    const modelOverride = options.model ?? inheritedManualModel;
     const configuredModel = modelOverride === undefined
         ? getConfiguredAgentModel(agentName, hostedSession.cwd)
         : undefined;
@@ -97,7 +116,7 @@ export async function switchActiveAgent(hostedSession, options) {
     );
     const rootOptions = {
         agentName,
-        modelOverride: options.model,
+        modelOverride,
         cwd: cwdProvided ? options.cwd : effectiveCwd,
         sessionManager: options.sessionManager,
         triageMeta: options.triageMeta,
@@ -154,9 +173,37 @@ export async function switchActiveAgent(hostedSession, options) {
         hostedSession.setActiveOnMessage(handler);
     }
     hostedSession.assertActive();
+    // Clear only after a successful switch; a failed build must preserve the
+    // previous Agent and its manual model selection.
+    if (changesAgent) {
+        hostedSession.clearUserModelOverride();
+        if (hostedSession.getPendingManagedTurnIntent().manualModel) {
+            hostedSession.mergePendingManagedTurnIntent({ model: "", provider: "", manualModel: false });
+        }
+    }
     switchMetadata.set(hostedSession, nextMetadata);
     const changed = shouldRebuildRoot || previousAgentName !== agentName || !canReuseHandler;
     if (changed) {
+        appendDebugLog(
+            options.debugLogPath,
+            [
+                "",
+                "========================================",
+                "Event: AGENT SWITCH",
+                `Timestamp: ${new Date().toISOString()}`,
+                `From Agent: ${previousAgentName || "(none)"}`,
+                `To Agent: ${agentName}`,
+                `Root Session: ${shouldRebuildRoot ? "REBUILT" : "REUSED"}`,
+                `Handler: ${canReuseHandler ? "REUSED" : "REPLACED"}`,
+                "The next user turn is the first turn after this switch.",
+                "========================================",
+                "",
+            ].join("\n"),
+        );
+        markRootAgentSwitch(hostedSession, {
+            agentName,
+            debugLogPath: options.debugLogPath,
+        });
         emitHostedSessionRuntimeEvent(hostedSession, {
             type: RuntimeEventTypes.AGENT_CHANGED,
             agentName,

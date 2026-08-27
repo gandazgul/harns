@@ -4,6 +4,7 @@
  */
 
 import { basename, dirname, isAbsolute, join, resolve } from "@std/path";
+import { createHash } from "node:crypto";
 import { getHomeDir } from "../../constants.js";
 
 /**
@@ -13,7 +14,11 @@ import { getHomeDir } from "../../constants.js";
  * @returns {string}
  */
 export function encodeCwdForSessionDir(cwd) {
-    return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+    const encoded = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+    if (encoded.length <= 120) return encoded;
+    const digest = createHash("sha256").update(cwd).digest("hex").slice(0, 32);
+    const readableTail = basename(cwd).replace(/[/\\:]/g, "-").slice(0, 40) || "root";
+    return `--${readableTail}-${digest}--`;
 }
 
 /**
@@ -300,7 +305,7 @@ export async function classifyRootSessionLocator(options) {
     if (byPath && byPi && byPath.runwieldSessionId !== byPi.runwieldSessionId) {
         return { kind: "blocked", reason: "locator_conflict" };
     }
-    if (byPi && byPi.transcriptPath !== locator.sessionPath) {
+    if (!byPath && byPi && byPi.transcriptPath !== locator.sessionPath) {
         return { kind: "blocked", reason: "locator_conflict" };
     }
     let session = byPath || byPi || null;
@@ -497,8 +502,18 @@ export async function readCatalogSafeRootSessionLocator(options) {
  * Invalid candidates are returned as diagnostics so callers can continue
  * cataloging valid transcripts.
  *
+ * @typedef {Object} CatalogSafeRootSessionCandidate
+ * @property {string} sessionPath
+ * @property {Date | null} modified
+ */
+
+/**
+ * Enumerate catalog-safe metadata for persisted root Session JSONL files.
+ * Invalid candidates are returned as diagnostics so callers can continue
+ * cataloging valid transcripts.
+ *
  * @param {string} cwd
- * @param {{ sessionDir?: string, maxHeaderBytes?: number }} [options]
+ * @param {{ sessionDir?: string, maxHeaderBytes?: number, recentLimit?: number }} [options]
  * @returns {Promise<{ locators: CatalogSafeRootSessionLocator[], diagnostics: CatalogSafeLocatorDiagnostic[] }>}
  */
 export async function listCatalogSafeRootSessionLocators(cwd, options = {}) {
@@ -508,19 +523,22 @@ export async function listCatalogSafeRootSessionLocators(cwd, options = {}) {
     const locators = [];
     /** @type {CatalogSafeLocatorDiagnostic[]} */
     const diagnostics = [];
+    /** @type {CatalogSafeRootSessionCandidate[]} */
+    const candidates = [];
+    const recentLimit = typeof options.recentLimit === "number" && Number.isFinite(options.recentLimit)
+        ? Math.max(0, Math.floor(options.recentLimit))
+        : null;
     try {
         for await (const entry of Deno.readDir(sessionDir)) {
             if (!entry.isFile || !entry.name.endsWith(".jsonl")) continue;
             const sessionPath = join(sessionDir, entry.name);
+            if (recentLimit === null) {
+                candidates.push({ sessionPath, modified: null });
+                continue;
+            }
             try {
-                locators.push(
-                    await readCatalogSafeRootSessionLocator({
-                        cwd,
-                        sessionDir,
-                        sessionPath,
-                        maxHeaderBytes: options.maxHeaderBytes,
-                    }),
-                );
+                const fileInfo = await Deno.stat(sessionPath);
+                candidates.push({ sessionPath, modified: fileInfo.mtime });
             } catch (error) {
                 diagnostics.push({
                     sessionPath,
@@ -532,6 +550,28 @@ export async function listCatalogSafeRootSessionLocators(cwd, options = {}) {
     } catch (error) {
         if (error instanceof Deno.errors.NotFound) return { locators, diagnostics };
         throw error;
+    }
+    const candidatesToRead = recentLimit === null ? candidates : candidates.toSorted((left, right) => {
+        const timeDifference = (right.modified?.getTime() || 0) - (left.modified?.getTime() || 0);
+        return timeDifference || right.sessionPath.localeCompare(left.sessionPath);
+    }).slice(0, recentLimit);
+    for (const candidate of candidatesToRead) {
+        try {
+            locators.push(
+                await readCatalogSafeRootSessionLocator({
+                    cwd,
+                    sessionDir,
+                    sessionPath: candidate.sessionPath,
+                    maxHeaderBytes: options.maxHeaderBytes,
+                }),
+            );
+        } catch (error) {
+            diagnostics.push({
+                sessionPath: candidate.sessionPath,
+                code: "invalid_locator",
+                message: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
     locators.sort((a, b) => a.sessionPath.localeCompare(b.sessionPath));
     return { locators, diagnostics };

@@ -8,8 +8,10 @@ import {
 } from "../server/owner-auth.js";
 import { loadBoard, loadWorkspaceDetail } from "../server/plan-adapter.js";
 import { runOwnerPlanAction } from "../server/owner-plan-actions.ts";
+import { loadOwnerPlanProgress } from "../server/owner-plan-progress.ts";
 import { listOwnerProjects, requireOwnerProjectRoot, serializeOwnerProject } from "../server/owner-projects.js";
 import { ownerSecurityHeaders } from "../server/owner-origin.js";
+import { reviewFileContentApi } from "./api/review-file-handlers.js";
 
 const MAX_JSON_BYTES = 64 * 1024;
 
@@ -225,6 +227,31 @@ export async function ownerProjectPlanDetailApi(ctx) {
         const root = requireOwnerProjectRoot(ctx.state.store, ctx.params.projectId);
         const plan = ownerReadOnlyPlanValue(await loadWorkspaceDetail(root, ctx.params.planId));
         return ownerJson({ projectId: ctx.params.projectId, plan: sanitizeOwnerPlanValue(plan), readOnly: true });
+    } catch (error) {
+        return ownerErrorJson(error, 404);
+    }
+}
+
+/** @param {any} ctx */
+export async function ownerProjectFileContentApi(ctx) {
+    try {
+        const root = requireOwnerProjectRoot(ctx.state.store, ctx.params.projectId);
+        return await reviewFileContentApi(ctx.req, { cwd: root });
+    } catch (error) {
+        return ownerErrorJson(error, 404);
+    }
+}
+
+/** @param {any} ctx */
+export async function ownerProjectPlanProgressApi(ctx) {
+    try {
+        const url = new URL(ctx.req.url);
+        const progress = await loadOwnerPlanProgress(ctx.state.store, {
+            projectId: ctx.params.projectId,
+            planId: ctx.params.planId,
+            runwieldSessionId: url.searchParams.get("session") || null,
+        });
+        return ownerJson(progress);
     } catch (error) {
         return ownerErrorJson(error, 404);
     }

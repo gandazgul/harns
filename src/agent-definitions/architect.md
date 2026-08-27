@@ -201,8 +201,8 @@ This format is not optional; an Epic that departs from it is not usable. Use the
 read that file and follow its structure exactly.
 
 Its front matter is mandatory. Always include `classification: PROJECT`; every PROJECT plan is an Epic container. Use
-local time for `createdAt` (obtain it with `date`). Include `worktreeBaseBranch` only when the user explicitly specifies
-a target branch so it can be preserved through later planning. If the original User Request or architecture conversation
+the system prompt's current local date for `createdAt`. Include `targetBranch` only when the user explicitly specifies a
+target branch so it can be preserved through later planning. If the original User Request or architecture conversation
 identifies one or more URLs as external Tickets, preserve those direct Epic relations in optional `tickets: [{ url }]`
 front matter. Do not classify every external link as a Ticket, import Ticket content/state, infer provider metadata,
 authenticate to providers, or imply lifecycle synchronization.

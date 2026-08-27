@@ -232,7 +232,17 @@ export function openFileSessionStore(options: OpenFileSessionStoreOptions = {}):
         },
         async listProjectSessions(projectId, sessionOptions = {}) {
             const project = findProject(baseDir, projectId);
-            if (!project) return { sessions: [], diagnostics: [] };
+            if (!project) {
+                return {
+                    sessions: [],
+                    diagnostics: [],
+                    page: 0,
+                    pageSize: 30,
+                    total: 0,
+                    hasNext: false,
+                    hasPrevious: false,
+                };
+            }
             const sessionDir = sessionDirForRoot(baseDir, project.currentRoot);
             const diagnostics: Array<{ sessionPath: string; code: string; message: string }> = [];
             if (sessionOptions.catalog !== false) {
@@ -333,9 +343,31 @@ export function openFileSessionStore(options: OpenFileSessionStoreOptions = {}):
                     }
                 }
             }
+            const requestedPage = sessionOptions.page;
+            const page: number =
+                typeof requestedPage === "number" && Number.isInteger(requestedPage) && requestedPage >= 0
+                    ? requestedPage
+                    : 0;
+            const requestedPageSize = sessionOptions.pageSize;
+            const pageSize: number = typeof requestedPageSize === "number" &&
+                    Number.isInteger(requestedPageSize) && requestedPageSize > 0
+                ? Math.min(requestedPageSize, 100)
+                : 30;
+            const sessions = listManifests(sessionDir)
+                .map((item) => catalogedSession(item.manifest))
+                .sort((left, right) =>
+                    Date.parse(right.headerTimestamp || "") - Date.parse(left.headerTimestamp || "") ||
+                    right.runwieldSessionId.localeCompare(left.runwieldSessionId)
+                );
+            const start = page * pageSize;
             return {
-                sessions: listManifests(sessionDir).map((item) => catalogedSession(item.manifest)),
+                sessions: sessions.slice(start, start + pageSize),
                 diagnostics,
+                page,
+                pageSize,
+                total: sessions.length,
+                hasNext: start + pageSize < sessions.length,
+                hasPrevious: page > 0 && start < sessions.length,
             };
         },
         async catalogProjectSessions(projectId, sessionOptions = {}) {

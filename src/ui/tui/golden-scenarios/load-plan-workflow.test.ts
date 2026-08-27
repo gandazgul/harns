@@ -4,24 +4,30 @@ import {
     loadPlanActionsScenario,
     loadPlanCanceledExecutionThenPlannerReviewScenario,
     loadPlanContinueUsesExecutionPlanAuthorityScenario,
+    loadPlanDirectReviewRunScenario,
+    loadPlanDirectReviewScenario,
+    loadPlanImplementedFollowUpRepaintsScenario,
     loadPlanInterruptedRecoveryScenario,
     loadPlanMalformedFrontMatterScenario,
     loadPlanResetReviewArchiveScenario,
-    loadPlanValidateWaivedObjectiveChecksScenario,
+    loadPlanValidateWithoutCustomChecksScenario,
     loadPlanWorkflowScenarios,
     loadPlanWorktreeInspectResetScenario,
 } from "./load-plan-workflow.ts";
 
 const scenarioExportNames = new Map<object, string>([
     [loadPlanActionsScenario, "loadPlanActionsScenario"],
+    [loadPlanDirectReviewScenario, "loadPlanDirectReviewScenario"],
+    [loadPlanDirectReviewRunScenario, "loadPlanDirectReviewRunScenario"],
     [loadPlanCanceledExecutionThenPlannerReviewScenario, "loadPlanCanceledExecutionThenPlannerReviewScenario"],
+    [loadPlanImplementedFollowUpRepaintsScenario, "loadPlanImplementedFollowUpRepaintsScenario"],
     [loadPlanResetReviewArchiveScenario, "loadPlanResetReviewArchiveScenario"],
     [loadPlanInterruptedRecoveryScenario, "loadPlanInterruptedRecoveryScenario"],
     [loadPlanWorktreeInspectResetScenario, "loadPlanWorktreeInspectResetScenario"],
     [loadPlanAbandonProgressScenario, "loadPlanAbandonProgressScenario"],
     [loadPlanContinueUsesExecutionPlanAuthorityScenario, "loadPlanContinueUsesExecutionPlanAuthorityScenario"],
     [loadPlanMalformedFrontMatterScenario, "loadPlanMalformedFrontMatterScenario"],
-    [loadPlanValidateWaivedObjectiveChecksScenario, "loadPlanValidateWaivedObjectiveChecksScenario"],
+    [loadPlanValidateWithoutCustomChecksScenario, "loadPlanValidateWithoutCustomChecksScenario"],
 ]);
 
 for (const scenario of loadPlanWorkflowScenarios) {

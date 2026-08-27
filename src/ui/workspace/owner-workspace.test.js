@@ -90,14 +90,16 @@ Deno.test("owner Workspace requires CSRF for Project mutation and resolves Proje
     const otherProjectRoot = `${dir}/other-project`;
     await Deno.mkdir(projectRoot);
     await Deno.mkdir(otherProjectRoot);
-    await savePlan(projectRoot, "owner-plan", "# Owner Plan\n\nBody", {
+    await Deno.mkdir(`${projectRoot}/src`);
+    await Deno.writeTextFile(`${projectRoot}/src/referenced.ts`, "export const referenced = true;\n");
+    await savePlan(projectRoot, "owner-plan", "# Owner Plan\n\n## Context\n\nVisible owner plan", {
         planId: "owner-plan-id",
         classification: "FEATURE",
         complexity: "LOW",
         summary: "Visible owner plan",
         status: "draft",
     });
-    await savePlan(projectRoot, "held-plan", "# Held Plan\n\nBody", {
+    await savePlan(projectRoot, "held-plan", "# Held Plan\n\n## Context\n\nVisible held plan", {
         planId: "held-plan-id",
         classification: "FEATURE",
         complexity: "LOW",
@@ -220,6 +222,17 @@ Deno.test("owner Workspace requires CSRF for Project mutation and resolves Proje
         const detailText = JSON.stringify(detailJson);
         assertStringIncludes(detailText, "Owner Plan");
         assertEquals(detailText.includes(projectRoot), false);
+
+        const referencedFile = await app(
+            new Request(
+                `http://127.0.0.1:8787/api/owner/projects/${project.projectId}/files/content?path=src%2Freferenced.ts`,
+                { headers: { cookie: cookiePair(claimed.credential) } },
+            ),
+        );
+        assertEquals(referencedFile.status, 200);
+        const referencedFileJson = await referencedFile.json();
+        assertEquals(referencedFileJson.filepath, "src/referenced.ts");
+        assertEquals(referencedFileJson.contents, "export const referenced = true;\n");
 
         const registeredApi = await app(
             new Request("http://127.0.0.1:8787/api/owner/projects", {
@@ -571,6 +584,61 @@ Deno.test("owner Workspace rejects Shared Space bearer capabilities on owner API
             }),
         );
         assertEquals(response.status, 401);
+    } finally {
+        store.close();
+        await Deno.remove(dir, { recursive: true });
+    }
+});
+
+Deno.test("owner Workspace exposes read-only Project Plan progress route and API", async () => {
+    const dir = await Deno.makeTempDir({ prefix: "runwield-owner-progress-" });
+    const projectRoot = `${dir}/project`;
+    await Deno.mkdir(projectRoot);
+    await savePlan(projectRoot, "progress-plan", "# Progress Plan\n\nBody", {
+        planId: "progress-plan-id",
+        classification: "PLANNED_CHANGE",
+        complexity: "LOW",
+        summary: "Progress plan",
+        status: "ready_for_work",
+    });
+    const store = openOwnerCoordinationStore({ dbPath: `${dir}/owner.sqlite3` });
+    try {
+        const pairing = store.createPairingRequest({
+            codeFactory: () => "PRG123",
+            proofFactory: () => "proof",
+        });
+        store.approvePairingRequest(pairing.code);
+        const claimed = store.claimPairingRequest(pairing.proof, {
+            credentialFactory: () => "credential-secret",
+            csrfFactory: () => "csrf-secret",
+        });
+        const project = store.registerProject({ root: projectRoot, displayName: "Owner Project" });
+        const app = createOwnerWorkspaceApp({
+            mode: "owner",
+            publicOrigin: "http://127.0.0.1:8787",
+            store,
+        }).handler();
+        const api = await app(
+            new Request(
+                `http://127.0.0.1:8787/api/owner/projects/${project.projectId}/plans/progress-plan-id/progress`,
+                {
+                    headers: { cookie: cookiePair(claimed.credential) },
+                },
+            ),
+        );
+        assertEquals(api.status, 200);
+        const json = await api.json();
+        assertEquals(json.readOnly, true);
+        assertEquals(json.plan.planId, "progress-plan-id");
+        assertEquals(JSON.stringify(json).includes(projectRoot), false);
+
+        const page = await app(
+            new Request(`http://127.0.0.1:8787/projects/${project.projectId}/plans/progress-plan-id/progress`, {
+                headers: { cookie: cookiePair(claimed.credential) },
+            }),
+        );
+        assertEquals(page.status, 200);
+        assertStringIncludes(await page.text(), "Plan progress");
     } finally {
         store.close();
         await Deno.remove(dir, { recursive: true });

@@ -19,6 +19,7 @@ export const GOLDEN_TUI_REQUIRED_CAPABILITIES = Object.freeze({
         "workflow:PLANNED_CHANGE",
         "workflow:PROJECT",
         "workflow:load-plan",
+        "workflow:follow-up-validation",
         "workflow:concurrent-plans",
     ],
     presentation: [
@@ -46,23 +47,20 @@ export const GOLDEN_TUI_REQUIRED_CAPABILITIES = Object.freeze({
         "terminal:prompt-focus-restoration",
         "terminal:queueing",
         "terminal:replay-hydration",
+        "terminal:post-publication-input",
     ],
     recovery: [
         "recovery:tool-failure",
         "recovery:steered-task-completion",
         "recovery:reviewer-rejection",
-        // RunWield pauses rather than halting whenever it needs a person. That
-        // promise is only kept if the menu actually reaches the screen and the
-        // answer actually resumes the run, which only an end-to-end scenario shows.
-        "recovery:user-pause",
         // The Engineer reports success and the check disagrees. Everything after that
         // point — repair rounds, the round limit, the menu — only matters if it reaches
         // a person, so the guarantee is end-to-end or it is nothing.
-        "recovery:objective-check-unmet",
         // CI actually failing, and the loop finding its way back to CI after the repair.
         // Every other scenario commits a CI command that cannot fail, so this path had
         // no end-to-end coverage at all.
         "recovery:ci-repair",
+        "recovery:child-ci-failure",
         "recovery:interrupted-execution",
         "recovery:load-plan-worktree",
         "recovery:malformed-plan-front-matter",

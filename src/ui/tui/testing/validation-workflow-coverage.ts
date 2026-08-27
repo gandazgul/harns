@@ -4,7 +4,6 @@ export type ValidationWorkflowBranchId =
     | "mechanical:plan-amendment:approve"
     | "mechanical:plan-amendment:follow-up"
     | "mechanical:plan-amendment:stop"
-    | "mechanical:plan-amendment:invalid-baseline"
     | "mechanical:ci:pass"
     | "mechanical:ci:repair-completed"
     | "mechanical:ci:repair-incomplete"
@@ -14,24 +13,6 @@ export type ValidationWorkflowBranchId =
     | "mechanical:ci:exhausted-retry"
     | "mechanical:ci:exhausted-follow-up"
     | "mechanical:ci:exhausted-stop"
-    | "mechanical:objective:none"
-    | "mechanical:objective:all-pass"
-    | "mechanical:objective:mixed-waived"
-    | "mechanical:objective:repair-completed"
-    | "mechanical:objective:repair-incomplete"
-    | "mechanical:objective:cancel-retry"
-    | "mechanical:objective:cancel-follow-up"
-    | "mechanical:objective:cancel-stop"
-    | "mechanical:objective:exhausted-retry"
-    | "mechanical:objective:exhausted-follow-up"
-    | "mechanical:objective:exhausted-stop"
-    | "mechanical:broken-objective:detected-waive"
-    | "mechanical:broken-objective:detected-reject"
-    | "mechanical:broken-objective:engineer-reported-waive"
-    | "mechanical:broken-objective:engineer-reported-reject"
-    | "mechanical:broken-objective:follow-up"
-    | "mechanical:broken-objective:stop"
-    | "mechanical:broken-objective:stale-report"
     | "semantic:approval:first-round"
     | "semantic:findings:repair-completed"
     | "semantic:repair-incomplete"
@@ -57,19 +38,9 @@ export type ValidationWorkflowBranchId =
     | "publication:non-git-success"
     | "publication:isolated-dirty-primary"
     | "publication:dirty-primary-retry"
-    | "publication:dirty-primary-stop-resume"
     | "publication:remote-target-advance"
     | "publication:primary-plan-restored"
-    | "publication:remote-unavailable-retry"
-    | "publication:merge-conflict-repair-completed"
-    | "publication:merge-conflict-repair-incomplete-retry"
-    | "publication:merge-conflict-repair-incomplete-stop"
     | "publication:missing-target-branch"
-    | "publication:stale-repair-worktree"
-    | "publication:generic-git-failure"
-    | "publication:push-failure-preserves"
-    | "publication:push-retry"
-    | "publication:legacy-partial-retry"
     | "lifecycle:resume-implemented"
     | "lifecycle:resume-validated-ci"
     | "lifecycle:resume-validated-reviewer"
@@ -125,7 +96,6 @@ export const EXPECTED_VALIDATION_WORKFLOW_BRANCH_IDS: readonly ValidationWorkflo
     "mechanical:plan-amendment:approve",
     "mechanical:plan-amendment:follow-up",
     "mechanical:plan-amendment:stop",
-    "mechanical:plan-amendment:invalid-baseline",
     "mechanical:ci:pass",
     "mechanical:ci:repair-completed",
     "mechanical:ci:repair-incomplete",
@@ -135,24 +105,6 @@ export const EXPECTED_VALIDATION_WORKFLOW_BRANCH_IDS: readonly ValidationWorkflo
     "mechanical:ci:exhausted-retry",
     "mechanical:ci:exhausted-follow-up",
     "mechanical:ci:exhausted-stop",
-    "mechanical:objective:none",
-    "mechanical:objective:all-pass",
-    "mechanical:objective:mixed-waived",
-    "mechanical:objective:repair-completed",
-    "mechanical:objective:repair-incomplete",
-    "mechanical:objective:cancel-retry",
-    "mechanical:objective:cancel-follow-up",
-    "mechanical:objective:cancel-stop",
-    "mechanical:objective:exhausted-retry",
-    "mechanical:objective:exhausted-follow-up",
-    "mechanical:objective:exhausted-stop",
-    "mechanical:broken-objective:detected-waive",
-    "mechanical:broken-objective:detected-reject",
-    "mechanical:broken-objective:engineer-reported-waive",
-    "mechanical:broken-objective:engineer-reported-reject",
-    "mechanical:broken-objective:follow-up",
-    "mechanical:broken-objective:stop",
-    "mechanical:broken-objective:stale-report",
     "semantic:approval:first-round",
     "semantic:findings:repair-completed",
     "semantic:repair-incomplete",
@@ -178,19 +130,9 @@ export const EXPECTED_VALIDATION_WORKFLOW_BRANCH_IDS: readonly ValidationWorkflo
     "publication:non-git-success",
     "publication:isolated-dirty-primary",
     "publication:dirty-primary-retry",
-    "publication:dirty-primary-stop-resume",
     "publication:remote-target-advance",
     "publication:primary-plan-restored",
-    "publication:remote-unavailable-retry",
-    "publication:merge-conflict-repair-completed",
-    "publication:merge-conflict-repair-incomplete-retry",
-    "publication:merge-conflict-repair-incomplete-stop",
     "publication:missing-target-branch",
-    "publication:stale-repair-worktree",
-    "publication:generic-git-failure",
-    "publication:push-failure-preserves",
-    "publication:push-retry",
-    "publication:legacy-partial-retry",
     "lifecycle:resume-implemented",
     "lifecycle:resume-validated-ci",
     "lifecycle:resume-validated-reviewer",
@@ -214,7 +156,6 @@ const VALIDATION_BRANCH_OWNERS: Record<ValidationWorkflowBranchId, string> = {
     "mechanical:plan-amendment:approve": "validation-tree-plan-amendment-approve",
     "mechanical:plan-amendment:follow-up": "validation-tree-plan-amendment-follow-up",
     "mechanical:plan-amendment:stop": "validation-tree-plan-amendment-stop",
-    "mechanical:plan-amendment:invalid-baseline": "validation-tree-plan-amendment-invalid-baseline",
     "mechanical:ci:pass": "validation-tree-ci-loop",
     "mechanical:ci:repair-completed": "validation-tree-ci-loop",
     "mechanical:ci:repair-incomplete": "validation-tree-ci-repair-incomplete",
@@ -224,24 +165,6 @@ const VALIDATION_BRANCH_OWNERS: Record<ValidationWorkflowBranchId, string> = {
     "mechanical:ci:exhausted-retry": "validation-tree-validation-exhausted-retry",
     "mechanical:ci:exhausted-follow-up": "validation-tree-validation-exhausted-follow-up",
     "mechanical:ci:exhausted-stop": "validation-tree-validation-exhausted-stop",
-    "mechanical:objective:none": "validation-tree-objective-none",
-    "mechanical:objective:all-pass": "validation-tree-objective-all-pass",
-    "mechanical:objective:mixed-waived": "validation-tree-objective-mixed-waived",
-    "mechanical:objective:repair-completed": "validation-tree-objective-repair-completed",
-    "mechanical:objective:repair-incomplete": "validation-tree-objective-repair-incomplete",
-    "mechanical:objective:cancel-retry": "validation-tree-objective-cancel-retry",
-    "mechanical:objective:cancel-follow-up": "validation-tree-objective-cancel-follow-up",
-    "mechanical:objective:cancel-stop": "validation-tree-objective-cancel-stop",
-    "mechanical:objective:exhausted-retry": "validation-tree-objective-exhausted-retry",
-    "mechanical:objective:exhausted-follow-up": "validation-tree-objective-exhausted-follow-up",
-    "mechanical:objective:exhausted-stop": "validation-tree-objective-exhausted-stop",
-    "mechanical:broken-objective:detected-waive": "validation-tree-broken-objective-detected-waive",
-    "mechanical:broken-objective:detected-reject": "validation-tree-broken-objective-detected-reject",
-    "mechanical:broken-objective:engineer-reported-waive": "validation-tree-broken-objective-engineer-reported-waive",
-    "mechanical:broken-objective:engineer-reported-reject": "validation-tree-broken-objective-engineer-reported-reject",
-    "mechanical:broken-objective:follow-up": "validation-tree-broken-objective-follow-up",
-    "mechanical:broken-objective:stop": "validation-tree-broken-objective-stop",
-    "mechanical:broken-objective:stale-report": "validation-tree-broken-objective-stale-report",
     "semantic:approval:first-round": "validation-tree-ci-retry-success",
     "semantic:findings:repair-completed": "validation-tree-semantic-review-loop",
     "semantic:repair-incomplete": "validation-tree-semantic-repair-incomplete",
@@ -267,21 +190,9 @@ const VALIDATION_BRANCH_OWNERS: Record<ValidationWorkflowBranchId, string> = {
     "publication:non-git-success": "validation-tree-non-git-delivery",
     "publication:isolated-dirty-primary": "validation-tree-publication-isolated-dirty-primary",
     "publication:dirty-primary-retry": "validation-tree-publication-dirty-checkout",
-    "publication:dirty-primary-stop-resume": "validation-tree-publication-dirty-stop-resume",
     "publication:remote-target-advance": "validation-tree-publication-remote-target-advance",
     "publication:primary-plan-restored": "validation-tree-publication-primary-plan-restored",
-    "publication:remote-unavailable-retry": "validation-tree-publication-remote-unavailable-retry",
-    "publication:merge-conflict-repair-completed": "validation-tree-publication-merge-conflict-repair-completed",
-    "publication:merge-conflict-repair-incomplete-retry":
-        "validation-tree-publication-merge-conflict-repair-incomplete-retry",
-    "publication:merge-conflict-repair-incomplete-stop":
-        "validation-tree-publication-merge-conflict-repair-incomplete-stop",
     "publication:missing-target-branch": "validation-tree-publication-missing-target-branch",
-    "publication:stale-repair-worktree": "validation-tree-publication-stale-repair-worktree",
-    "publication:generic-git-failure": "validation-tree-publication-generic-git-failure",
-    "publication:push-failure-preserves": "validation-tree-publication-push-failure-retry",
-    "publication:push-retry": "validation-tree-publication-push-failure-retry",
-    "publication:legacy-partial-retry": "validation-tree-publication-legacy-partial-retry",
     "lifecycle:resume-implemented": "validation-tree-resume-implemented",
     "lifecycle:resume-validated-ci": "validation-tree-resume-validated-ci",
     "lifecycle:resume-validated-reviewer": "validation-tree-resume-validated-reviewer",
@@ -299,7 +210,7 @@ function ownerFor(id: ValidationWorkflowBranchId): string {
 
 function transcriptRequirementFor(id: ValidationWorkflowBranchId): string[] {
     if (id === "lifecycle:missing-plan-fails-closed") return ["Plan not found: missing-plan"];
-    if (id === "lifecycle:malformed-front-matter-fails-closed") return ["Plan not found: broken"];
+    if (id === "lifecycle:malformed-front-matter-fails-closed") return ["Plan Front Matter could not be parsed"];
     if (
         id === "lifecycle:resume-implemented" || id === "lifecycle:resume-validated-ci" ||
         id === "lifecycle:resume-validated-reviewer" || id === "lifecycle:ahead-status-keeps-canonical-progress"
@@ -313,12 +224,6 @@ function transcriptRequirementFor(id: ValidationWorkflowBranchId): string[] {
     if (id === "lifecycle:unsupported-status-fails-closed") return ["Plan has unknown status: sideways"];
     if (id.includes("plan-amendment")) return ["Plan amendment"];
     if (id.includes(":ci:")) return ["CI"];
-    if (id === "mechanical:objective:none") return ["The build and tests passed."];
-    if (id === "mechanical:objective:all-pass") {
-        return ["Objective Check passed.", "is on main"];
-    }
-    if (id.includes(":objective:")) return ["Objective"];
-    if (id.includes("broken-objective")) return ["Objective-Failing Check"];
     if (id.startsWith("semantic:round-limit:")) return ["Look once more, read it, or stop."];
     if (id.startsWith("semantic:nudge:")) return ["The reviewer needs more time"];
     if (id === "semantic:entry:non-git-skip") return ["Review skipped"];
@@ -332,9 +237,6 @@ function transcriptRequirementFor(id: ValidationWorkflowBranchId): string[] {
     }
     if (id.startsWith("human-review:")) return ["Waiting for your code review"];
     if (id === "publication:non-git-success") return ["is done"];
-    if (id === "publication:push-failure-preserves") {
-        return ["The commits are ready", "Sending the new commits to main", "could not be updated upstream"];
-    }
     const successfulPublicationProgress = [
         "The commits are ready",
         "Checking main for new commits",
@@ -343,20 +245,10 @@ function transcriptRequirementFor(id: ValidationWorkflowBranchId): string[] {
         "Checking the new commits on main",
         "Cleaning up the worktree",
     ];
-    if (id === "publication:push-retry") {
-        return [...successfulPublicationProgress, "is on main"];
-    }
-    if (id === "publication:legacy-partial-retry") {
-        return [
-            "validated work from an older publication attempt",
-            ...successfulPublicationProgress,
-            "worktree changes are merged",
-        ];
-    }
     if (id === "publication:isolated-dirty-primary") {
         return [...successfulPublicationProgress, "is on main"];
     }
-    if (id === "publication:dirty-primary-retry" || id === "publication:dirty-primary-stop-resume") {
+    if (id === "publication:dirty-primary-retry") {
         return [
             "have not saved to git yet",
             "No remote is configured. Adding the commits to the local main branch",
@@ -373,46 +265,17 @@ function transcriptRequirementFor(id: ValidationWorkflowBranchId): string[] {
     }
     if (id === "publication:primary-plan-restored") {
         return [
-            "Restored docs/plans/validation-tree-publication-primary-plan-restored.md",
-            "implementation files changed",
+            "Plan loaded: validation-tree-publication-primary-plan-restored",
             ...successfulPublicationProgress,
             "is on main",
         ];
     }
-    if (id === "publication:remote-unavailable-retry") {
-        return [
-            "Could not read the upstream main branch",
-            "Git could not publish",
-            "Source branch:",
-            ...successfulPublicationProgress,
-            "is on main",
-        ];
-    }
-    if (id === "publication:merge-conflict-repair-completed") {
-        return [
-            "repair Engineer is fixing",
-            ...successfulPublicationProgress,
-            "is on main",
-        ];
-    }
-    if (id === "publication:merge-conflict-repair-incomplete-retry") {
-        return [...successfulPublicationProgress, "is on main"];
-    }
-    if (id === "publication:merge-conflict-repair-incomplete-stop") return ["could not combine"];
     if (id === "publication:missing-target-branch") return ["Target branch main is missing"];
-    if (id === "publication:stale-repair-worktree") {
-        return [...successfulPublicationProgress, "is on main"];
-    }
-    if (id === "publication:generic-git-failure") return ["saved copy for"];
     if (id.startsWith("publication:")) return ["Publication"];
     return ["Plan recovery"];
 }
 
 function turnRequirementFor(id: ValidationWorkflowBranchId): string[] {
-    const objectiveSuccess = id === "mechanical:objective:none" || id === "mechanical:objective:all-pass" ||
-        id === "mechanical:objective:mixed-waived";
-    if (objectiveSuccess) return ["reviewer"];
-    if (id === "publication:merge-conflict-repair-completed") return ["engineer"];
     if (id.startsWith("publication:")) return [];
     if (id.includes("follow-up") || id.includes("repair") || id.includes("feedback")) return ["engineer"];
     if (id.startsWith("semantic:entry:")) return [];
@@ -424,60 +287,48 @@ function statePathsFor(id: ValidationWorkflowBranchId): string[] {
     if (id === "lifecycle:missing-plan-fails-closed" || id === "lifecycle:malformed-front-matter-fails-closed") {
         return ["projectState.plans.0.name"];
     }
-    if (id === "publication:push-failure-preserves") {
-        return ["pendingPublication.registryStatus", "pendingPublication.executionPlanStatus"];
-    }
     if (
         id === "publication:isolated-dirty-primary" || id === "publication:remote-target-advance" ||
-        id === "publication:primary-plan-restored" || id === "publication:push-retry" ||
-        id === "publication:remote-unavailable-retry" || id === "publication:legacy-partial-retry"
+        id === "publication:primary-plan-restored"
     ) {
         return ["publication.remotePlanStatus", "publication.registryEntries"];
     }
-    if (id === "publication:dirty-primary-retry" || id === "publication:dirty-primary-stop-resume") {
+    if (id === "publication:dirty-primary-retry") {
         return ["localPublication.planStatus", "localPublication.registryEntries"];
     }
     const paths = ["projectState.plans.0.attrs.status"];
-    if (id.includes(":ci:")) paths.push("projectState.plans.0.attrs.validationCiAttempts");
-    if (id.startsWith("semantic:")) paths.push("projectState.plans.0.attrs.validationSemanticRounds");
-    if (id.startsWith("human-review:")) paths.push("projectState.plans.0.attrs.humanReviewDecision");
+    if (id.includes(":ci:")) paths.push("projectState.plans.0.controllerState.validationCiAttempts");
+    if (id.startsWith("semantic:")) paths.push("projectState.plans.0.controllerState.validationSemanticRounds");
+    if (id.startsWith("human-review:")) paths.push("projectState.plans.0.controllerState.humanReviewDecision");
     return paths;
 }
 
 function stateEqualsFor(id: ValidationWorkflowBranchId): Record<string, ValidationStateValue> {
-    if (id === "mechanical:objective:all-pass") {
-        return {
-            "publication.remotePlanAttrs.objectiveChecks.0.id": "OC_PASS",
-            "publication.remotePlanAttrs.objectiveChecks.0.command": "true",
-        };
-    }
     if (id === "human-review:none") {
         return {
-            "projectState.plans.0.attrs.humanReviewMode": "none",
-            "projectState.plans.0.attrs.humanReviewDecision": "not_required",
+            "projectState.plans.0.controllerState.humanReviewMode": "none",
+            "projectState.plans.0.controllerState.humanReviewDecision": "not_required",
         };
     }
     if (id === "human-review:ask-skip") {
         return {
-            "projectState.plans.0.attrs.humanReviewMode": "ask",
-            "projectState.plans.0.attrs.humanReviewDecision": "skipped",
+            "projectState.plans.0.controllerState.humanReviewMode": "ask",
+            "projectState.plans.0.controllerState.humanReviewDecision": "skipped",
         };
     }
     return {};
 }
 
-function stateAbsentFor(id: ValidationWorkflowBranchId): string[] {
-    return id === "mechanical:objective:none" ? ["projectState.plans.0.attrs.objectiveChecks"] : [];
+function stateAbsentFor(): string[] {
+    return [];
 }
 
 function interactionValuesFor(id: ValidationWorkflowBranchId): string[] {
     if (id === "publication:dirty-primary-retry") return ["retry"];
-    if (id === "publication:dirty-primary-stop-resume") return ["stop", "validate"];
     return id === "human-review:ask-skip" ? ["skip"] : [];
 }
 
 function transcriptExcludesFor(id: ValidationWorkflowBranchId): string[] {
-    if (id === "mechanical:objective:none") return ["Running checks for"];
     if (id === "human-review:none") return ["read the changes before the merge"];
     return [];
 }
@@ -494,7 +345,7 @@ function evidenceFor(id: ValidationWorkflowBranchId): ValidationEvidenceRequirem
         turnIncludes: turnRequirementFor(id),
         statePaths: statePathsFor(id),
         stateEquals: stateEqualsFor(id),
-        stateAbsent: stateAbsentFor(id),
+        stateAbsent: stateAbsentFor(),
         interactionValues: interactionValuesFor(id),
         interactionAbsentValues: interactionAbsentValuesFor(id),
     };
@@ -504,26 +355,19 @@ export const VALIDATION_INTERACTION_OPTION_BRANCHES: Readonly<Record<string, rea
     Object.freeze({
         retry: [
             "mechanical:ci:cancel-retry",
-            "mechanical:objective:cancel-retry",
             "human-review:no-answer-retry",
             "publication:dirty-primary-retry",
         ],
         stop: [
             "mechanical:ci:cancel-stop",
-            "mechanical:objective:cancel-stop",
             "semantic:round-limit:stop",
             "human-review:no-answer-stop",
-            "publication:dirty-primary-stop-resume",
         ],
         engineer_follow_up: [
             "mechanical:ci:cancel-follow-up",
-            "mechanical:objective:cancel-follow-up",
-            "mechanical:broken-objective:follow-up",
         ],
-        waive: ["mechanical:broken-objective:detected-waive", "mechanical:broken-objective:engineer-reported-waive"],
-        waive_defective_checks: ["mechanical:broken-objective:engineer-reported-waive"],
         approve_amendment: ["mechanical:plan-amendment:approve"],
-        reject: ["mechanical:broken-objective:detected-reject", "mechanical:broken-objective:engineer-reported-reject"],
+        reject: ["mechanical:plan-amendment:stop"],
         open: ["human-review:ask-open-approve"],
         skip: ["human-review:ask-skip"],
         continue: ["semantic:round-limit:continue"],

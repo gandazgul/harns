@@ -140,11 +140,17 @@ export type ValidationReviewOutcome = {
     advisories: ReviewAdvisory[];
 };
 
-/** Outcome of a completion-gated active Agent repair turn. */
+/**
+ * Outcome of a completion-gated active Agent repair turn.
+ *
+ * A repair Agent that hits a blocker stops in plain text instead of calling
+ * `task_completed`, so `blockerText` carries that closing text. Without it the
+ * pause would tell the user only that the turn ended, not what stopped it.
+ */
 export type AgentTurnOutcome = {
     completed: boolean;
     report: string;
-    brokenObjectiveChecks: import("./objective-checks.ts").BrokenObjectiveCheckReport[];
+    blockerText?: string;
 };
 
 /** What the engine asks for when it dispatches an independent completion-gated repair turn. */
@@ -301,7 +307,7 @@ export type ValidationSessionPort = {
     ): void;
     /** User interactions (requestHostedSessionInteraction behind the port). */
     requestInteraction(request: ValidationInteractionRequest): Promise<ValidationInteractionResponse>;
-    /** Escape-cancel registration for Objective-Failing Checks. */
+    /** Escape-cancel registration for retry waits and other active validation work. */
     registerActiveInteraction(id: string, abortController: AbortController): void;
     unregisterActiveInteraction(id: string): void;
     /** Completion-gated validation repair in a fresh Agent session. */

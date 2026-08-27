@@ -2,7 +2,7 @@
  * Golden /load-plan workflow scenarios.
  */
 
-import { assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { assertEventIncludes, assertScreenIncludes } from "../testing/scenario-runner.js";
 import { assertsGoldenCoverage } from "../testing/portfolio-assertions.js";
 interface GoldenScenarioResult {
@@ -22,9 +22,15 @@ interface CapturedPlan {
 
 interface CapturedProjectState {
     plans?: CapturedPlan[];
-    registryEntries?: Array<{ status?: string; planName?: string }>;
+    registryEntries?: Array<{ status?: string; planName?: string; path?: string }>;
     nonTerminalRegistryEntries?: Array<{ status?: string; planName?: string }>;
     workRecordNames?: string[];
+}
+
+interface RuntimeSnapshotState {
+    cwd?: string;
+    activeAgent?: string;
+    activeExecutionWorkflow?: { planName?: string; executionCwd?: string } | null;
 }
 
 function projectState(result: GoldenScenarioResult): CapturedProjectState {
@@ -117,7 +123,6 @@ export const loadPlanResetReviewArchiveScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "re-review",
-                    objectiveChecks: [{ id: "OC1", command: "true" }],
                 },
             }],
         },
@@ -230,7 +235,6 @@ export const loadPlanCanceledExecutionThenPlannerReviewScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "stale-then-review",
-                    objectiveChecks: [{ id: "OC1", command: "true" }],
                 },
             }],
         },
@@ -527,6 +531,116 @@ export const loadPlanAbandonProgressScenario = {
     ],
 };
 
+export const loadPlanImplementedFollowUpRepaintsScenario = {
+    name: "load-plan-implemented-follow-up-repaints-execution-session",
+    composedTui: true,
+    initialAgentName: "guide",
+    terminal: { columns: 120, rows: 34 },
+    timeoutMs: 150000,
+    coverage: ["recovery:load-plan-worktree", "durable:session-replaced", "workflow:follow-up-validation"],
+    committedProjectFiles: [
+        { path: ".wld/settings.json", text: `${JSON.stringify({ verification_command: "true" }, null, 4)}\n` },
+        {
+            path: "docs/plans/follow-up-repaint.md",
+            text:
+                "---\nclassification: PLANNED_CHANGE\ncomplexity: LOW\nsummary: Follow up repaint\naffectedPaths: []\nstatus: ready_for_work\nplanId: follow-up-repaint-plan\nhumanReviewMode: none\nhumanReviewDecision: not_required\n---\n# Follow up repaint\n",
+        },
+    ],
+    script: [
+        {
+            id: "engineer-completes-follow-up-repaint",
+            agent: "engineer",
+            phase: "engineer",
+            planName: "follow-up-repaint",
+            ordinal: 1,
+            requiredTools: ["bash", "task_completed"],
+            toolCalls: [
+                { name: "bash", arguments: { command: "printf follow-up > follow-up-repaint-validation.txt" } },
+                { name: "task_completed", arguments: { message: "- Completed follow-up validation trigger." } },
+            ],
+        },
+        {
+            id: "engineer-closes-follow-up-repaint",
+            agent: "engineer",
+            phase: "engineer",
+            planName: "follow-up-repaint",
+            ordinal: 2,
+            text: "Follow-up completed.",
+        },
+        {
+            id: "reviewer-approves-follow-up-repaint",
+            agent: "reviewer",
+            phase: "semantic_review",
+            planName: "follow-up-repaint",
+            ordinal: 1,
+            requiredTools: ["review_diff", "review_complete"],
+            toolCalls: [
+                { name: "review_diff", arguments: { command: "list" } },
+                { name: "review_complete", arguments: { approved: true, feedback: "Follow-up approved." } },
+            ],
+        },
+        {
+            id: "reviewer-closes-follow-up-repaint",
+            agent: "reviewer",
+            phase: "semantic_review",
+            planName: "follow-up-repaint",
+            ordinal: 2,
+            text: "Follow-up validation approved.",
+        },
+    ],
+    scriptedInteractions: [{ type: "select", promptIncludes: "Plan recovery (implemented)", value: "follow_up" }],
+    actions: [
+        {
+            type: "seedActiveWorktree",
+            planName: "follow-up-repaint",
+            status: "implemented",
+            attrs: {
+                executionMode: "worktree",
+                humanReviewMode: "none",
+                humanReviewDecision: "not_required",
+            },
+            files: [{ path: "follow-up-repaint.txt", text: "implemented\n" }],
+        },
+        { type: "type", text: "/load-plan follow-up-repaint" },
+        { type: "enter" },
+        { type: "enter" },
+        { type: "waitForEvent", event: "runtime:session-replaced:execution_follow_up", timeoutMs: 30000 },
+        { type: "waitForScreen", text: "Plan Engineer", timeoutMs: 30000 },
+        { type: "captureProjectState", planNames: ["follow-up-repaint"], key: "afterFollowUpReplacement" },
+        { type: "type", text: "Please finish the follow-up." },
+        { type: "enter" },
+        { type: "waitForEvent", event: "runtime:tool:start:task_completed", timeoutMs: 60000 },
+        { type: "waitForRemotePlanStatus", planName: "follow-up-repaint", statuses: ["validated"], timeoutMs: 90000 },
+        { type: "waitForIdle", timeoutMs: 90000 },
+        { type: "captureProjectState", planNames: ["follow-up-repaint"] },
+    ],
+    assertions: [
+        assertsGoldenCoverage("recovery:load-plan-worktree", (result: GoldenScenarioResult) => {
+            assertEventIncludes(result, "terminal:type:/load-plan follow-up-repaint");
+            assertEventIncludes(result, "runtime:session-replaced:execution_follow_up");
+            assertEventIncludes(result, "runtime:tool:start:task_completed");
+            assertScreenIncludes(result, "Plan Engineer");
+            assertScreenIncludes(result, "follow-up-repaint");
+        }),
+        assertsGoldenCoverage("durable:session-replaced", (result: GoldenScenarioResult) => {
+            const snapshot = result.state.snapshot as RuntimeSnapshotState | undefined;
+            const replacementState = result.state.afterFollowUpReplacement as CapturedProjectState | undefined;
+            const entry = replacementState?.registryEntries?.find((candidate) =>
+                candidate.planName === "follow-up-repaint"
+            );
+            assert(entry?.path, "Expected the seeded worktree registry entry to record its path.");
+            assertEquals(snapshot?.cwd, entry.path);
+            assertEquals(snapshot?.activeAgent, "plan-engineer");
+            assertEquals(planStatus(result, "follow-up-repaint"), "validated");
+        }),
+        assertsGoldenCoverage("workflow:follow-up-validation", (result: GoldenScenarioResult) => {
+            assertEventIncludes(result, "runtime:tool:start:task_completed");
+            assertEventIncludes(result, "publication:remote-plan-status:follow-up-repaint:validated");
+            assertEquals(planStatus(result, "follow-up-repaint"), "validated");
+        }),
+    ],
+};
+
 export const loadPlanContinueUsesExecutionPlanAuthorityScenario = {
     name: "load-plan-continue-uses-execution-plan-authority",
     composedTui: true,
@@ -600,7 +714,7 @@ export const loadPlanContinueUsesExecutionPlanAuthorityScenario = {
             type: "setPrimaryPlanStatus",
             planName: "continue-authority",
             status: "draft",
-            clearWorktreeEvidence: true,
+            clearPrimaryWorktreeEvidence: true,
         },
         {
             type: "writeProjectFile",
@@ -626,9 +740,10 @@ export const loadPlanContinueUsesExecutionPlanAuthorityScenario = {
             assertEventIncludes(result, "project:primary-plan-status:continue-authority:draft");
             assertEventIncludes(result, "runtime:tool:start:task_completed");
             assert(
-                `${result.scrollbackText || ""}\n${result.screenText}`.includes("Plan text in the main checkout"),
-                "Expected the TUI to explain that it is using the different execution-worktree Plan text.",
+                !`${result.scrollbackText || ""}\n${result.screenText}`.includes("Plan text in the main checkout"),
+                "The primary document is not execution authority and must not produce a mismatch warning.",
             );
+            assert(`${result.scrollbackText || ""}\n${result.screenText}`.includes("Status: in_progress"));
             assert(
                 typeof result.state.primaryPlanAfterExecutionAuthority === "string" &&
                     result.state.primaryPlanAfterExecutionAuthority.includes("Keep this local text."),
@@ -704,8 +819,8 @@ export const loadPlanMalformedFrontMatterScenario = {
     ],
 };
 
-export const loadPlanValidateWaivedObjectiveChecksScenario = {
-    name: "load-plan-validate-waived-objective-checks-reaches-semantic-failure",
+export const loadPlanValidateWithoutCustomChecksScenario = {
+    name: "load-plan-validate-without-custom-checks-reaches-semantic-failure",
     composedTui: true,
     initialAgentName: "guide",
     terminal: { columns: 100, rows: 30 },
@@ -714,57 +829,142 @@ export const loadPlanValidateWaivedObjectiveChecksScenario = {
     committedProjectFiles: [
         { path: ".wld/settings.json", text: `${JSON.stringify({ verification_command: "true" }, null, 4)}\n` },
         {
-            path: "docs/plans/waived-validate.md",
+            path: "docs/plans/no-custom-checks.md",
             text:
-                '---\nplanId: waived-validate-plan\nclassification: PLANNED_CHANGE\ncomplexity: LOW\nsummary: Waived Objective Check validation\naffectedPaths: []\nobjectiveChecks:\n  - id: OC1\n    command: "false"\nobjectiveCheckWaivers:\n  - id: OC1\n    command: "false"\n    source: engineer_report\n    explanation: Golden waiver.\n    waivedAt: "2026-08-13T00:00:00.000Z"\nstatus: draft\n---\n# Waived validate\n',
+                "---\nplanId: no-custom-checks-plan\nclassification: PLANNED_CHANGE\ncomplexity: LOW\nsummary: Validation without custom checks\naffectedPaths: []\nstatus: draft\n---\n# Validate without custom checks\n",
         },
     ],
     scriptedInteractions: [{ type: "select", promptIncludes: "Plan recovery", value: "validate" }],
     actions: [
         {
             type: "seedActiveWorktree",
-            planName: "waived-validate",
+            planName: "no-custom-checks",
             status: "implemented",
             attrs: { executionMode: "worktree" },
         },
         {
             type: "setPrimaryPlanStatus",
-            planName: "waived-validate",
+            planName: "no-custom-checks",
             status: "ready_for_work",
             clearPrimaryWorktreeEvidence: true,
         },
-        { type: "type", text: "/load-plan waived-validate" },
+        { type: "type", text: "/load-plan no-custom-checks" },
         { type: "enter" },
         { type: "enter" },
-        { type: "sleep", ms: 1000 },
+        { type: "waitForScreen", text: "Status: implemented", timeoutMs: 30000 },
+        { type: "waitForScreen", text: "The build and tests passed.", timeoutMs: 90000 },
         { type: "waitForIdle", timeoutMs: 90000 },
-        { type: "sleep", ms: 1000 },
-        { type: "captureProjectState", planNames: ["waived-validate"] },
+        { type: "captureProjectState", planNames: ["no-custom-checks"] },
     ],
     assertions: [
         assertsGoldenCoverage("workflow:load-plan", (result: GoldenScenarioResult) => {
-            assertEventIncludes(result, "terminal:type:/load-plan waived-validate");
-            assertEventIncludes(result, "project:primary-plan-status:waived-validate:ready_for_work");
-            assert(
-                !`${result.scrollbackText || ""}\n${result.screenText}`.includes(
-                    "execution mode is missing or unknown",
-                ),
-                "Validation must use the execution Plan instead of stale primary lifecycle metadata.",
-            );
-            assertScreenIncludes(result, "All checks for waived-validate are waived");
-            assertScreenIncludes(result, "The build, tests, and checks passed.");
-            assertScreenIncludes(result, "Ask the Engineer to restore the code");
+            assertEventIncludes(result, "terminal:type:/load-plan no-custom-checks");
+            assertScreenIncludes(result, "The build and tests passed.");
             assertScreenIncludes(result, "Workflow Validation failed");
         }),
         assertsGoldenCoverage("recovery:workflow-validation", (result: GoldenScenarioResult) => {
-            const plan = projectState(result).plans?.find((entry) => entry.name === "waived-validate");
+            const plan = projectState(result).plans?.find((entry) => entry.name === "no-custom-checks");
+            assert(plan?.attrs?.status === "implemented");
+            assert(String(plan?.attrs?.failureReason || "").includes("No implementation changes detected"));
+        }),
+    ],
+};
+
+export const loadPlanDirectReviewScenario = {
+    name: "load-plan-direct-review-from-draft",
+    composedTui: true,
+    initialAgentName: "guide",
+    terminal: { columns: 100, rows: 30 },
+    timeoutMs: 90000,
+    coverage: ["workflow:load-plan", "durable:plan-lifecycle"],
+    reviewDecisions: [{ approved: true, feedback: "Direct review approved for later.", approvalAction: "later" }],
+    initialProjectFiles: [
+        {
+            path: "docs/plans/direct-review.md",
+            text:
+                '---\nclassification: PLANNED_CHANGE\ncomplexity: LOW\nsummary: Direct review\naffectedPaths: []\nobjectiveChecks:\n  - id: OC1\n    command: "true"\nstatus: draft\n---\n# Direct review\n',
+        },
+    ],
+    scriptedInteractions: [
+        { type: "select", promptIncludes: "What would you like to do", value: "review" },
+    ],
+    actions: [
+        { type: "type", text: "/load-plan direct-review" },
+        { type: "enter" },
+        { type: "enter" },
+        { type: "waitForPlanStatus", planName: "direct-review", statuses: ["ready_for_work"], timeoutMs: 60000 },
+        { type: "waitForIdle", timeoutMs: 30000 },
+        { type: "captureProjectState", planNames: ["direct-review"] },
+    ],
+    assertions: [
+        assertsGoldenCoverage("workflow:load-plan", (result: GoldenScenarioResult) => {
+            assertEventIncludes(result, "terminal:type:/load-plan direct-review");
+            assertScreenIncludes(result, "Plan saved. Resume later with: wld load-plan direct-review");
             assert(
-                plan?.attrs?.status === "implemented",
-                `Expected validation failure to return to implemented; got ${plan?.attrs?.status}`,
+                !result.events.some((event) => event.includes("runtime:tool:start:plan_written")),
+                "Direct review must not start Planner and plan_written before opening review.",
             );
+        }),
+        assertsGoldenCoverage("durable:plan-lifecycle", (result: GoldenScenarioResult) => {
             assert(
-                String(plan?.attrs?.failureReason || "").includes("No implementation changes detected"),
-                `Expected visible semantic failure reason to be stored; got ${plan?.attrs?.failureReason}`,
+                planStatus(result, "direct-review") === "ready_for_work",
+                `Expected direct review to leave ready_for_work; got ${planStatus(result, "direct-review")}`,
+            );
+        }),
+    ],
+};
+
+export const loadPlanDirectReviewRunScenario = {
+    name: "load-plan-direct-review-approves-and-runs",
+    composedTui: true,
+    initialAgentName: "guide",
+    terminal: { columns: 100, rows: 30 },
+    timeoutMs: 120000,
+    coverage: ["workflow:load-plan", "durable:plan-lifecycle"],
+    reviewDecisions: [{ approved: true, feedback: "Direct review approved to run.", approvalAction: "run" }],
+    initialProjectFiles: [
+        {
+            path: "docs/plans/direct-review-run.md",
+            text:
+                '---\nclassification: PLANNED_CHANGE\ncomplexity: LOW\nsummary: Direct review run\naffectedPaths: []\nobjectiveChecks:\n  - id: OC1\n    command: "false"\nstatus: draft\n---\n# Direct review run\n',
+        },
+    ],
+    scriptedInteractions: [
+        { type: "select", promptIncludes: "What would you like to do", value: "review" },
+    ],
+    script: [
+        {
+            id: "direct-review-run-engineer-completes",
+            agent: "engineer",
+            phase: "engineer",
+            ordinal: 1,
+            requiredTools: ["task_completed"],
+            toolCalls: [{ name: "task_completed", arguments: { message: "- direct run complete" } }],
+        },
+    ],
+    actions: [
+        { type: "type", text: "/load-plan direct-review-run" },
+        { type: "enter" },
+        { type: "enter" },
+        { type: "waitForEvent", event: "runtime:agent:plan-engineer", timeoutMs: 60000 },
+        { type: "waitForIdle", timeoutMs: 30000 },
+        { type: "captureProjectState", planNames: ["direct-review-run"] },
+    ],
+    assertions: [
+        assertsGoldenCoverage("workflow:load-plan", (result: GoldenScenarioResult) => {
+            assertEventIncludes(result, "terminal:type:/load-plan direct-review-run");
+            assertEventIncludes(result, "runtime:agent:plan-engineer");
+            assertEventIncludes(result, "runtime:tool:start:task_completed");
+            assertScreenIncludes(result, "launching Plan Engineer to execute");
+            assert(
+                !result.events.some((event) => event.includes("runtime:tool:start:plan_written")),
+                "Direct review Approve & Run must not start Planner before execution.",
+            );
+        }),
+        assertsGoldenCoverage("durable:plan-lifecycle", (result: GoldenScenarioResult) => {
+            assert(
+                planStatus(result, "direct-review-run") !== "draft",
+                `Expected direct review run to move out of draft; got ${planStatus(result, "direct-review-run")}`,
             );
         }),
     ],
@@ -772,12 +972,15 @@ export const loadPlanValidateWaivedObjectiveChecksScenario = {
 
 export const loadPlanWorkflowScenarios = [
     loadPlanActionsScenario,
+    loadPlanDirectReviewScenario,
+    loadPlanDirectReviewRunScenario,
     loadPlanResetReviewArchiveScenario,
     loadPlanCanceledExecutionThenPlannerReviewScenario,
     loadPlanInterruptedRecoveryScenario,
     loadPlanWorktreeInspectResetScenario,
     loadPlanAbandonProgressScenario,
+    loadPlanImplementedFollowUpRepaintsScenario,
     loadPlanContinueUsesExecutionPlanAuthorityScenario,
     loadPlanMalformedFrontMatterScenario,
-    loadPlanValidateWaivedObjectiveChecksScenario,
+    loadPlanValidateWithoutCustomChecksScenario,
 ];

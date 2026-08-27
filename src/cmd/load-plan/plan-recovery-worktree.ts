@@ -25,6 +25,7 @@ import {
 } from "../../shared/worktree-registry.js";
 import { buildPlanSummary } from "./plan-presentation.ts";
 import { transitionFailureError } from "./transition-failure.ts";
+import { resolveWorkflowPlanLocation } from "../../shared/workflow/plan-location.ts";
 
 import { recordPlanEvent } from "../../shared/workflow/plan-lifecycle.js";
 import type { PlanFrontMatter } from "../../plan-store.js";
@@ -173,10 +174,10 @@ export async function resolveRecoveryWorktree(
         const discovered = await discoverAttachedPlanWorktree(projectRoot, plan);
         if (discovered) return discovered;
     }
-    const path = plan.attrs.worktreePath || entry?.path;
-    const branch = plan.attrs.worktreeBranch || entry?.branch;
-    const id = plan.attrs.worktreeId || entry?.id;
-    const recordedBaseBranch = plan.attrs.worktreeBaseBranch || entry?.baseBranch;
+    const path = entry?.path || plan.attrs.worktreePath || undefined;
+    const branch = entry?.branch || plan.attrs.worktreeBranch || undefined;
+    const id = entry?.id || plan.attrs.worktreeId || undefined;
+    const recordedBaseBranch = entry?.baseBranch || plan.attrs.worktreeBaseBranch || undefined;
     const baseBranch = recordedBaseBranch === "HEAD" ? undefined : recordedBaseBranch;
     if (!path && !branch && !id) return null;
     return {
@@ -192,6 +193,7 @@ export async function resolveRecoveryWorktree(
         baseCommit: entry?.baseCommit,
         baseTree: entry?.baseTree,
         executionBaselineTree: entry?.executionBaselineTree,
+        publication: entry?.publication,
     };
 }
 
@@ -286,8 +288,9 @@ export async function reopenPlanForReview({
         return;
     }
     const priorWorktreeId = priorWorktree.id;
+    const { documentRoot } = await resolveWorkflowPlanLocation(projectRoot, plan.planName);
     const transition = await runReviewReopenTransition({
-        projectRoot,
+        projectRoot: documentRoot,
         planName: plan.planName,
         worktreeId: priorWorktreeId,
         expectedRevision: plan.revision,
@@ -296,7 +299,7 @@ export async function reopenPlanForReview({
             const updates = buildPlanEventUpdates("review_reopened", currentStatus, { triageMeta: beforePlan.attrs });
             await updateWorktreeRegistryEntry(projectRoot, priorWorktreeId, { status: "abandoned" });
             await markEffect("worktree_registry_abandoned", { worktreeId: priorWorktreeId });
-            const updatedAttrs = await updatePlanFrontMatter(projectRoot, plan.planName, updates, beforePlan.attrs, {
+            const updatedAttrs = await updatePlanFrontMatter(documentRoot, plan.planName, updates, beforePlan.attrs, {
                 expectedRevision: beforePlan.revision,
             });
             await markEffect("plan_event_recorded", { planName: plan.planName, event: "review_reopened" });
@@ -307,7 +310,8 @@ export async function reopenPlanForReview({
         throw transitionFailureError(transition, `Review reopen transition failed for ${plan.planName}.`);
     }
     session.clearActiveExecutionWorkflow();
-    plan.attrs = { ...plan.attrs, ...(transition.value as PlanFrontMatter) };
+    const refreshed = await loadPlan(documentRoot, plan.planName);
+    if (refreshed) Object.assign(plan, refreshed);
 }
 
 /**
@@ -326,11 +330,6 @@ export function hasWorktreeContext(context: RecoveryWorktreeContext | null | und
  * @param {RecoveryWorktreeContext | null} context
  * @returns {boolean}
  */
-export function canManuallyMergeRecoveredWorktree(context: RecoveryWorktreeContext | null | undefined): boolean {
-    return (context?.status === "merge_conflict" || context?.status === "publication_failed") &&
-        Boolean(context.baseBranch);
-}
-
 /**
  * @param {RecoveryWorktreeContext | null} context
  * @returns {string | null}
@@ -376,7 +375,7 @@ export function reportInvalidRecoveryPolicy(
  * @param {PlanSessionSurface} session
  * @param {import('../../ui/tui/types.js').UiAPI} [uiAPI]
  * @param {string} [action]
- * @returns {Promise<boolean>}
+ * @returns {Promise<RecoveryWorkflowState | null>}
  */
 export async function rehydrateActiveRecoveryWorkflow(
     projectRoot: string,
@@ -385,12 +384,12 @@ export async function rehydrateActiveRecoveryWorkflow(
     session: PlanSessionSurface,
     uiAPI?: UiAPI,
     action: string = "continue",
-): Promise<boolean> {
+): Promise<RecoveryWorkflowState | null> {
     const policy = resolvePlanExecutionPolicy(plan.attrs);
     if (!policy.ok) {
         if (uiAPI) {
             reportInvalidRecoveryPolicy(action, plan.planName, policy.error, uiAPI);
-            return false;
+            return null;
         }
         throw new Error(policy.error);
     }
@@ -417,7 +416,7 @@ export async function rehydrateActiveRecoveryWorkflow(
             if (uiAPI) {
                 console.error("[RunWield] Recovery action blocked", { action, reason: resolution.message });
                 uiAPI.appendSystemMessage(planRecoveryMessage("action_blocked"), false, "RunWield");
-                return false;
+                return null;
             }
             throw new Error(resolution.message);
         }
@@ -449,7 +448,7 @@ export async function rehydrateActiveRecoveryWorkflow(
         workflow.worktreeBaseBranch = resolvedContext.worktreeBaseBranch || undefined;
     }
     await session.setActiveExecutionWorkflow(workflow);
-    return true;
+    return workflow;
 }
 
 /**

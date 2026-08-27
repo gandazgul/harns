@@ -106,6 +106,7 @@ export const plannedChangeReviewRepairValidationScenario = {
         "durable:plan-lifecycle",
         "durable:worktree-publication",
         "durable:registry-cleanup",
+        "terminal:post-publication-input",
         "block:review-result",
         "block:validation-handoff",
     ],
@@ -129,11 +130,6 @@ export const plannedChangeReviewRepairValidationScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "plan",
-                    objectiveChecks: [{
-                        id: "OC1",
-                        command: "test -f golden-planned-change.txt",
-                        rationale: "implementation creates the golden planned-change artifact",
-                    }],
                 },
             }],
         },
@@ -148,11 +144,6 @@ export const plannedChangeReviewRepairValidationScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "plan",
-                    objectiveChecks: [{
-                        id: "OC1",
-                        command: "test -f golden-planned-change.txt",
-                        rationale: "implementation creates the golden planned-change artifact",
-                    }],
                 },
             }],
         },
@@ -232,6 +223,7 @@ export const plannedChangeReviewRepairValidationScenario = {
             agent: "engineer",
             phase: "engineer",
             ordinal: 5,
+            optional: false,
             text: "Engineer awaits re-review of the repair.",
         },
         {
@@ -264,14 +256,6 @@ export const plannedChangeReviewRepairValidationScenario = {
             ordinal: 4,
             text: "Reported the approved repair outcome.",
         },
-        {
-            id: "engineer-closes-after-delivery",
-            agent: "engineer",
-            phase: "engineer",
-            ordinal: 6,
-            optional: true,
-            text: "Engineer idle after delivery.",
-        },
     ],
     actions: [
         {
@@ -297,6 +281,15 @@ export const plannedChangeReviewRepairValidationScenario = {
         { type: "waitForWorktreeRegistryStatus", planName: "plan", statuses: ["absent"], timeoutMs: 90000 },
         { type: "waitForIdle", timeoutMs: 90000 },
         { type: "assertWorkflowDurability" },
+        { type: "setNextModelResponse", text: "Post-publication follow-up accepted in the completed workflow." },
+        { type: "type", text: "confirm the completed workflow is still interactive" },
+        { type: "enter" },
+        {
+            type: "waitForScreen",
+            text: "Post-publication follow-up accepted in the completed workflow.",
+            timeoutMs: 60000,
+        },
+        { type: "waitForIdle", timeoutMs: 60000 },
     ],
     assertions: [
         assertsGoldenCoverage("workflow:PLANNED_CHANGE", assertRealPlanReviewRevisionAndApproval),
@@ -325,6 +318,12 @@ export const plannedChangeReviewRepairValidationScenario = {
         assertsGoldenCoverage("recovery:workflow-validation", (result) => {
             assertScreenIncludes(result, "Running the tests in");
             assertEventIncludes(result, "workflow:durability:terminal-ready");
+            const transcript = `${result.scrollbackText || ""}\n${result.screenText || ""}`;
+            assertEquals(
+                transcript.includes("Objective-Failing Check"),
+                false,
+                "The full Plan journey must not request or run the retired Objective Check phase.",
+            );
         }),
         assertsGoldenCoverage("durable:plan-lifecycle", (result) => {
             const planReview =
@@ -339,6 +338,11 @@ export const plannedChangeReviewRepairValidationScenario = {
             assert(durability?.executionCommitPublished === true, "Expected validated commit publication.");
         }),
         assertRuntimeEvent("durable:registry-cleanup", "workflow:durability:registry-clean"),
+        assertsGoldenCoverage("terminal:post-publication-input", (result) => {
+            assertScreenIncludes(result, "confirm the completed workflow is still interactive");
+            assertScreenIncludes(result, "Post-publication follow-up accepted in the completed workflow.");
+            assert(result.state.editorUsable === true, "Expected input to remain ready after the follow-up.");
+        }),
         // The inline verdict block, asserted where it renders. `Reviewer:` is its own
         // header — the pinned panel titles the same report "Reviewer latest Review" —
         // and the verdict line is the body it exists to show.
@@ -356,80 +360,6 @@ export const plannedChangeReviewRepairValidationScenario = {
             // line also contains — it passed with the panel fully disabled.
             assertScreenIncludes(result, "Workflow Validation verified");
             assertScreenIncludes(result, "Reviewer latest Review");
-        }),
-    ],
-};
-
-/**
- * The same journey, interrupted by the one thing RunWield cannot decide: the user's
- * own uncommitted work sitting in the files this change touches.
- *
- * This is the failure people actually hit, and until now it existed only in unit
- * tests. What those cannot show is the part that matters — that the pause reaches the
- * screen as a real menu, that answering it resumes the same run, and that the merge
- * completes afterwards rather than starting the Plan over.
- */
-export const plannedChangeBlockedMergePauseScenario = {
-    ...plannedChangeReviewRepairValidationScenario,
-    name: "planned-change-uncommitted-work-blocks-merge",
-    coverage: ["recovery:user-pause", "block:select"],
-    committedProjectFiles: [
-        { path: "golden-planned-change.txt", text: "committed baseline\n" },
-    ],
-    scriptedInteractions: [
-        { type: "text", promptIncludes: "Enter the command that runs this project's tests", value: "true" },
-        {
-            type: "select",
-            promptIncludes: "have not saved to git yet",
-            // The user reads the message, clears what it named, and picks Retry —
-            // restoring the committed content is what `git checkout --` would do.
-            userFixesFirst: { path: "golden-planned-change.txt", text: "committed baseline\n" },
-            value: "retry",
-        },
-    ],
-    actions: [
-        {
-            type: "writeProjectFile",
-            path: "docs/plans/plan.md",
-            text:
-                "---\nclassification: PLANNED_CHANGE\ncomplexity: LOW\nsummary: Golden PLANNED_CHANGE\naffectedPaths: []\nstatus: draft\n---\n# Golden PLANNED_CHANGE\n\nDraft content.\n",
-        },
-        // Left dirty on purpose, in the same file the Agent is about to change. Git
-        // refuses to merge over it, which is correct: it is the user's work.
-        { type: "writeProjectFile", path: "golden-planned-change.txt", text: "my own unsaved edit\n" },
-        { type: "type", text: "submit the planned change for review" },
-        { type: "enter" },
-        // Same budget rationale as the scenario above: sized for 12-way parallel CI, not
-        // for a standalone run.
-        { type: "waitForIdle", timeoutMs: 240000 },
-        { type: "waitForEvent", event: "runtime:tool:start:task_completed", timeoutMs: 60000 },
-        { type: "waitForIdle", timeoutMs: 240000 },
-        { type: "assertWorkflowDurability" },
-    ],
-    assertions: [
-        assertsGoldenCoverage("recovery:user-pause", (result) => {
-            // The pause reached the screen in words a person can act on, naming the
-            // file and what to do about it — not a status name or a git error.
-            assertScreenIncludes(result, "have not saved to git yet");
-            assertScreenIncludes(result, "golden-planned-change.txt");
-            const durability =
-                /** @type {{ executionCommitPublished?: boolean } | undefined} */ (result.state.workflowDurability);
-            // And Retry finished the job in the same run: no second attempt from the
-            // user, no Plan sent back to the beginning.
-            assert(
-                durability?.executionCommitPublished === true,
-                "Expected Retry to publish after the user cleared the way.",
-            );
-        }),
-        assertsGoldenCoverage("block:select", (result) => {
-            const interactions = /** @type {Array<{ interaction?: { value?: string } }> | undefined} */ (result.state
-                .scriptedInteractions);
-            const retryInteractions = interactions?.filter((entry) => entry.interaction?.value === "retry") || [];
-            assertEquals(
-                retryInteractions.length,
-                1,
-                "Expected exactly one merge pause: RunWield asks once, then carries on.",
-            );
         }),
     ],
 };
@@ -606,7 +536,6 @@ export const plannedChangeNonGitInPlaceScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "non-git-plan",
-                    objectiveChecks: [{ id: "OC1", command: "test -f golden-non-git.txt" }],
                 },
             }],
         },
@@ -709,7 +638,6 @@ export const plannedChangeValidationFailureRetryScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "validation-retry",
-                    objectiveChecks: [{ id: "OC1", command: "test -f golden-validation-retry.txt" }],
                 },
             }],
         },
@@ -808,7 +736,7 @@ export const plannedChangeValidationFailureRetryScenario = {
             assertScreenIncludes(result, "Running the tests in");
             assertScreenIncludes(result, "will fix it now");
             const publication =
-                /** @type {{ remotePlanAttrs?: Record<string, unknown>, registryEntries?: Array<unknown> }} */ (result
+                /** @type {{ remotePlanAttrs?: Record<string, unknown>, controllerState?: import('../../../shared/workflow/controller-state.ts').WorkflowControllerState, registryEntries?: Array<unknown> }} */ (result
                     .state.publication);
             const attrs = publication.remotePlanAttrs;
             const ciRuns = countVisibleOccurrences(result, "Running the tests in");
@@ -826,8 +754,13 @@ export const plannedChangeValidationFailureRetryScenario = {
             );
             assert(attrs?.planId, "Expected Plan identity to remain populated after validation retry.");
             assert(
-                Number(attrs?.validationCiAttempts || 0) === 0,
-                `Expected CI attempts reset after success; got ${attrs?.validationCiAttempts}`,
+                publication.controllerState?.validationCiAttempts === 0,
+                `Expected controller CI attempts reset after success; got ${publication.controllerState?.validationCiAttempts}`,
+            );
+            assertEquals(
+                attrs?.validationCiAttempts,
+                undefined,
+                "retry counters must not be written into the published Plan",
             );
             assertEquals(publication.registryEntries?.length, 0, "Expected successful publication cleanup.");
         }),
@@ -863,7 +796,6 @@ export const plannedChangeValidationExhaustedScenario = {
                 name: "plan_written",
                 arguments: {
                     planName: "validation-exhausted",
-                    objectiveChecks: [{ id: "OC1", command: "test -f golden-validation-exhausted.txt" }],
                 },
             }],
         },
@@ -984,7 +916,6 @@ export const plannedChangeFrontendIdentityScenario = {
                 arguments: {
                     planName: "frontend-identity",
                     executionAgent: "frontend-engineer",
-                    objectiveChecks: [{ id: "OC1", command: "true" }],
                 },
             }],
         },

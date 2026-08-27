@@ -10,6 +10,9 @@ import { AGENTS } from "../../constants.js";
 import { loadAgentDef, normalizeAgentInternalName } from "./agents.js";
 
 export const ACTIVE_AGENT_CUSTOM_TYPE = "runwield.active_agent";
+export const MANUAL_MODEL_CUSTOM_TYPE = "runwield.manual_model";
+
+/** @typedef {Pick<import('./hosted-session.js').MinimalSessionManagerLike, 'getBranch' | 'getEntries'>} SessionEntryReader */
 
 /**
  * @typedef {Object} PersistedModelState
@@ -23,6 +26,58 @@ export const ACTIVE_AGENT_CUSTOM_TYPE = "runwield.active_agent";
  * @property {string} [provider]
  * @property {string} [modelId]
  */
+
+/**
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager
+ * @param {string} provider
+ * @param {string} model
+ */
+export function recordManualModelSelection(sessionManager, provider, model) {
+    if (!sessionManager?.appendCustomEntry || !model?.trim()) return;
+
+    try {
+        sessionManager.appendCustomEntry(MANUAL_MODEL_CUSTOM_TYPE, {
+            provider: provider?.trim() || "",
+            model: model.trim(),
+        });
+    } catch (_e) {
+        // Manual-model persistence should never block model activation.
+    }
+}
+
+/**
+ * @param {SessionEntryReader | undefined} sessionManager
+ * @param {string} [agentName] Only return a choice owned by this active Agent.
+ * @returns {PersistedModelState | null}
+ */
+export function readPersistedManualModelState(sessionManager, agentName) {
+    const entries = getSessionEntries(sessionManager);
+    let activeAgent = "";
+    /** @type {PersistedModelState | null} */
+    let selection = null;
+    for (const entry of entries) {
+        const recordedAgent = readAgentNameFromEntry(entry);
+        if (recordedAgent) {
+            const nextAgent = normalizeAgentInternalName(recordedAgent);
+            // A manual choice belongs to one activation, not to the whole
+            // transcript. Switching away and back must not resurrect it.
+            if (activeAgent && nextAgent !== activeAgent) selection = null;
+            activeAgent = nextAgent;
+            continue;
+        }
+        if (!entry || typeof entry !== "object") continue;
+        const typed =
+            /** @type {{ type?: string, customType?: string, data?: { provider?: unknown, model?: unknown } }} */ (entry);
+        if (typed.type !== "custom" || typed.customType !== MANUAL_MODEL_CUSTOM_TYPE) continue;
+        if (typeof typed.data?.model !== "string" || !typed.data.model.trim()) continue;
+        selection = {
+            provider: typeof typed.data.provider === "string" ? typed.data.provider.trim() : "",
+            model: typed.data.model.trim(),
+        };
+    }
+    if (agentName && activeAgent && normalizeAgentInternalName(agentName) !== activeAgent) return null;
+    return selection;
+}
 
 /**
  * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager
@@ -42,7 +97,7 @@ export function recordActiveAgent(sessionManager, agentName) {
 }
 
 /**
- * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager
+ * @param {SessionEntryReader | undefined} sessionManager
  * @returns {string | null}
  */
 export function readPersistedActiveAgentName(sessionManager) {
@@ -87,6 +142,12 @@ export async function resolveResumeAgentName(sessionManager) {
         const agentName = readAgentNameFromEntry(entries[i]);
         if (!agentName) continue;
 
+        // Slicer is a persistent interactive workflow phase, but its definition
+        // intentionally lives outside top-level Agent discovery. The Runtime
+        // reconstructs its Epic-scoped definition and tools when this marker is
+        // resumed, so do not skip back to the preceding Architect marker here.
+        if (agentName.trim().toLowerCase() === AGENTS.SLICER) return AGENTS.SLICER;
+
         try {
             const agentDefinition = await loadAgentDef(agentName, projectRoot || undefined);
             return agentDefinition.name;
@@ -100,7 +161,7 @@ export async function resolveResumeAgentName(sessionManager) {
 }
 
 /**
- * @param {import('@earendil-works/pi-coding-agent').SessionManager | undefined} sessionManager
+ * @param {SessionEntryReader | undefined} sessionManager
  * @returns {unknown[]}
  */
 function getSessionEntries(sessionManager) {

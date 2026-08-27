@@ -753,6 +753,60 @@ Deno.test("SessionRuntime synchronization recovers safe append-only output after
     );
 });
 
+Deno.test("SessionRuntime does not emit unchanged current managed sync state on idle polls", async () => {
+    await withRuntimeCommandFixture(
+        "runtime-managed-idle-sync-",
+        async ({ homeDir, projectRoot }) => {
+            const store = openOwnerCoordinationStore({ dbPath: `${homeDir}/owner.sqlite3` });
+            try {
+                const writerRuntime = createSessionRuntime({
+                    sessionStore: store,
+                    ownerProcessKind: "test",
+                    ownerInstanceId: "runtime-idle-sync-writer",
+                });
+                let runwieldSessionId = "";
+                try {
+                    const created = await writerRuntime.createInteractiveSession({ cwd: projectRoot, mode: "new" });
+                    await writerRuntime.switchAgent(created.sessionId, { agentName: "Ideator" });
+                    runwieldSessionId = writerRuntime.getSessionSnapshot(created.sessionId)?.managed
+                        ?.runwieldSessionId || "";
+                    assert(runwieldSessionId);
+                } finally {
+                    await writerRuntime.closeAllSessionsWhenIdle?.();
+                }
+
+                const observerRuntime = createSessionRuntime({
+                    sessionStore: store,
+                    ownerProcessKind: "test",
+                    ownerInstanceId: "runtime-idle-sync-observer",
+                });
+                try {
+                    const resumed = await observerRuntime.createInteractiveSession({
+                        cwd: projectRoot,
+                        mode: "continue",
+                        resumeSessionId: runwieldSessionId,
+                    });
+                    await observerRuntime.synchronizeManagedSession(resumed.sessionId);
+                    /** @type {string[]} */
+                    const events = [];
+                    observerRuntime.subscribeSessionEvents(resumed.sessionId, (event) => {
+                        if (event.type === RuntimeEventTypes.MANAGED_SYNC_STATE_CHANGED) events.push(event.status);
+                    });
+
+                    await observerRuntime.synchronizeManagedSession(resumed.sessionId);
+                    await observerRuntime.synchronizeManagedSession(resumed.sessionId);
+
+                    assertEquals(events, []);
+                } finally {
+                    await observerRuntime.closeAllSessionsWhenIdle?.();
+                }
+            } finally {
+                store.close();
+            }
+        },
+    );
+});
+
 Deno.test("SessionRuntime hydrates dormant managed Sessions for direct Plan workflow operations", async () => {
     await withRuntimeCommandFixture(
         "runtime-managed-plan-workflow-",
@@ -907,6 +961,23 @@ Deno.test("SessionRuntime continue opens the explicitly requested saved Session"
         assertEquals(resumedRuntime.getSessionSnapshot(resumed.sessionId)?.managed?.runwieldSessionId, firstRunWieldId);
     } finally {
         await resumedRuntime.closeAllSessionsWhenIdle();
+    }
+
+    const transcriptIdRuntime = createSessionRuntime({ ownerProcessKind: "test" });
+    try {
+        const resumed = await transcriptIdRuntime.createInteractiveSession({
+            cwd,
+            mode: "continue",
+            resumeSessionId: firstPersistedId,
+        });
+
+        assertEquals(transcriptIdRuntime.getSessionSnapshot(resumed.sessionId)?.sessionManagerId, firstPersistedId);
+        assertEquals(
+            transcriptIdRuntime.getSessionSnapshot(resumed.sessionId)?.managed?.runwieldSessionId,
+            firstRunWieldId,
+        );
+    } finally {
+        await transcriptIdRuntime.closeAllSessionsWhenIdle();
     }
 });
 
@@ -1271,27 +1342,54 @@ Deno.test("SessionRuntime prompt-ready metadata is limited to unpersisted new-se
     }
 });
 
-Deno.test("SessionRuntime managed operation prefers persisted active agent over stale catalog summary", async () => {
-    const source = await Deno.readTextFile(new URL("./session-runtime.js", import.meta.url));
-    const managedOperationIndex = source.indexOf("async #runManagedOperation(sessionId, descriptor, body)");
-    const openIndex = source.indexOf("await openPersistedRootSession({", managedOperationIndex);
-    const agentSelectionIndex = source.indexOf(
-        "let agentName = options.agentName || pendingIntent.agentName || null;",
-        openIndex,
-    );
-    const persistedAgentIndex = source.indexOf(
-        "agentName ||= await resolveResumeAgentName(sessionManager);",
-        agentSelectionIndex,
-    );
-    const cacheFallbackIndex = source.indexOf("|| managed.activeAgent", openIndex);
-    const activateIndex = source.indexOf("await this.#activateSessionAgent(hostedSession, {", persistedAgentIndex);
+/**
+ * @typedef {Object} ManagedModelTurnSample
+ * @property {string | null | undefined} agent
+ * @property {string} prompt
+ * @property {string} model
+ */
 
-    assertEquals(managedOperationIndex >= 0, true);
-    assertEquals(openIndex > managedOperationIndex, true);
-    assertEquals(agentSelectionIndex > openIndex, true);
-    assertEquals(persistedAgentIndex > agentSelectionIndex, true);
-    assertEquals(cacheFallbackIndex, -1);
-    assertEquals(activateIndex > persistedAgentIndex, true);
+Deno.test("SessionRuntime managed operation prefers persisted active agent over stale catalog summary", async () => {
+    await withRuntimeCommandFixture(
+        "runtime-stale-agent-summary-",
+        async ({ projectRoot, setModelResponseFactory }) => {
+            const sessionHost = new SessionHost();
+            const runtime = new SessionRuntime({
+                sessionHost,
+                sessionStore: openFileSessionStore(),
+                ownsSessionStore: true,
+                ownerProcessKind: "test",
+                ownerInstanceId: crypto.randomUUID(),
+            });
+            try {
+                const sessionId = await runtime.createPromptReadySession({ cwd: projectRoot, agentName: "guide" });
+                const hosted = sessionHost.getSession(sessionId);
+                assert(hosted);
+                const managed = hosted.getManagedMetadata();
+                assert(managed);
+                hosted.setManagedMetadata({ ...managed, activeAgent: "router", model: "stale-router-model" });
+                /** @type {ManagedModelTurnSample[]} */
+                const turns = [];
+                setModelResponseFactory((context, _options, _state, model) => {
+                    turns.push({
+                        agent: runtime.getSessionSnapshot(sessionId)?.activeAgent,
+                        prompt: context.systemPrompt || "",
+                        model: model.id,
+                    });
+                    return fauxAssistantMessage(fauxText("The saved Guide handled this turn."));
+                });
+                const result = await runtime.promptUserTurn(sessionId, { initialRequest: "Continue explaining." });
+                assertEquals(result.ok, true);
+                assertEquals(turns.length, 1);
+                assertEquals(turns[0].agent, "guide");
+                assertEquals(turns[0].model, "fixture-model");
+                assert(turns[0].prompt.includes("You are the Guide"));
+                assertEquals(runtime.getSessionSnapshot(sessionId)?.activeAgent, "guide");
+            } finally {
+                await runtime.closeAllSessionsWhenIdle();
+            }
+        },
+    );
 });
 
 Deno.test("SessionRuntime managed prompt acquires activation before writable hydration and publication", async () => {
@@ -1337,52 +1435,53 @@ Deno.test("SessionRuntime managed prompt acquires activation before writable hyd
     assertEquals(recoveryIndex > publishIndex, true);
 });
 
-Deno.test("SessionRuntime managed workflow operations acquire activation before hydration and checkpoint before publish", async () => {
-    const source = await Deno.readTextFile(new URL("./session-runtime.js", import.meta.url));
-    const managedOperationIndex = source.indexOf("async #runManagedOperation(sessionId, descriptor, body)");
-    const nextMethodIndex = source.indexOf("async promptManagedSession(sessionId, options)", managedOperationIndex);
-    const operationBody = source.slice(managedOperationIndex, nextMethodIndex);
-    const inspectIndex = operationBody.indexOf("inspectSessionActivation(managed.runwieldSessionId)");
-    const acquireIndex = operationBody.indexOf("acquireSessionActivation({", inspectIndex);
-    const hydratedIndex = operationBody.indexOf('changeSessionActivationPhase(activeProof, "hydrated")', acquireIndex);
-    const openIndex = operationBody.indexOf("await openPersistedRootSession({", hydratedIndex);
-    const agentSelectionIndex = operationBody.indexOf(
-        "let agentName = options.agentName || pendingIntent.agentName || null;",
-        openIndex,
-    );
-    const persistedAgentIndex = operationBody.indexOf(
-        "agentName ||= await resolveResumeAgentName(sessionManager);",
-        agentSelectionIndex,
-    );
-    const activateIndex = operationBody.indexOf(
-        "await this.#activateSessionAgent(hostedSession, {",
-        persistedAgentIndex,
-    );
-    const turningIndex = operationBody.indexOf('changeSessionActivationPhase(activeProof, "turning")', activateIndex);
-    const operationIndex = operationBody.indexOf(
-        "async () => await body({ acceptedTurnId, hasPendingImages, capability }),",
-        turningIndex,
-    );
-    const checkpointIndex = operationBody.indexOf(
-        'changeSessionActivationPhase(activeProof, "checkpointing")',
-        operationIndex,
-    );
-    const publishIndex = operationBody.indexOf("publishGenerationAndRelease(activeProof", checkpointIndex);
-    const cacheFallbackIndex = operationBody.indexOf("|| managed.activeAgent", persistedAgentIndex);
+/**
+ * @typedef {Object} ManagedActivationSample
+ * @property {string | undefined} state
+ * @property {string | null | undefined} phase
+ * @property {boolean} writable
+ */
 
-    assertEquals(managedOperationIndex >= 0, true);
-    assertEquals(inspectIndex >= 0, true);
-    assertEquals(acquireIndex > inspectIndex, true);
-    assertEquals(hydratedIndex > acquireIndex, true);
-    assertEquals(openIndex > hydratedIndex, true);
-    assertEquals(agentSelectionIndex > openIndex, true);
-    assertEquals(persistedAgentIndex > agentSelectionIndex, true);
-    assertEquals(cacheFallbackIndex, -1);
-    assertEquals(activateIndex > agentSelectionIndex, true);
-    assertEquals(turningIndex > activateIndex, true);
-    assertEquals(operationIndex > turningIndex, true);
-    assertEquals(checkpointIndex > operationIndex, true);
-    assertEquals(publishIndex > checkpointIndex, true);
+Deno.test("SessionRuntime managed workflow operations hold activation during model execution and publish afterward", async () => {
+    await withRuntimeCommandFixture(
+        "runtime-operation-publication-",
+        async ({ projectRoot, setModelResponseFactory }) => {
+            const store = openFileSessionStore();
+            const sessionHost = new SessionHost();
+            const runtime = new SessionRuntime({
+                sessionHost,
+                sessionStore: store,
+                ownerProcessKind: "test",
+                ownerInstanceId: crypto.randomUUID(),
+            });
+            try {
+                const sessionId = await runtime.createPromptReadySession({ cwd: projectRoot, agentName: "guide" });
+                const managed = sessionHost.getSession(sessionId)?.getManagedMetadata();
+                assert(managed);
+                /** @type {ManagedActivationSample[]} */
+                const samples = [];
+                setModelResponseFactory(() => {
+                    const activation = store.inspectSessionActivation(managed.runwieldSessionId).activation;
+                    samples.push({
+                        state: activation?.state,
+                        phase: activation?.phase,
+                        writable: Boolean(sessionHost.getSession(sessionId)?.getRootSessionManager()),
+                    });
+                    return fauxAssistantMessage(fauxText("The isolated operation completed."));
+                });
+                await runtime.runIsolatedAgent(sessionId, { agentName: "guide", userRequest: "Inspect this project." });
+                assertEquals(samples, [{ state: "active", phase: "turning", writable: true }]);
+                const published = store.inspectSessionActivation(managed.runwieldSessionId);
+                assertEquals(published.activation?.state, "idle");
+                assertEquals(published.generation?.generation, (managed.generation ?? 0) + 1);
+                assertEquals(published.generation?.byteLength, (await Deno.stat(managed.transcriptPath)).size);
+                assertEquals(sessionHost.getSession(sessionId)?.getRootSessionManager(), null);
+            } finally {
+                await runtime.closeAllSessionsWhenIdle();
+                store.close();
+            }
+        },
+    );
 });
 
 Deno.test("SessionRuntime uses one segmented user-turn submission path", async () => {
@@ -1438,6 +1537,49 @@ Deno.test("SessionRuntime routes execution continuation input to the resolved Pl
     // The workflow still records `engineer`; the user talks to Plan Engineer.
     assertEquals(runtime.getSessionSnapshot(sessionId)?.activeAgent, "plan-engineer");
     assertEquals(changedAgents, ["planner", "plan-engineer"]);
+});
+
+Deno.test("SessionRuntime keeps the next Epic decomposition reply with Slicer", async () => {
+    const projectRoot = join(runtimeProjectRoot(), `slicer-resume-${crypto.randomUUID()}`);
+    await Deno.mkdir(projectRoot, { recursive: true });
+    await savePlan(projectRoot, "epic-a", "# Epic A", {
+        classification: "PROJECT",
+        complexity: "HIGH",
+        summary: "Epic A",
+        affectedPaths: ["src/epic.ts"],
+        status: "ready_for_decomposition",
+    });
+    let resumedSystemPrompt = "";
+    const resumedToolNames = new Set([""]);
+    resumedToolNames.clear();
+    setRuntimeModelResponseFactories([
+        () => fauxAssistantMessage(fauxText("I recommend two child Plans. Should I finalize them?")),
+        (context) => {
+            resumedSystemPrompt = context.systemPrompt || "";
+            for (const tool of context.tools || []) resumedToolNames.add(tool.name);
+            return fauxAssistantMessage(fauxText("I will keep refining this Epic decomposition."));
+        },
+    ]);
+    const runtime = makeRuntime();
+    const sessionId = await runtime.createPromptReadySession({ cwd: projectRoot, agentName: "architect" });
+
+    try {
+        const slicerResult = await runtime.runSlicerAgent(sessionId, { planName: "epic-a" });
+        assertEquals(slicerResult, { ok: true });
+        assertEquals(runtime.getSessionSnapshot(sessionId)?.activeAgent, "slicer");
+
+        const replyResult = await runtime.promptUserTurn(sessionId, {
+            initialRequest: "Yes; use epic-base as the shared branch and finalize the children.",
+            initialImages: [],
+        });
+
+        assertEquals(replyResult.ok, true);
+        assertEquals(runtime.getSessionSnapshot(sessionId)?.activeAgent, "slicer");
+        assertEquals(resumedSystemPrompt.includes("You are the Slicer"), true);
+        assertEquals(resumedToolNames.has("slicer_finalize_decomposition"), true);
+    } finally {
+        await runtime.closeSession(sessionId);
+    }
 });
 
 Deno.test("SessionRuntime owns managed submission blocking messages", () => {
@@ -1692,7 +1834,6 @@ Deno.test("SessionRuntime keeps executePlan workflow operations busy while prepa
                 summary: planName,
                 affectedPaths: [],
                 planId: "execute-busy-plan-id",
-                objectiveChecks: [{ id: "OC_BUSY", command: "test -f missing-objective-marker" }],
             });
             // Exercise the real persisted-consent path against the fixture HOME. This keeps
             // the test on the non-Git execution branch without replacing workflow machinery
@@ -1716,7 +1857,6 @@ Deno.test("SessionRuntime keeps executePlan workflow operations busy while prepa
                     if (
                         event.message.includes("preparing execution target") ||
                         event.message.includes("preparing in-place execution") ||
-                        event.message.includes("running Plan Objective-Failing Check baseline") ||
                         event.message.includes("updating Plan status to in_progress") ||
                         event.message.includes("launching Plan Engineer to execute")
                     ) {
@@ -1755,11 +1895,10 @@ Deno.test("SessionRuntime keeps executePlan workflow operations busy while prepa
             assertEquals(preparationMessages.map((entry) => entry.message), [
                 "preparing execution target...",
                 "preparing in-place execution because Git is unavailable...",
-                "running Plan Objective-Failing Check baseline...",
                 "updating Plan status to in_progress...",
                 "launching Plan Engineer to execute...",
             ]);
-            assertEquals(preparationMessages.map((entry) => entry.busy), [true, true, true, true, true]);
+            assertEquals(preparationMessages.map((entry) => entry.busy), [true, true, true, true]);
             assertEquals(runtime.getSessionSnapshot(sessionId)?.busy, false);
             runtime.closeAllSessions();
         },
@@ -1961,38 +2100,65 @@ Deno.test("SessionRuntime publishes handler errors and releases the turn", async
 Deno.test("SessionRuntime rejects overlapping turns for one id", async () => {
     /** @type {() => void} */
     let release = () => {};
-    let responseStarted = false;
-    setRuntimeModelResponseFactories([
-        () =>
-            new Promise((resolve) => {
-                responseStarted = true;
-                release = () => resolve(fauxAssistantMessage(fauxText("Released.")));
-            }),
-    ]);
+    const released = new Promise((resolve) => {
+        release = () => resolve(undefined);
+    });
+    /** @type {() => void} */
+    let markStarted = () => {};
+    const started = new Promise((resolve) => {
+        markStarted = () => resolve(undefined);
+    });
+    setRuntimeModelResponseFactories([async () => {
+        markStarted();
+        await released;
+        return fauxAssistantMessage(fauxText("Released."));
+    }]);
     const runtime = makeRuntime();
     const sessionId = await runtime.createPromptReadySession({ cwd: runtimeProjectRoot() });
 
     const first = runtime.promptSession(sessionId, { initialRequest: "first", initialImages: [] });
-    for (let attempt = 0; attempt < 100 && !responseStarted; attempt++) await delay(1);
-    assertEquals(runtime.getSessionSnapshot(sessionId)?.busy, true);
-    await assertRejects(
-        () => runtime.promptSession(sessionId, { initialRequest: "second", initialImages: [] }),
-        SessionTurnInProgressError,
-        "already has an active turn",
-    );
-
-    release();
-    await first;
-    assertEquals(runtime.getSessionSnapshot(sessionId)?.busy, false);
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timeoutId;
+    try {
+        await Promise.race([
+            started,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error("The first model turn did not start")), 10000);
+            }),
+        ]);
+        assertEquals(runtime.getSessionSnapshot(sessionId)?.busy, true);
+        await assertRejects(
+            () => runtime.promptSession(sessionId, { initialRequest: "second", initialImages: [] }),
+            SessionTurnInProgressError,
+            "already has an active turn",
+        );
+    } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        release();
+        await first;
+        assertEquals(runtime.getSessionSnapshot(sessionId)?.busy, false);
+        await runtime.closeAllSessionsWhenIdle();
+    }
 });
 
 Deno.test("SessionRuntime allows independent session ids to run concurrently", async () => {
-    /** @type {Array<() => void>} */
-    const releases = [];
-    setRuntimeModelResponseFactories([
-        () => new Promise((resolve) => releases.push(() => resolve(fauxAssistantMessage(fauxText("Alpha."))))),
-        () => new Promise((resolve) => releases.push(() => resolve(fauxAssistantMessage(fauxText("Beta."))))),
-    ]);
+    /** @type {() => void} */
+    let releaseResponses = () => {};
+    const released = new Promise((resolve) => {
+        releaseResponses = () => resolve(undefined);
+    });
+    /** @type {() => void} */
+    let markBothStarted = () => {};
+    const bothStarted = new Promise((resolve) => {
+        markBothStarted = () => resolve(undefined);
+    });
+    let startedCount = 0;
+    setRuntimeModelResponseFactories(["Alpha.", "Beta."].map((text) => async () => {
+        startedCount++;
+        if (startedCount === 2) markBothStarted();
+        await released;
+        return fauxAssistantMessage(fauxText(text));
+    }));
     const runtime = makeRuntime();
     const alpha = await runtime.createPromptReadySession({ cwd: runtimeProjectRoot() });
     const beta = await runtime.createPromptReadySession({ cwd: runtimeProjectRoot() });
@@ -2001,10 +2167,24 @@ Deno.test("SessionRuntime allows independent session ids to run concurrently", a
         runtime.promptSession(alpha, { initialRequest: "alpha", initialImages: [] }),
         runtime.promptSession(beta, { initialRequest: "beta", initialImages: [] }),
     ];
-    for (let index = 0; index < 100 && releases.length < 2; index++) await delay(1);
-    assertEquals(runtime.getSessionSnapshot(alpha)?.busy, true);
-    assertEquals(runtime.getSessionSnapshot(beta)?.busy, true);
-    for (const release of releases) release();
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timeoutId;
+    try {
+        await Promise.race([
+            bothStarted,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error("Both model turns did not start concurrently")), 10000);
+            }),
+        ]);
+        assertEquals(runtime.getSessionSnapshot(alpha)?.busy, true);
+        assertEquals(runtime.getSessionSnapshot(beta)?.busy, true);
+    } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        // A shared gate also releases a late-starting response on failure.
+        releaseResponses();
+        await Promise.all(prompts);
+        await runtime.closeAllSessionsWhenIdle();
+    }
     assertEquals((await Promise.all(prompts)).map((result) => result.ok), [true, true]);
 });
 

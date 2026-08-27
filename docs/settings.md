@@ -143,6 +143,11 @@ Type: string.
 Names the active entry in `modelPresets`. If unset, missing, or unknown, RunWield uses the base `agents` overrides. If a
 session has a manual `/model` override, the manual override wins until the active agent changes.
 
+The choice survives follow-up messages and resuming that Agent's session. Both `/agent` and automatic workflow handoffs
+resolve the destination Agent's configured model afresh; switching back does not revive an earlier manual override. Each
+successful Agent activation or preset reload saves the Agent and its resolved model together, so the next message and
+resume use the same pair. A failed handoff leaves the previous Agent and model unchanged.
+
 ### `modelPresets`
 
 Type: object.
@@ -345,7 +350,7 @@ These keys are read by RunWield outside the upstream Pi `SettingsManager` schema
 | `modelPresets`                             | object            | preset-name map                                 | global + project | Named per-agent override sets.                                                                                                                                                                                                                        |
 | `visionFallback`                           | object            | unset                                           | global + project | Vision-capable fallback model used by `see_image` when the active model is text-only.                                                                                                                                                                 |
 | `compactOnResumeThresholdPercent`          | integer           | `1`-`100`, default `50`                         | global + project | `/resume` offers compaction when estimated context reaches this percentage of the selected model context window.                                                                                                                                      |
-| `verification_command`                     | string            | no default                                      | project          | Command used by workflow validation. Saved when RunWield asks for a validation command.                                                                                                                                                               |
+| `verification_command`                     | string            | no default                                      | project          | Command used by Workflow Validation. Init infers candidates from repository evidence, asks the user to confirm one, and saves the confirmed project command. Selecting no implemented verification saves `echo "verification not implemented yet"`.   |
 | `codereview`                               | string            | `none`, `ask`, `always`; default `none`         | global + project | Optional Plannotator human code review gate after local validation and semantic review pass, before merge-back. Invalid values fall back to `none`.                                                                                                   |
 | `guidedReview`                             | string            | `none`, `ask`, `auto`, `always`; default `auto` | global + project | Guided Review Explainer generation policy inside human code review. Invalid values fall back to `none`; manual generation remains available when supported.                                                                                           |
 | `cleanupMergedWorktrees`                   | boolean           | default `true`                                  | global + project | When true, successful merge-back removes a clean execution checkout, deletes its registry entry, and clears Plan worktree metadata. Unexpected dirty state is preserved rather than force-deleted. Set false to keep merged worktrees for inspection. |
@@ -587,8 +592,8 @@ Nested Pi-backed objects such as `compaction`, `branchSummary`, `retry`, `termin
 | `retry.provider.maxRetryDelayMs` | number  | default `60000`  | Provider SDK maximum server-requested retry delay before failing; `0` disables the provider cap only. |
 
 Workflow Validation uses `retry.enabled`, `retry.maxRetries`, `retry.baseDelayMs`, and `retry.validation.maxDelayMs` for
-operational retries. These retries do not spend CI repair rounds, Objective-Failing Check repair rounds, or Semantic
-Code Review rounds. The `retry.provider.*` settings stay provider-only.
+operational retries. These retries do not spend CI repair rounds or Semantic Code Review rounds. The `retry.provider.*`
+settings stay provider-only.
 
 ### `terminal`
 

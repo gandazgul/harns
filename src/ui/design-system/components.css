@@ -32,18 +32,257 @@
 
 .disabled-action {
     border: 1px solid var(--rw-accent);
-    border-radius: 999px;
+    border-radius: var(--rw-radius-control);
     color: var(--rw-text-muted);
     padding: 0.45rem 0.75rem;
     background: var(--rw-surface-raised);
+}
+
+.rw-toolbar-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: none;
+    border: 1px solid color-mix(in srgb, var(--rw-border) 75%, transparent);
+    min-height: var(--rw-control-height-compact);
+    border-radius: var(--rw-radius-control);
+    padding: 0.35rem 0.55rem;
+    background: color-mix(in srgb, var(--rw-surface) 88%, var(--rw-surface-raised));
+    color: var(--rw-text);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.rw-toolbar-button:hover:not(:disabled),
+.rw-toolbar-button:focus-visible:not(:disabled) {
+    border-color: color-mix(in srgb, var(--rw-accent) 55%, var(--rw-border));
+    color: var(--rw-accent);
+}
+
+.rw-toolbar-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.rw-segmented-toggle {
+    display: inline-flex;
+    gap: 0.25rem;
+    border: 1px solid color-mix(in srgb, var(--rw-border) 75%, transparent);
+    border-radius: var(--rw-radius-card);
+    padding: 0.18rem;
+    background: color-mix(in srgb, var(--rw-surface) 88%, var(--rw-surface-raised));
+}
+
+.rw-segmented-toggle button {
+    display: inline-flex;
+    width: 1.75rem !important;
+    min-width: 0;
+    height: var(--rw-control-height-compact);
+    min-height: var(--rw-control-height-compact);
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: var(--rw-radius-control);
+    padding: 0;
+    color: var(--rw-text-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.rw-segmented-toggle button > div {
+    align-items: center;
+    gap: 0.35rem !important;
+    padding-left: 0 !important;
+}
+
+.rw-segmented-toggle button svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex: none;
+}
+
+.rw-segmented-toggle button span:not([aria-hidden]) {
+    display: block;
+    min-width: 0;
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+}
+
+.rw-segmented-toggle button.active,
+.rw-segmented-toggle button[aria-pressed="true"],
+.rw-segmented-toggle button[aria-selected="true"] {
+    width: auto !important;
+    gap: 0.35rem;
+    padding-inline: 0.55rem;
+}
+
+.rw-segmented-toggle button.active span:not([aria-hidden]),
+.rw-segmented-toggle button[aria-pressed="true"] span:not([aria-hidden]),
+.rw-segmented-toggle button[aria-selected="true"] span:not([aria-hidden]) {
+    max-width: 12rem;
+    opacity: 1;
+}
+
+.rw-segmented-toggle button:hover:not(:disabled),
+.rw-segmented-toggle button:focus-visible:not(:disabled) {
+    background: color-mix(in srgb, var(--rw-accent) 8%, transparent);
+    color: var(--rw-text);
+}
+
+.rw-segmented-toggle button:focus-visible {
+    outline: 2px solid var(--rw-accent);
+    outline-offset: 2px;
+}
+
+.rw-segmented-toggle button.active,
+.rw-segmented-toggle button[aria-pressed="true"],
+.rw-segmented-toggle button[aria-selected="true"] {
+    border-color: color-mix(in srgb, var(--rw-accent) 45%, var(--rw-border));
+    background: color-mix(in srgb, var(--rw-accent) 12%, transparent);
+    color: var(--rw-accent);
+}
+
+.rw-segmented-toggle button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.rw-modal-primary-button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.375rem !important;
+    flex: none !important;
+    min-height: 2.25rem !important;
+    border: 1px solid color-mix(in srgb, var(--primary, var(--rw-accent)) 56%, transparent) !important;
+    border-radius: 0.625rem !important;
+    padding: 0.5rem 0.9rem !important;
+    background: color-mix(in srgb, var(--primary, var(--rw-accent)) 84%, var(--rw-surface-raised, transparent))
+        !important;
+    color: var(--primary-foreground, var(--rw-accent-contrast)) !important;
+    box-shadow: none !important;
+    font-size: 0.78rem !important;
+    font-weight: 650 !important;
+    line-height: 1.2 !important;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, opacity 150ms ease !important;
+}
+
+.rw-modal-primary-button:hover:not(:disabled),
+.rw-modal-primary-button:focus-visible:not(:disabled) {
+    border-color: color-mix(in srgb, var(--primary, var(--rw-accent)) 76%, transparent) !important;
+    background: color-mix(in srgb, var(--primary, var(--rw-accent)) 92%, var(--rw-surface-raised, transparent))
+        !important;
+}
+
+.rw-modal-primary-button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary, var(--rw-accent)) 70%, transparent) !important;
+    outline-offset: 2px !important;
+}
+
+.rw-modal-primary-button:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.5 !important;
+}
+
+.rw-modal-submit-hint {
+    margin-left: auto !important;
+    margin-right: 0.35rem !important;
+    color: var(--rw-text-muted, var(--muted-foreground)) !important;
+    font-size: 0.65rem !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+}
+
+.rw-modal-submit-hint + .rw-modal-primary-button {
+    margin-left: 0 !important;
+}
+
+.rw-modal-textarea {
+    width: 100% !important;
+    min-height: 4.875rem !important;
+    max-height: calc(var(--pn-viewport-height, 100vh) - 16rem) !important;
+    border: 1px solid color-mix(in srgb, var(--primary, var(--rw-accent)) 82%, transparent) !important;
+    border-radius: 0 !important;
+    padding: 0.5rem 0.5rem !important;
+    background: var(--background, var(--rw-page-bg)) !important;
+    color: var(--foreground, var(--rw-text)) !important;
+    font-size: 0.875rem !important;
+    line-height: 1.5rem !important;
+    resize: vertical !important;
+}
+
+.rw-modal-textarea:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary, var(--rw-accent)) 72%, transparent) !important;
+}
+
+.rw-modal-textarea::placeholder {
+    color: var(--muted-foreground, var(--rw-text-muted)) !important;
+}
+
+.rw-review-action [data-slot="button"],
+.rw-review-action-button {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    min-height: 2.25rem;
+    border: 1px solid color-mix(in srgb, var(--rw-accent) 78%, var(--rw-border));
+    border-radius: var(--rw-radius-control);
+    padding: 0.45rem 0.8rem;
+    background: color-mix(in srgb, var(--rw-accent) 88%, var(--rw-surface-raised));
+    color: var(--rw-page-bg);
+    box-shadow: 0 0.25rem 0.8rem color-mix(in srgb, var(--rw-accent) 18%, transparent);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 750;
+    line-height: 1.2;
+    text-decoration: none;
+    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+}
+
+.rw-review-action [data-slot="button"]:hover:not(:disabled),
+.rw-review-action [data-slot="button"]:focus-visible:not(:disabled),
+.rw-review-action-button:hover:not(:disabled),
+.rw-review-action-button:focus-visible:not(:disabled) {
+    border-color: var(--rw-accent);
+    background: color-mix(in srgb, var(--rw-accent) 76%, var(--rw-text-strong));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-accent) 20%, transparent),
+        0 0.35rem 1rem color-mix(in srgb, var(--rw-accent) 20%, transparent);
+}
+
+.rw-review-action [data-slot="button"]:focus-visible,
+.rw-review-action-button:focus-visible {
+    border-color: var(--rw-accent);
+    outline: 2px solid var(--rw-accent);
+    outline-offset: 2px;
+}
+
+.rw-review-action [data-slot="button"]:disabled,
+.rw-review-action-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.64;
+}
+
+.rw-review-action [data-slot="button"] > span:not([data-slot="button-icon"]) {
+    display: inline;
 }
 
 .card-actions a {
     color: var(--rw-accent-text);
     text-decoration: none;
     border: 1px solid var(--rw-border);
-    border-radius: 999px;
-    padding: 0.55rem 0.9rem;
+    border-radius: var(--rw-radius-control);
+    padding: var(--rw-space-control-y) var(--rw-space-control-x);
 }
 
 .card-actions a:hover {
@@ -56,9 +295,9 @@
 .repair-lane {
     background: var(--rw-surface-raised);
     border: 1px solid var(--rw-border);
-    border-radius: 16px;
-    padding: 16px;
-    box-shadow: 0 18px 50px #0004;
+    border-radius: var(--rw-radius-panel);
+    padding: var(--rw-space-panel);
+    box-shadow: 0 12px 32px #0004;
 }
 
 .detail {
@@ -78,6 +317,10 @@
 .plan-card.compact {
     background: var(--rw-surface);
     box-shadow: none;
+}
+
+.plan-card {
+    padding: var(--rw-space-card);
 }
 
 .plan-card p {
@@ -127,7 +370,7 @@
     align-items: center;
     background: var(--rw-surface-muted);
     border: 1px solid var(--rw-border);
-    border-radius: 999px;
+    border-radius: var(--rw-radius-pill);
     color: var(--rw-accent-text);
     display: inline-flex;
     font-size: 0.8rem;
@@ -204,7 +447,7 @@
 
 .notice {
     border: 1px solid var(--rw-border);
-    border-radius: 12px;
+    border-radius: var(--rw-radius-card);
     margin-top: 12px;
     padding: 10px 12px;
 }
@@ -224,7 +467,7 @@
 .health-list {
     background: var(--rw-surface);
     border: 1px solid var(--rw-border);
-    border-radius: 12px;
+    border-radius: var(--rw-radius-card);
     color: var(--rw-text-muted);
     display: grid;
     gap: 8px;
@@ -256,7 +499,7 @@
 .progress-meter span {
     background: var(--rw-surface);
     border: 1px solid var(--rw-border);
-    border-radius: 10px;
+    border-radius: var(--rw-radius-control);
     color: var(--rw-text-muted);
     padding: 0.35rem 0.55rem;
 }
@@ -297,7 +540,7 @@
 
 .compact-empty {
     border: 1px dashed var(--rw-border);
-    border-radius: 12px;
+    border-radius: var(--rw-radius-card);
     padding: 12px;
 }
 
@@ -306,16 +549,20 @@ button.primary-action,
 .secondary-action,
 button.secondary-action,
 .danger-action,
-button.danger-action {
+button.danger-action,
+.action-primary,
+.action-secondary,
+.action-danger {
     align-items: center;
-    border-radius: 999px;
+    min-height: var(--rw-control-height);
+    border-radius: var(--rw-radius-control);
     cursor: pointer;
     display: inline-flex;
     font: inherit;
     font-weight: 700;
     justify-content: center;
     line-height: 1.2;
-    padding: 0.45rem 0.8rem;
+    padding: var(--rw-space-control-y) var(--rw-space-control-x);
     text-decoration: none;
     transition:
         background-color 0.15s ease,
@@ -327,28 +574,33 @@ button.danger-action {
 
 .primary-action,
 button.primary-action,
-.card-actions a.primary-action {
+.card-actions a.primary-action,
+.action-primary,
+.card-actions a.action-primary {
     background: var(--rw-accent);
     border: 1px solid var(--rw-accent);
     color: #fff;
 }
 
 .secondary-action,
-button.secondary-action {
+button.secondary-action,
+.action-secondary {
     background: var(--rw-surface);
     border: 1px solid var(--rw-border);
     color: var(--rw-accent-text);
 }
 
 .danger-action,
-button.danger-action {
+button.danger-action,
+.action-danger {
     background: color-mix(in srgb, var(--rw-error) 42%, var(--rw-surface-raised));
     border: 1px solid var(--rw-error);
     color: color-mix(in srgb, var(--rw-error) 20%, var(--rw-text-strong));
 }
 
 .primary-action:hover,
-button.primary-action:hover {
+button.primary-action:hover,
+.action-primary:hover {
     background: color-mix(in srgb, var(--rw-accent) 82%, var(--rw-text-strong));
     border-color: var(--rw-accent-strong);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-accent) 22%, transparent);
@@ -356,7 +608,8 @@ button.primary-action:hover {
 }
 
 .secondary-action:hover,
-button.secondary-action:hover {
+button.secondary-action:hover,
+.action-secondary:hover {
     background: var(--rw-surface-strong);
     border-color: var(--rw-accent);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-accent) 20%, transparent);
@@ -365,7 +618,8 @@ button.secondary-action:hover {
 }
 
 .danger-action:hover,
-button.danger-action:hover {
+button.danger-action:hover,
+.action-danger:hover {
     background: color-mix(in srgb, var(--rw-error) 56%, var(--rw-surface-raised));
     border-color: color-mix(in srgb, var(--rw-error) 72%, var(--rw-text-strong));
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-error) 25%, transparent);
@@ -376,11 +630,11 @@ button.danger-action:hover {
 .markdown-view {
     background: color-mix(in srgb, var(--rw-page-bg) 72%, black);
     border: 1px solid var(--rw-border);
-    border-radius: 12px;
+    border-radius: var(--rw-radius-card);
     line-height: 1.65;
     min-width: 0;
     overflow-wrap: anywhere;
-    padding: 18px;
+    padding: var(--rw-space-panel);
 }
 
 .markdown-view h1,
@@ -406,7 +660,7 @@ button.danger-action:hover {
 .markdown-view pre {
     background: var(--rw-surface);
     border: 1px solid var(--rw-border);
-    border-radius: 10px;
+    border-radius: var(--rw-radius-control);
     overflow: auto;
     padding: 12px;
 }
@@ -477,7 +731,7 @@ button.danger-action:disabled {
 .codemirror-shell {
     overflow: hidden;
     border: 1px solid var(--rw-border);
-    border-radius: 16px;
+    border-radius: var(--rw-radius-panel);
     background: color-mix(in srgb, var(--rw-page-bg) 72%, black);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--rw-text) 7%, transparent);
 }
@@ -582,7 +836,7 @@ button.danger-action:disabled {
     align-items: center;
     background: var(--rw-surface-muted);
     border: 1px solid var(--rw-border);
-    border-radius: 999px;
+    border-radius: var(--rw-radius-pill);
     color: var(--rw-accent-text);
     display: inline-flex;
     font-size: 1rem;
@@ -626,7 +880,7 @@ button.danger-action:disabled {
 .rw-dialog-panel {
     background: var(--rw-surface-raised);
     border: 1px solid var(--rw-border);
-    border-radius: 16px;
+    border-radius: var(--rw-radius-panel);
     box-shadow: 0 24px 70px #0008;
     color: var(--rw-text);
     display: grid;
@@ -635,7 +889,7 @@ button.danger-action:disabled {
     max-width: min(100%, 42rem);
     min-width: min(100%, 20rem);
     overflow: auto;
-    padding: 18px;
+    padding: var(--rw-space-panel);
 }
 
 .rw-dialog-header {

@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { withProcessGlobalTestLock } from "../../testing/process-global-lock.js";
 import {
+    encodeCwdForSessionDir,
     getRootSessionBranchEntries,
     getRunWieldSessionDir,
     getRunWieldSessionMemoryBackupDir,
@@ -9,6 +10,16 @@ import {
     openPersistedRootSession,
     readCatalogSafeRootSessionLocator,
 } from "./root-session.js";
+
+Deno.test("root-session cwd directory encoding stays inside filename limits for long worktree paths", () => {
+    const longWorktreeCwd = `/tmp/${"deep-directory-name-".repeat(12)}/.wld/worktrees/${
+        "nested-project-path-".repeat(10)
+    }/follow-up-repaint`;
+    const encoded = encodeCwdForSessionDir(longWorktreeCwd);
+    assertEquals(encoded.length < 255, true);
+    assertEquals(encoded.startsWith("--follow-up-repaint-"), true);
+    assertEquals(encoded.endsWith("--"), true);
+});
 
 Deno.test("root-session persisted helpers list open and guard cwd paths", async () => {
     await withProcessGlobalTestLock(async () => {
@@ -244,6 +255,45 @@ Deno.test("catalog-safe root session locator rejects headers that exceed the cat
                 Error,
                 "exceeds catalog limit",
             );
+        } finally {
+            if (previousHome === undefined) Deno.env.delete("HOME");
+            else Deno.env.set("HOME", previousHome);
+            await removeTempDirBestEffort(home);
+        }
+    });
+});
+
+Deno.test("catalog-safe root session locator list limits header reads to newest candidates", async () => {
+    await withProcessGlobalTestLock(async () => {
+        const previousHome = Deno.env.get("HOME");
+        const home = await Deno.makeTempDir();
+        Deno.env.set("HOME", home);
+        try {
+            const cwd = `${home}/repo`;
+            await Deno.mkdir(cwd, { recursive: true });
+            const sessionDir = getRunWieldSessionDir(cwd);
+            await Deno.mkdir(sessionDir, { recursive: true });
+            const oldMalformed = `${sessionDir}/malformed.jsonl`;
+            await Deno.writeTextFile(oldMalformed, "not-json\n");
+            const oldTime = new Date(Date.UTC(2025, 0, 1));
+            await Deno.utime(oldMalformed, oldTime, oldTime);
+            for (let index = 0; index < 31; index++) {
+                const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+                const id = `pi-${String(index).padStart(2, "0")}`;
+                const sessionPath = `${sessionDir}/${timestamp.replace(/[:.]/g, "-")}_${id}.jsonl`;
+                await Deno.writeTextFile(
+                    sessionPath,
+                    JSON.stringify({ type: "session", version: 3, id, timestamp, cwd }) + "\n",
+                );
+                const modified = new Date(Date.UTC(2026, 1, 1, 0, 0, index));
+                await Deno.utime(sessionPath, modified, modified);
+            }
+
+            const listed = await listCatalogSafeRootSessionLocators(cwd, { recentLimit: 30 });
+
+            assertEquals(listed.diagnostics, []);
+            assertEquals(listed.locators.length, 30);
+            assertEquals(listed.locators.some((locator) => locator.sessionPath === oldMalformed), false);
         } finally {
             if (previousHome === undefined) Deno.env.delete("HOME");
             else Deno.env.set("HOME", previousHome);

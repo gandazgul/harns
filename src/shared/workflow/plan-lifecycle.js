@@ -9,7 +9,7 @@
 
 import { isPlannedChangeClassification } from "../../constants.js";
 import {
-    findPlansByParent,
+    getPlanDocumentRoot,
     isPlanDependencySatisfiedStatus,
     loadPlan,
     normalizeDeliveryEvidence,
@@ -18,6 +18,8 @@ import {
 } from "../../plan-store.js";
 import { SHARED_PLAN_LOCK_REPAIR, SharedPlanLockError } from "../collaboration/lock.js";
 import { runPlanLifecycleEventTransition } from "./state-transition.ts";
+import { resolveWorkflowPlanLocation } from "./plan-location.ts";
+import { findCompletionSiblings } from "./plan-family.ts";
 
 export class PlanLifecycleTransitionError extends Error {
     /**
@@ -82,7 +84,7 @@ function buildStalePlanStatusMessage(planName, currentStatus, canonicalStatus) {
 }
 
 /**
- * @typedef {"review_feedback"|"review_approved"|"readiness_passed"|"epic_readiness_passed"|"decomposition_finalized"|"execution_started"|"execution_failed"|"implementation_finished"|"mechanical_validation_failed"|"mechanical_validation_passed"|"semantic_review_feedback"|"semantic_review_passed"|"validation_failed"|"validation_passed"|"worktree_merge_failed"|"recovery_continue"|"recovery_reset"|"review_reopened"|"epic_done_enough"|"manual_status_change"|"manual_closed_without_verification"|"manual_user_verified"|"plan_held"|"hold_resumed"|"hold_reset_to_draft"} PlanEvent
+ * @typedef {"review_feedback"|"review_approved"|"readiness_passed"|"epic_readiness_passed"|"decomposition_finalized"|"execution_started"|"execution_failed"|"implementation_finished"|"mechanical_validation_failed"|"mechanical_validation_passed"|"semantic_review_feedback"|"semantic_review_passed"|"validation_failed"|"validation_passed"|"recovery_continue"|"recovery_reset"|"review_reopened"|"epic_done_enough"|"manual_status_change"|"manual_closed_without_verification"|"manual_user_verified"|"plan_held"|"hold_resumed"|"hold_reset_to_draft"} PlanEvent
  */
 
 /**
@@ -102,9 +104,8 @@ function buildStalePlanStatusMessage(planName, currentStatus, canonicalStatus) {
  * @property {import('../../plan-store.js').PlanFrontMatter['humanReviewDecision']} [humanReviewDecision]
  * @property {string|null} [humanReviewedAt]
  * @property {number} [validationCiAttempts]
- * @property {number} [validationObjectiveCheckAttempts]
  * @property {number} [validationSemanticRounds]
- * @property {"ci"|"objective_check"} [mechanicalFailureKind]
+ * @property {"ci"} [mechanicalFailureKind]
  * @property {import('./validation-checkpoint.ts').ValidationCheckpoint|null} [validationCheckpoint]
  * @property {string} [epicDoneEnoughSummary]
  * @property {import('../../plan-store.js').ExecutionMode} [executionMode]
@@ -223,7 +224,6 @@ const ALLOWED_FROM = {
     semantic_review_passed: ["validated_ci"],
     validation_failed: ["implemented", "validated_ci", "validated_reviewer"],
     validation_passed: ["validated_reviewer"],
-    worktree_merge_failed: ["validated_reviewer"],
     recovery_continue: ["in_progress", "failed"],
     recovery_reset: ["in_progress", "failed", "implemented"],
     review_reopened: [
@@ -261,7 +261,6 @@ const EVENT_STATUS = {
     semantic_review_passed: "validated_reviewer",
     validation_failed: "implemented",
     validation_passed: "validated",
-    worktree_merge_failed: "implemented",
     recovery_continue: "ready_for_work",
     recovery_reset: "ready_for_work",
     review_reopened: "feedback",
@@ -465,13 +464,12 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
         status: targetStatus,
         updatedAt: now,
     };
-    const clearsValidationMergeRepairWorktree = event === "validation_passed" || targetStatus === "implemented" ||
+    const clearsValidationCheckpoint = event === "validation_passed" || targetStatus === "implemented" ||
         event === "execution_started" || event === "recovery_reset" || event === "recovery_continue" ||
         event === "review_reopened" || event === "hold_reset_to_draft" || event === "manual_user_verified" ||
         event === "manual_closed_without_verification" || event === "epic_done_enough" ||
         (event === "manual_status_change" && isTerminalPlanStatus(targetStatus));
-    if (clearsValidationMergeRepairWorktree) {
-        updates.validationMergeRepairWorktree = null;
+    if (clearsValidationCheckpoint) {
         updates.validationCheckpoint = null;
     }
 
@@ -480,22 +478,14 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
         event !== "semantic_review_feedback"
     ) {
         updates.validationCiAttempts = 0;
-        updates.validationObjectiveCheckAttempts = 0;
         updates.validationSemanticRounds = 0;
     }
 
     if (event === "mechanical_validation_failed") {
-        if (details.mechanicalFailureKind === "objective_check") {
-            const currentAttempts = typeof details.triageMeta?.validationObjectiveCheckAttempts === "number"
-                ? details.triageMeta.validationObjectiveCheckAttempts
-                : 0;
-            updates.validationObjectiveCheckAttempts = currentAttempts + 1;
-        } else {
-            const currentAttempts = typeof details.triageMeta?.validationCiAttempts === "number"
-                ? details.triageMeta.validationCiAttempts
-                : 0;
-            updates.validationCiAttempts = currentAttempts + 1;
-        }
+        const currentAttempts = typeof details.triageMeta?.validationCiAttempts === "number"
+            ? details.triageMeta.validationCiAttempts
+            : 0;
+        updates.validationCiAttempts = currentAttempts + 1;
         updates.validationSemanticRounds = 0;
         updates.failureReason = details.failureReason || "Mechanical Validation failed.";
         if (details.validationCheckpoint !== undefined) {
@@ -505,7 +495,6 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
 
     if (event === "mechanical_validation_passed") {
         updates.validationCiAttempts = 0;
-        updates.validationObjectiveCheckAttempts = 0;
         updates.failureReason = null;
         updates.failedAt = null;
     }
@@ -516,7 +505,6 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
             : 0;
         updates.validationSemanticRounds = currentRounds + 1;
         updates.validationCiAttempts = 0;
-        updates.validationObjectiveCheckAttempts = 0;
         updates.failureReason = details.failureReason || "Semantic Code Review requested changes.";
         // The open Review Issues and repair identity must commit with the status
         // move back to implemented. A later Session projection cannot fill this
@@ -563,7 +551,6 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
         updates.status = "user_verified";
         updates.userVerifiedAt = now;
         updates.userVerificationNote = note;
-        updates.objectiveChecksBaseline = undefined;
     }
 
     if (event === "plan_held") {
@@ -671,6 +658,8 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
             updates.worktreeBaseBranch = null;
             updates.worktreeStatus = null;
         } else {
+            updates.targetBranch = details.worktreeBaseBranch;
+            updates.documentWorktreeId = details.worktreeId;
             updates.executionBaselineTree = details.executionBaselineTree;
             updates.worktreeId = details.worktreeId;
             updates.worktreePath = details.worktreePath;
@@ -715,25 +704,17 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
     }
 
     if (event === "validation_failed") {
-        if (!details.nonGitInPlace) updates.worktreeStatus = "validation_failed";
+        // Validation state belongs to the Plan status/checkpoint. The worktree
+        // registry separately owns attempt state and remains `completed` while a
+        // finished implementation is repaired and revalidated. Do not duplicate
+        // that mutable state in Plan front matter.
         updates.failureReason = details.failureReason || "Workflow Validation failed.";
-    }
-
-    if (event === "worktree_merge_failed") {
-        updates.worktreeId = details.worktreeId || updates.worktreeId;
-        updates.worktreePath = details.worktreePath || updates.worktreePath;
-        updates.worktreeBranch = details.worktreeBranch || updates.worktreeBranch;
-        updates.worktreeBaseBranch = details.worktreeBaseBranch || updates.worktreeBaseBranch;
-        updates.deliveryEvidence = details.deliveryEvidence || updates.deliveryEvidence;
-        updates.worktreeStatus = "merge_conflict";
-        updates.failureReason = details.failureReason || "Worktree merge failed.";
     }
 
     if (event === "epic_done_enough") {
         updates.validatedAt = now;
         updates.userVerifiedAt = null;
         updates.userVerificationNote = null;
-        updates.objectiveChecksBaseline = undefined;
         updates.epicCompletionMode = "done_enough";
         updates.epicDoneEnoughAt = now;
         updates.epicDoneEnoughSummary = details.epicDoneEnoughSummary || "Epic marked done enough for now.";
@@ -780,7 +761,6 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
         updates.validatedAt = now;
         updates.userVerifiedAt = null;
         updates.userVerificationNote = null;
-        updates.objectiveChecksBaseline = undefined;
         if (Object.hasOwn(details, "humanReviewMode")) updates.humanReviewMode = details.humanReviewMode;
         if (Object.hasOwn(details, "humanReviewDecision")) updates.humanReviewDecision = details.humanReviewDecision;
         if (Object.hasOwn(details, "humanReviewedAt")) updates.humanReviewedAt = details.humanReviewedAt ?? null;
@@ -823,6 +803,7 @@ export function buildPlanEventUpdates(event, currentStatus, details = {}) {
     }
 
     if (event === "review_reopened") {
+        updates.documentWorktreeId = details.triageMeta?.worktreeId || details.triageMeta?.documentWorktreeId;
         updates.failureReason = null;
         updates.failedAt = null;
         updates.implementedAt = null;
@@ -877,7 +858,7 @@ async function advanceParentEpicWhenAllChildrenVerified({ cwd, planName, event, 
     if (isPlanDependencySatisfiedStatus(parent.attrs.status)) return;
     if (parent.attrs.status !== "ready_for_work") return;
 
-    const children = await findPlansByParent(cwd, parentPlanName);
+    const children = await findCompletionSiblings(cwd, parentPlanName);
     if (!children.length) return;
     if (
         children.some((child) =>
@@ -912,6 +893,11 @@ async function advanceParentEpicWhenAllChildrenVerified({ cwd, planName, event, 
  * @returns {Promise<import('../../plan-store.js').PlanFrontMatter>}
  */
 export async function recordPlanEvent({ cwd, planName, event, currentStatus, details = {}, expectedRevision }) {
+    // The caller's project root locates the controller, not necessarily the Plan.
+    // Resolve once before the transaction, then keep that document locked even
+    // if the event retires its execution attempt.
+    const location = await resolveWorkflowPlanLocation(cwd, planName);
+    cwd = location.documentRoot;
     /**
      * @param {Awaited<ReturnType<typeof loadPlan>>} beforePlan
      * @returns {Promise<{ attrs: import('../../plan-store.js').PlanFrontMatter, details: Record<string, unknown> }>}
@@ -969,17 +955,17 @@ export async function recordPlanEvent({ cwd, planName, event, currentStatus, det
                     typeof preflightPlan.attrs.parentPlan === "string"
                 ? preflightPlan.attrs.parentPlan
                 : "";
-            const siblingNames = parentPlanName
-                ? (await findPlansByParent(cwd, parentPlanName)).map((child) => child.name).sort()
-                : [];
+            const siblings = parentPlanName ? await findCompletionSiblings(cwd, parentPlanName) : [];
+            const siblingPaths = new Map(siblings.map((child) => [child.name, child.path]));
             /** @type {import('./state-transition.ts').TransitionResource[]} */
             const resources = [
-                { kind: "catalog" },
+                { kind: "catalog", root: location.registryRoot },
                 { kind: "plan", id: planName },
                 ...(parentPlanName ? [{ kind: /** @type {const} */ ("plan"), id: parentPlanName }] : []),
-                ...siblingNames.filter((name) => name !== planName).map((name) => ({
+                ...siblings.filter((child) => child.name !== planName).map((child) => ({
                     kind: /** @type {const} */ ("plan"),
-                    id: name,
+                    id: child.name,
+                    root: getPlanDocumentRoot(child.path),
                 })),
             ];
             const transition = await runPlanLifecycleEventTransition({
@@ -1013,19 +999,20 @@ export async function recordPlanEvent({ cwd, planName, event, currentStatus, det
                     /** @type {Record<string, unknown> | null} */
                     let parentUpdates = null;
                     if (parentPlanName && !isEpicPlan(beforePlan.attrs)) {
-                        const lockedSiblingNames = (await findPlansByParent(cwd, parentPlanName)).map((child) =>
-                            child.name
-                        ).sort();
-                        if (lockedSiblingNames.join("\n") !== siblingNames.join("\n")) {
+                        const lockedSiblings = await findCompletionSiblings(cwd, parentPlanName);
+                        if (
+                            lockedSiblings.length !== siblings.length ||
+                            lockedSiblings.some((child) => siblingPaths.get(child.name) !== child.path)
+                        ) {
                             throw new Error(`Child Plan set changed while applying ${event} for ${planName}.`);
                         }
                         lockedParent = await loadPlan(cwd, parentPlanName);
                         childrenBeforeWrite = await Promise.all(
-                            (await findPlansByParent(cwd, parentPlanName)).map(async (child) => {
+                            lockedSiblings.map(async (child) => {
                                 if (child.name === planName) {
                                     return { name: planName, revision: beforePlan.revision, attrs: beforePlan.attrs };
                                 }
-                                const lockedChild = await loadPlan(cwd, child.name);
+                                const lockedChild = await loadPlan(getPlanDocumentRoot(child.path), child.name);
                                 if (!lockedChild) throw new Error(`Child Plan disappeared: ${child.name}`);
                                 return { name: child.name, revision: lockedChild.revision, attrs: lockedChild.attrs };
                             }),

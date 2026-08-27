@@ -1,17 +1,14 @@
 /**
  * @module shared/workflow/validation-merge-repair
- * Merge failure classification, repair-worktree persistence, and the merge repair
+ * Merge failure classification and repair dispatch for the publication
  * dispatch for the publication phase.
  */
 
-import { runPlanFrontMatterTransition } from "./state-transition.ts";
 import { AGENTS } from "../../constants.js";
-import type { PhaseContext, PublicationOutcome, UserActionPause, ValidationLoopArgs } from "./validation-types.ts";
+import type { PhaseContext, UserActionPause, ValidationLoopArgs } from "./validation-types.ts";
 import { emitStatus } from "./validation-emit.ts";
 import { buildValidationUserMessage, validationMergeRepairMessage } from "./validation-user-messages.ts";
 import { buildValidationRepairPrompt } from "./validation-repair-prompt.ts";
-import { classifyValidationOperationalError } from "./validation-operational-errors.ts";
-import { decideValidationRecovery, readValidationRetryPolicy } from "./validation-recovery.ts";
 
 type GitCommandResult = { code: number; stdout: string; stderr: string };
 
@@ -20,7 +17,15 @@ type AnnotatedPublicationError = Error & {
     mergeWorktreePath?: string;
     mergeFailureKind?: string;
     blockingPaths?: string[];
+    publicationStage?: PublicationStage;
 };
+
+export type PublicationStage =
+    | "artifact_preparation"
+    | "candidate_checkpoint"
+    | "lifecycle_staging"
+    | "candidate_sealing"
+    | "git_publication";
 
 export type PublicationFailure = {
     reason: string;
@@ -28,6 +33,7 @@ export type PublicationFailure = {
     mergeWorktreePath?: string;
     mergeFailureKind?: string;
     blockingPaths: string[];
+    publicationStage?: PublicationStage;
 };
 
 export function normalizePublicationFailure(error: Error): PublicationFailure {
@@ -38,7 +44,14 @@ export function normalizePublicationFailure(error: Error): PublicationFailure {
         mergeWorktreePath: annotated.mergeWorktreePath,
         mergeFailureKind: annotated.mergeFailureKind,
         blockingPaths: annotated.blockingPaths || [],
+        publicationStage: annotated.publicationStage,
     };
+}
+
+export function annotatePublicationStage(error: Error, publicationStage: PublicationStage): Error {
+    const annotated = error as AnnotatedPublicationError;
+    annotated.publicationStage ||= publicationStage;
+    return annotated;
 }
 
 async function runRepairGit(cwd: string, args: string[]): Promise<GitCommandResult> {
@@ -105,80 +118,6 @@ export function getMergeFailureKind(failure: PublicationFailure): string | undef
  */
 export function getMergeWorktreePath(failure: PublicationFailure): string | undefined {
     return failure.mergeWorktreePath;
-}
-
-type ValidationMergeRepairWorktreeResolution =
-    | { kind: "ready"; path?: string }
-    | { kind: "blocked"; outcome: PublicationOutcome };
-
-export async function resolveStoredValidationMergeRepairWorktree(
-    args: ValidationLoopArgs,
-    context: PhaseContext,
-): Promise<ValidationMergeRepairWorktreeResolution> {
-    const path = readValidationMergeRepairWorktree(args.triageMeta);
-    if (!path) return { kind: "ready" };
-    if (await filesystemPathExists(path)) return { kind: "ready", path };
-    const cleared = await persistValidationMergeRepairWorktree(args, context, null);
-    if (cleared.kind === "blocked") return cleared;
-    return { kind: "ready" };
-}
-
-export function readValidationMergeRepairWorktree(
-    triageMeta: ValidationLoopArgs["triageMeta"],
-): string | undefined {
-    const path = triageMeta.validationMergeRepairWorktree;
-    return typeof path === "string" && path ? path : undefined;
-}
-
-export async function filesystemPathExists(path: string): Promise<boolean> {
-    try {
-        await Deno.stat(path);
-        return true;
-    } catch (error) {
-        if (error instanceof Deno.errors.NotFound) return false;
-        throw error;
-    }
-}
-
-export async function persistValidationMergeRepairWorktree(
-    args: ValidationLoopArgs,
-    context: PhaseContext,
-    path: string | null,
-): Promise<{ kind: "committed" } | { kind: "blocked"; outcome: PublicationOutcome }> {
-    const transition = await runPlanFrontMatterTransition({
-        projectRoot: context.executionCwd,
-        planName: args.planName,
-        operation: "validation_merge_repair_worktree",
-        updates: { validationMergeRepairWorktree: path },
-        recoveryAttrs: { ...args.triageMeta },
-    });
-    if (transition.status === "committed") return { kind: "committed" };
-    const reason = transition.message || `Could not save merge repair worktree state for ${args.planName}.`;
-    const failure = classifyValidationOperationalError({
-        source: "validation_state",
-        kind: "publication_record_missing",
-        operation: "publication",
-        message: reason,
-    });
-    const decision = decideValidationRecovery({
-        failure,
-        attempt: 1,
-        policy: readValidationRetryPolicy(context.projectRoot),
-        nextPhase: "delivery",
-    });
-    return {
-        kind: "blocked",
-        outcome: {
-            recorded: false,
-            result: {
-                kind: decision.action === "halt" ? "failed" : "paused",
-                planName: args.planName,
-                projectRoot: context.projectRoot,
-                reason: decision.result.message,
-                recovery: decision.result,
-            },
-        },
-    };
 }
 
 export function getBlockingPaths(failure: PublicationFailure): string[] {
@@ -300,7 +239,7 @@ export async function dispatchMergeRepair(
             authorityNote:
                 "This checkout contains RunWield's in-progress publication merge. Resolve only the files Git marks as conflicted and stage each resolution. Do not commit, merge, rebase, reset, or publish; RunWield owns those steps and will continue automatically.",
             completionInstruction:
-                "After all conflict resolutions are staged and no unmerged paths remain, call task_completed. Do not create a commit.",
+                "After all conflict resolutions are staged and no unmerged paths remain, call task_completed. Do not create a commit. If a conflict cannot be resolved here, leave the rest staged and end your turn in plain text naming the file and what stopped you, rather than calling task_completed.",
         }),
         cwd: repairCwd,
     });

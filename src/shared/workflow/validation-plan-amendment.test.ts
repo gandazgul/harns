@@ -1,72 +1,55 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { loadPlan, savePlan } from "../../plan-store.js";
+import { defineCommittedGitFixture, git } from "../git-test-fixture.ts";
+import { addEntry } from "../worktree-registry.js";
 import { stageValidationPassedInExecutionWorktree } from "./plan-lifecycle.js";
-import {
-    applyValidationPlanAmendment,
-    detectValidationPlanAmendment,
-    validateAmendedObjectiveChecksAgainstBaseline,
-} from "./validation-plan-amendment.ts";
+import { applyValidationPlanAmendment, detectValidationPlanAmendment } from "./validation-plan-amendment.ts";
 
-async function run(cwd: string, args: string[]) {
-    const output = await new Deno.Command("git", { cwd, args, stdout: "piped", stderr: "piped" }).output();
-    if (output.code !== 0) throw new Error(new TextDecoder().decode(output.stderr));
-    return new TextDecoder().decode(output.stdout).trim();
-}
+const amendmentRepo = defineCommittedGitFixture({ ".gitignore": ".wld/\n", "app.ts": "export {};\n" });
 
-Deno.test("approved Objective Check amendment changes only the execution Plan", async () => {
-    const projectRoot = await Deno.makeTempDir();
+Deno.test("approved Plan definition amendment changes only the execution Plan", async () => {
+    const projectRoot = await amendmentRepo.checkout();
     const executionCwd = await Deno.makeTempDir();
     try {
-        await savePlan(projectRoot, "feature", "# Primary body", {
+        await savePlan(projectRoot, "feature", "# Primary body\n\n## Context\n\nPrimary", {
             planId: "plan-1",
             classification: "PLANNED_CHANGE",
             status: "implemented",
             summary: "Primary",
-            worktreeId: "runwield-owned",
-            objectiveChecks: [{ id: "OC1", command: "deno eval -A 'Deno.exit(1)'" }],
-            objectiveCheckWaivers: [{
-                id: "OC1",
-                command: "deno eval -A 'Deno.exit(1)'",
-                source: "engineer_report",
-                explanation: "old command",
-                waivedAt: "2026-01-01T00:00:00.000Z",
-            }],
         });
-        await savePlan(executionCwd, "feature", "# Accepted body", {
+        await git(projectRoot, ["worktree", "add", "-b", "worktree/feature", executionCwd]);
+        await addEntry(projectRoot, {
+            id: "runwield-owned",
+            planId: "plan-1",
+            planName: "feature",
+            branch: "worktree/feature",
+            path: executionCwd,
+            baseBranch: "main",
+            baseRef: "refs/heads/main",
+            baseCommit: await git(projectRoot, ["rev-parse", "HEAD"]),
+            status: "completed",
+            createdAt: "2026-08-25T00:00:00Z",
+            updatedAt: "2026-08-25T00:00:00Z",
+        });
+        await savePlan(executionCwd, "feature", "# Accepted body\n\n## Context\n\nWorktree", {
             planId: "plan-1",
             classification: "PLANNED_CHANGE",
-            status: "verified",
+            status: "implemented",
             summary: "Worktree",
             worktreeId: "tampered",
-            objectiveChecks: [{ id: "OC1", command: "deno eval 'Deno.exit(1)'" }],
         });
-
         const proposal = await detectValidationPlanAmendment(projectRoot, executionCwd, "feature");
-        assertEquals(proposal?.objectiveChecksChanged, true);
-        assertStringIncludes(proposal?.summary || "", "The Engineer gave feedback about the Objective-Failing Checks");
-        assertStringIncludes(proposal?.summary || "", "Change OC1");
-        assertStringIncludes(proposal?.summary || "", "before command: deno eval -A 'Deno.exit(1)'");
-        assertStringIncludes(proposal?.summary || "", "after command: deno eval 'Deno.exit(1)'");
-        assertEquals(proposal?.summary.includes("<removed>"), false);
-        const before = await loadPlan(projectRoot, "feature");
-        assertEquals(before?.attrs.objectiveChecks?.[0].command, "deno eval -A 'Deno.exit(1)'");
-
+        assertStringIncludes(proposal?.summary || "", "Plan amendment");
         if (!proposal) throw new Error("expected amendment proposal");
         await applyValidationPlanAmendment(projectRoot, executionCwd, "feature", proposal);
         const primary = await loadPlan(projectRoot, "feature");
         const execution = await loadPlan(executionCwd, "feature");
-        assertEquals(primary?.body, "# Primary body");
+        assertEquals(primary?.body, "# Primary body\n\n## Context\n\nPrimary");
         assertEquals(primary?.attrs.summary, "Primary");
-        assertEquals(primary?.attrs.status, "implemented");
         assertEquals(primary?.attrs.worktreeId, "runwield-owned");
-        assertEquals(primary?.attrs.objectiveChecks?.[0].command, "deno eval -A 'Deno.exit(1)'");
-        assertEquals(primary?.attrs.objectiveChecksBaseline, undefined);
-        assertEquals(primary?.attrs.objectiveCheckWaivers?.length, 1);
-        assertEquals(execution?.body, "# Accepted body");
+        assertEquals(execution?.body, "# Accepted body\n\n## Context\n\nWorktree");
         assertEquals(execution?.attrs.summary, "Worktree");
-        assertEquals(execution?.attrs.objectiveChecks?.[0].command, "deno eval 'Deno.exit(1)'");
-        assertEquals(execution?.attrs.objectiveChecksBaseline, undefined);
-        assertEquals(execution?.attrs.objectiveCheckWaivers, []);
+        assertEquals(execution?.attrs.worktreeId, "runwield-owned", "document writes cannot retarget attempts");
     } finally {
         await Deno.remove(projectRoot, { recursive: true }).catch(() => undefined);
         await Deno.remove(executionCwd, { recursive: true }).catch(() => undefined);
@@ -83,7 +66,6 @@ Deno.test("missing execution Plan fails closed instead of being ignored", async 
             status: "implemented",
             summary: "Primary",
         });
-
         await assertRejects(
             () => detectValidationPlanAmendment(projectRoot, executionCwd, "feature"),
             Error,
@@ -110,7 +92,6 @@ Deno.test("execution Plan without matching identity fails closed", async () => {
             status: "implemented",
             summary: "Worktree",
         });
-
         await assertRejects(
             () => detectValidationPlanAmendment(projectRoot, executionCwd, "feature"),
             Error,
@@ -119,102 +100,6 @@ Deno.test("execution Plan without matching identity fails closed", async () => {
     } finally {
         await Deno.remove(projectRoot, { recursive: true }).catch(() => undefined);
         await Deno.remove(executionCwd, { recursive: true }).catch(() => undefined);
-    }
-});
-
-Deno.test("Objective Check rationale amendments are proposed", async () => {
-    const projectRoot = await Deno.makeTempDir();
-    const executionCwd = await Deno.makeTempDir();
-    try {
-        await savePlan(projectRoot, "feature", "# Body", {
-            planId: "plan-1",
-            classification: "PLANNED_CHANGE",
-            status: "implemented",
-            summary: "Plan",
-            objectiveChecks: [{ id: "OC1", command: "false", rationale: "old reason" }],
-        });
-        await savePlan(executionCwd, "feature", "# Body", {
-            planId: "plan-1",
-            classification: "PLANNED_CHANGE",
-            status: "implemented",
-            summary: "Plan",
-            objectiveChecks: [{ id: "OC1", command: "false", rationale: "new reason" }],
-        });
-
-        const proposal = await detectValidationPlanAmendment(projectRoot, executionCwd, "feature");
-        assertEquals(proposal?.objectiveChecksChanged, true);
-        assertStringIncludes(proposal?.summary || "", "Change OC1");
-        assertStringIncludes(proposal?.summary || "", "before rationale: old reason");
-        assertStringIncludes(proposal?.summary || "", "after rationale: new reason");
-    } finally {
-        await Deno.remove(projectRoot, { recursive: true }).catch(() => undefined);
-        await Deno.remove(executionCwd, { recursive: true }).catch(() => undefined);
-    }
-});
-
-Deno.test("Objective Check feedback names deletions and additions without raw diff markers", async () => {
-    const projectRoot = await Deno.makeTempDir();
-    const executionCwd = await Deno.makeTempDir();
-    try {
-        await savePlan(projectRoot, "feature", "# Body", {
-            planId: "plan-1",
-            classification: "PLANNED_CHANGE",
-            status: "implemented",
-            objectiveChecks: [
-                { id: "OC1", command: "old-command" },
-                { id: "OC2", command: "before-command" },
-            ],
-        });
-        await savePlan(executionCwd, "feature", "# Body", {
-            planId: "plan-1",
-            classification: "PLANNED_CHANGE",
-            status: "implemented",
-            objectiveChecks: [
-                { id: "OC2", command: "after-command" },
-                { id: "OC3", command: "new-command" },
-            ],
-        });
-
-        const proposal = await detectValidationPlanAmendment(projectRoot, executionCwd, "feature");
-        const summary = proposal?.summary || "";
-        assertStringIncludes(summary, "Delete OC1");
-        assertStringIncludes(summary, "current command: old-command");
-        assertStringIncludes(summary, "Change OC2");
-        assertStringIncludes(summary, "before command: before-command");
-        assertStringIncludes(summary, "after command: after-command");
-        assertStringIncludes(summary, "Add OC3");
-        assertStringIncludes(summary, "proposed command: new-command");
-        assertEquals(summary.includes("<removed>"), false);
-        assertEquals(summary.includes("Engineer edited"), false);
-    } finally {
-        await Deno.remove(projectRoot, { recursive: true }).catch(() => undefined);
-        await Deno.remove(executionCwd, { recursive: true }).catch(() => undefined);
-    }
-});
-
-Deno.test("changed Objective Checks are proven red against the recorded execution baseline", async () => {
-    const cwd = await Deno.makeTempDir();
-    try {
-        await run(cwd, ["init"]);
-        await run(cwd, ["config", "user.email", "test@example.com"]);
-        await run(cwd, ["config", "user.name", "RunWield Test"]);
-        await Deno.writeTextFile(`${cwd}/README.md`, "baseline\n");
-        await run(cwd, ["add", "."]);
-        await run(cwd, ["commit", "-m", "baseline"]);
-        const baselineTree = await run(cwd, ["rev-parse", "HEAD^{tree}"]);
-        await Deno.writeTextFile(`${cwd}/implemented.txt`, "done\n");
-
-        await validateAmendedObjectiveChecksAgainstBaseline(cwd, baselineTree, [{
-            id: "OC1",
-            command: "test -f implemented.txt",
-        }]);
-        await assertRejects(
-            () => validateAmendedObjectiveChecksAgainstBaseline(cwd, baselineTree, [{ id: "OC2", command: "true" }]),
-            Error,
-            "not red against the recorded execution baseline",
-        );
-    } finally {
-        await Deno.remove(cwd, { recursive: true }).catch(() => undefined);
     }
 });
 
@@ -227,14 +112,12 @@ Deno.test("publication preserves an accepted execution Plan definition amendment
             classification: "PLANNED_CHANGE",
             status: "validated_reviewer",
             summary: "Old",
-            objectiveChecks: [{ id: "OC1", command: "false" }],
         });
-        await savePlan(executionCwd, "feature", "# New", {
+        await savePlan(executionCwd, "feature", "# New\n\n## Context\n\nNew", {
             planId: "plan-1",
             classification: "PLANNED_CHANGE",
             status: "validated_reviewer",
             summary: "New",
-            objectiveChecks: [{ id: "OC1", command: "test -f new-file" }],
         });
         const proposal = await detectValidationPlanAmendment(projectRoot, executionCwd, "feature");
         if (!proposal) throw new Error("expected proposal");
@@ -243,15 +126,11 @@ Deno.test("publication preserves an accepted execution Plan definition amendment
             projectRoot,
             executionCwd,
             planName: "feature",
-            details: {
-                executionMode: "non_git_in_place",
-                deliveryEvidence: { version: 1, mode: "non_git_in_place" },
-            },
+            details: { executionMode: "non_git_in_place", deliveryEvidence: { version: 1, mode: "non_git_in_place" } },
         });
         const staged = await loadPlan(executionCwd, "feature");
-        assertEquals(staged?.body, "# New");
+        assertEquals(staged?.body, "# New\n\n## Context\n\nNew");
         assertEquals(staged?.attrs.summary, "New");
-        assertEquals(staged?.attrs.objectiveChecks?.[0].command, "test -f new-file");
         assertEquals(staged?.attrs.status, "validated");
     } finally {
         await Deno.remove(projectRoot, { recursive: true }).catch(() => undefined);

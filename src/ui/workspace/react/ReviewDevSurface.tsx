@@ -57,7 +57,7 @@ Fusce ac turpis quis ligula lacinia aliquet, mauris ipsum nulla metus varius lao
 - Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
 - Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
 
-## Files to Modify
+## Expected Change Surface
 
 - \`src/ui/workspace/react/PlanReviewSurface.tsx\` — Lorem ipsum dolor sit amet, consectetur adipiscing elit.
 - \`src/ui/workspace/react/ReviewDevSurface.tsx\` — Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
@@ -128,6 +128,33 @@ const INITIAL_PLAN_FIXTURE = PLAN_FIXTURE
         "- [ ] Step 3: Duis sagittis ipsum praesent mauris fusce nec tellus sed augue semper porta.",
         "- [ ] Step 3: Add the first review toolbar actions.",
     );
+
+const SECOND_PLAN_FIXTURE = PLAN_FIXTURE
+    .replace(
+        'summary: "Fixture test plan for exercising every Plan Review UI interaction"',
+        'summary: "Second fixture Plan revision after the first review round"',
+    )
+    .replace(
+        "- [ ] Step 6: Pellentesque nibh aenean quam in scelerisque sem at dolor maecenas mattis.",
+        "- [ ] Step 6: Verify the revised review flow in a browser.",
+    );
+
+const DEV_LINKED_FILES = {
+    "src/ui/workspace/react/PlanReviewSurface.tsx": `export function PlanReviewSurface({ payload }) {
+    return <main aria-label="Plan review">{payload.plan}</main>;
+}
+`,
+    "src/ui/workspace/react/ReviewDevSurface.tsx": `export const reviewFixture = {
+    mode: "dev",
+    supportsLinkedFiles: true,
+};
+`,
+    "src/ui/workspace/react/plannotator.css": `.rw-plan-review {
+    display: flex;
+    min-height: 100dvh;
+}
+`,
+};
 
 const PROJECT_PLAN_FIXTURE = PLAN_FIXTURE
     .replace('classification: "FEATURE"', 'classification: "PROJECT"')
@@ -663,7 +690,13 @@ export function ReviewDevSurface({ surface }) {
         }
         : {
             plan: PLAN_FIXTURE,
-            previousPlan: INITIAL_PLAN_FIXTURE,
+            previousPlan: SECOND_PLAN_FIXTURE,
+            planVersions: [
+                { plan: INITIAL_PLAN_FIXTURE, timestamp: "2026-07-13T14:00:00.000Z" },
+                { plan: SECOND_PLAN_FIXTURE, timestamp: "2026-07-13T15:00:00.000Z" },
+                { plan: PLAN_FIXTURE, timestamp: "2026-07-13T16:00:00.000Z" },
+            ],
+            linkedFiles: DEV_LINKED_FILES,
             token: `dev-plan-review-${planVariant}`,
             mode: "dev",
             classification: "FEATURE",

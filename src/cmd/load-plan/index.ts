@@ -15,17 +15,11 @@ import {
     loadPlan,
     onboardExternalPlan,
     resolvePlan,
-    resolvePlanExecutionPolicy,
     resolveSiblingChildPlanDependencies,
 } from "../../plan-store.js";
 import { formatArchiveRetentionNudge } from "../../shared/plan-archive-retention.ts";
-import { decidePostExecution, decidePostPlanning } from "../../shared/workflow/decisions.js";
-import {
-    buildPlannerReReviewRequest,
-    buildPlanSummary,
-    buildReReviewRevisionRequest,
-    buildResumeRequest,
-} from "./plan-presentation.ts";
+import { decidePostPlanning } from "../../shared/workflow/decisions.js";
+import { buildPlannerReReviewRequest, buildPlanSummary, buildResumeRequest } from "./plan-presentation.ts";
 import { handlePlanRecovery, SYSTEM_RECOVERY_FLOW_PORTS } from "./plan-recovery-flow.ts";
 import {
     buildManagedUnsupportedLoadPlanMessage,
@@ -36,14 +30,12 @@ import {
 } from "./plan-session-surface.ts";
 import { handleEpicPlan } from "./plan-epic-flow.ts";
 import {
-    confirmAffectedPathChangesBeforeExecution,
     executePostPlanningDecision,
     executeReadyPlanWithRepair,
     prepareApprovedPlanForWork,
     shouldKeepPlanningAgentActive,
-    validatePlanExecutionPolicyForReadiness,
-    validatePostExecutionDecision,
 } from "./plan-execution.ts";
+import { getDirectPlanReviewEligibility, reviewLoadedPlanDirectly } from "./plan-review-flow.ts";
 import {
     handleOnHoldPlan,
     isHoldableStatus,
@@ -52,40 +44,36 @@ import {
     putPlanOnHold,
 } from "./plan-hold.ts";
 import { confirmChildFeatureDependencies, formatTopLevelPlanOption } from "./plan-epic-children.ts";
-import {
-    assertRecoveryWorktreeIsManaged,
-    reopenPlanForReview,
-    resolveRecoveryWorktree,
-} from "./plan-recovery-worktree.ts";
+import { reopenPlanForReview, resolveRecoveryWorktree } from "./plan-recovery-worktree.ts";
 import { healSettledTransitionRecords } from "../../shared/workflow/transition-recovery.ts";
-import {
-    isEpicPlan,
-    isExecutablePlanStatus,
-    isInValidation,
-    isPlanReviewableWithoutReopen,
-    PLAN_STATUSES,
-    recordPlanEvent,
-} from "../../shared/workflow/plan-lifecycle.js";
+import { isExecutablePlanStatus, isInValidation, PLAN_STATUSES } from "../../shared/workflow/plan-lifecycle.js";
 import { getPlanContentStatus } from "../../shared/workflow/validation-engine.ts";
-import { normalizePlanApprovalAction, PLAN_APPROVAL_ACTIONS } from "../../shared/workflow/plan-approval.js";
 import { loadPlanActionEvidence } from "../../shared/workflow/plan-actions.ts";
-import {
-    appendSessionCompleteGuidance,
-    requestRecoverablePlanReview,
-    SESSION_COMPLETE_GUIDANCE,
-} from "../../shared/workflow/plan-review-recovery.js";
 import { printCommandHelp } from "../help/index.js";
 import { startInteractiveSession } from "../../ui/tui/chat-session.ts";
 import { SYSTEM_BROWSER_PORT } from "../../shared/browser-port.ts";
 import { setTerminalTitleForName } from "../../ui/tui/terminal-title.ts";
-import { RuntimeInteractionOutcomes } from "../../shared/session/session-runtime-interactions.js";
-import { recoverLegacyUnpublishedPlan } from "./legacy-publication-recovery.ts";
-import { resolvePlanWithPrimaryRecovery } from "./primary-plan-recovery.ts";
+import { resolvePlanWithPrimaryRecovery, resumePlanPublicationCleanup } from "./primary-plan-recovery.ts";
+import { resolveWorkflowPlanLocation } from "../../shared/workflow/plan-location.ts";
 import type { CommandContext } from "../registry.js";
+import type { UiAPI } from "../../ui/tui/types.js";
+import { buildPlanRecoveryUserMessage } from "../../shared/workflow/validation-user-messages.ts";
 
 export { getLoadPlanCompletions } from "./getArgumentCompletions.js";
 
 type TransitionRecoveryRecord = Awaited<ReturnType<typeof healSettledTransitionRecords>>["remaining"][number];
+
+async function finishSavedPublicationCleanup(projectRoot: string, uiAPI: UiAPI, planArg?: string): Promise<boolean> {
+    const notices = await resumePlanPublicationCleanup(projectRoot, planArg);
+    for (const notice of notices) {
+        uiAPI.appendSystemMessage(
+            buildPlanRecoveryUserMessage({ kind: "publication_cleanup_resumed", ...notice }),
+            !notice.complete,
+            "RunWield",
+        );
+    }
+    return notices.length > 0;
+}
 
 /**
  * Handle `load-plan` command.
@@ -116,6 +104,11 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
             }
             const activeSnapshot = sessionRuntime.getSessionSnapshot(runtimeSessionId);
             if (!activeSnapshot) throw new Error("runLoadPlanCommand runtime session is missing");
+            if (await finishSavedPublicationCleanup(activeSnapshot.cwd, options.uiAPI)) {
+                options.editor.setText("");
+                options.editor.disableSubmit = false;
+                return;
+            }
             const plans = await listPlans(activeSnapshot.cwd);
             if (plans.length === 0) {
                 options.uiAPI.appendSystemMessage(
@@ -204,19 +197,9 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
     let unresolvedLifecycleRecords: TransitionRecoveryRecord[] = [];
 
     try {
+        if (await finishSavedPublicationCleanup(projectRoot, uiAPI, planArg)) return;
         const resolved = await resolvePlanWithPrimaryRecovery(projectRoot, planArg);
         const plan = resolved.plan;
-        if (resolved.restored) {
-            const backup = resolved.restored.backupRelativePath
-                ? ` The unreadable file was preserved at ${resolved.restored.backupRelativePath}.`
-                : "";
-            uiAPI.appendSystemMessage(
-                `Restored ${resolved.restored.relativePath} from execution branch ${resolved.restored.executionBranch}.` +
-                    ` No implementation files changed.${backup}`,
-                false,
-                "RunWield",
-            );
-        }
         loadedPlanName = plan.planName;
         const rawStatus = getPlanContentStatus(plan.markdown);
         if (rawStatus !== undefined && !PLAN_STATUSES.some((status) => status === rawStatus)) {
@@ -266,19 +249,10 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
                 "RunWield",
             );
         }
-        let recordedAttempt = await resolveRecoveryWorktree(projectRoot, plan);
+        const recordedAttempt = await resolveRecoveryWorktree(projectRoot, plan);
         if (recordedAttempt?.path) {
             const executionPlan = await loadPlan(recordedAttempt.path, plan.planName).catch(() => null);
             if (executionPlan) {
-                if (executionPlan.body !== plan.body) {
-                    uiAPI.appendSystemMessage(
-                        `The Plan text in the main checkout differs from the execution copy at ${recordedAttempt.path}. ` +
-                            "RunWield left the main-checkout file unchanged and will continue from the execution copy. " +
-                            "If the main-checkout edits should change this work, stop here and copy or merge them into the execution worktree before continuing.",
-                        true,
-                        "RunWield",
-                    );
-                }
                 plan.path = executionPlan.path;
                 plan.attrs = executionPlan.attrs;
                 plan.markdown = executionPlan.markdown;
@@ -287,24 +261,14 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
                 plan.hasFrontMatter = true;
             }
         }
-        const legacyPublication = await recoverLegacyUnpublishedPlan(projectRoot, plan, recordedAttempt);
-        if (legacyPublication.recovered) {
-            plan.attrs = legacyPublication.attrs;
-            recordedAttempt = legacyPublication.worktree;
-            uiAPI.appendSystemMessage(
-                "RunWield found validated work from an older publication attempt that never reached its target branch. " +
-                    "The work is safe and ready to publish.",
-                false,
-                "RunWield",
-            );
-        }
         // Loading is the deliberate action that adopts a plain markdown file the user
         // wrote into docs/plans/. Reads elsewhere tolerate the missing Front Matter and
         // leave the file alone; here it stops being an anonymous file and becomes a
         // Plan with a durable identity, so the rest of this flow has something to
         // record lifecycle state on.
         if (plan.hasFrontMatter === false) {
-            const adopted = await onboardExternalPlan(projectRoot, plan.planName);
+            const location = await resolveWorkflowPlanLocation(projectRoot, plan.planName);
+            const adopted = await onboardExternalPlan(location.documentRoot, plan.planName);
             if (adopted.onboarded) {
                 plan.attrs = adopted.resource.attrs;
                 plan.markdown = adopted.resource.markdown;
@@ -319,7 +283,8 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
             }
         }
         if (!plan.attrs.planId) {
-            const identified = await ensurePlanIdentity(projectRoot, plan.planName);
+            const location = await resolveWorkflowPlanLocation(projectRoot, plan.planName);
+            const identified = await ensurePlanIdentity(location.documentRoot, plan.planName);
             plan.attrs = identified.attrs;
             plan.markdown = identified.markdown;
             plan.body = identified.body;
@@ -395,6 +360,24 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
             runSlicerAgent,
             loadChildPlan: loadAnotherPlan,
         });
+        if (epicResult === "direct_review") {
+            restoreAgentName = planFlowRestoreAgent;
+            const reviewResult = await reviewLoadedPlanDirectly({
+                projectRoot,
+                plan,
+                agentName,
+                uiAPI,
+                executePlan,
+                continueWorkflowValidation,
+                runPlanningAgent,
+                runSlicerAgent,
+                session,
+            });
+            if (reviewResult.keepPlanAgentActive) {
+                skipRouterRestore = true;
+            }
+            return;
+        }
         if (epicResult === "handled") {
             skipRouterRestore = true;
             return;
@@ -408,7 +391,7 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
             ["in_progress", "failed"].includes(plan.attrs.status) ||
             isInValidation(plan.attrs.status) ||
             isRecoverableWorktreeStatus(plan.attrs.worktreeStatus) ||
-            recordedAttempt?.status === "publication_failed" ||
+            Boolean(recordedAttempt?.publication) ||
             unresolvedLifecycleRecords.length > 0
         ) {
             restoreAgentName = planFlowRestoreAgent;
@@ -431,6 +414,8 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
             resolveSiblingChildPlanDependencies,
         );
         if (!dependenciesConfirmed) return;
+
+        const directReviewEligibility = getDirectPlanReviewEligibility(plan);
 
         if (
             plan.attrs.status === "validated" || plan.attrs.status === "verified" ||
@@ -488,7 +473,14 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
                     ...(plan.attrs.status === "ready_for_work"
                         ? [{ value: "planner_re_review", label: "Send back to Planner for re-review" }]
                         : []),
-                    { value: "review", label: "Re-open for review (edit/annotate)" },
+                    ...(directReviewEligibility.eligible
+                        ? [{
+                            value: "review",
+                            label: plan.attrs.status === "ready_for_work"
+                                ? "Review plan"
+                                : "Re-open for review (edit/annotate)",
+                        }]
+                        : []),
                     {
                         value: "user_verify",
                         label: "Mark as User Verified (user attestation; no Workflow Validation claim)",
@@ -581,204 +573,18 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
 
                 if (answer === "review") {
                     restoreAgentName = planFlowRestoreAgent;
-                    // The reviewer detaches the Plan from its execution generation as
-                    // part of committing its decision, so load-plan does not reopen
-                    // here. What it must still do is refuse up front: an unmanaged
-                    // worktree cannot be abandoned, and finding that out after someone
-                    // has reviewed the Plan wastes the review.
-                    assertRecoveryWorktreeIsManaged(
-                        plan.planName,
-                        await resolveRecoveryWorktree(projectRoot, plan),
-                    );
-
-                    await switchPlanAgent(agentName);
-
-                    const recoverableReview = await requestRecoverablePlanReview({
-                        requestReview: () =>
-                            session.reviewPlan({
-                                planName: plan.planName,
-                                planPath: plan.path,
-                                triageMeta: plan.attrs,
-                            }),
-                        requestRetry: async ({ response }) => {
-                            if (response?.cancellationReason === "runtime_cancel") {
-                                return { outcome: RuntimeInteractionOutcomes.CANCELED, value: false };
-                            }
-                            const value = await uiAPI.promptSelect("Review the Plan again?", [
-                                { value: "yes", label: "Yes" },
-                                { value: "no", label: "No" },
-                            ]);
-                            return value === "yes"
-                                ? { outcome: RuntimeInteractionOutcomes.ACCEPTED, value: true }
-                                : { outcome: RuntimeInteractionOutcomes.CANCELED, value: false };
-                        },
-                        onUnanswered: ({ reason }) => {
-                            uiAPI.appendSystemMessage(
-                                `Plan review ended without an answer (${reason}).`,
-                                false,
-                                "RunWield",
-                            );
-                        },
-                    });
-
-                    if (recoverableReview.kind === "complete") {
-                        uiAPI.appendSystemMessage(SESSION_COMPLETE_GUIDANCE, false, "RunWield");
-                        skipRouterRestore = true;
-                        return;
-                    }
-
-                    const reviewResult = recoverableReview.response;
-
-                    if (reviewResult.remoteReview) {
-                        uiAPI.appendSystemMessage(
-                            reviewResult.message || `Plan saved for remote review: ${plan.planName}`,
-                            false,
-                            "RunWield",
-                        );
-                        skipRouterRestore = true;
-                        return;
-                    }
-
-                    // The reviewer's transaction may have abandoned the execution
-                    // generation this session was still pointing at.
-                    if (!isPlanReviewableWithoutReopen(plan.attrs.status)) {
-                        await session.clearActiveExecutionWorkflow();
-                    }
-
-                    if (reviewResult.approved) {
-                        let reloadedAfterReview = false;
-                        try {
-                            const latestPlan = await loadPlan(projectRoot, plan.planName);
-                            if (latestPlan) {
-                                plan.attrs = reviewResult.planAttrs
-                                    ? { ...latestPlan.attrs, ...reviewResult.planAttrs }
-                                    : latestPlan.attrs;
-                                plan.body = latestPlan.body;
-                                plan.markdown = latestPlan.markdown || latestPlan.body || plan.markdown;
-                                reloadedAfterReview = true;
-                            }
-                        } catch {
-                            // Keep the in-memory Plan if a test fake does not support reloading after review.
-                        }
-                        if (!reloadedAfterReview && reviewResult.planAttrs) {
-                            plan.attrs = { ...plan.attrs, ...reviewResult.planAttrs };
-                        }
-                        const approvalAction = normalizePlanApprovalAction({
-                            classification: plan.attrs.classification,
-                            action: reviewResult.approvalAction,
-                        });
-                        if (isEpicPlan(plan.attrs)) {
-                            if (!validatePlanExecutionPolicyForReadiness(plan, uiAPI)) {
-                                skipRouterRestore = true;
-                                return;
-                            }
-                            await recordPlanEvent({
-                                cwd: projectRoot,
-                                planName: plan.planName,
-                                event: "epic_readiness_passed",
-                                currentStatus: "approved",
-                                details: { triageMeta: plan.attrs },
-                            });
-                            plan.attrs.status = "ready_for_decomposition";
-                            uiAPI.appendSystemMessage(
-                                `PROJECT Epic ready for decomposition or child plan selection: ${plan.planName}`,
-                                false,
-                                "RunWield",
-                            );
-                            if (approvalAction === PLAN_APPROVAL_ACTIONS.DECOMPOSE) {
-                                await runSlicerAgent({
-                                    planName: plan.planName,
-                                    triageMeta: plan.attrs,
-                                    reviewFeedback: reviewResult.feedback,
-                                    reviewImages: reviewResult.images,
-                                });
-                            } else {
-                                uiAPI.appendSystemMessage(
-                                    appendSessionCompleteGuidance(
-                                        `Plan saved. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
-                                    ),
-                                    false,
-                                    "RunWield",
-                                );
-                            }
-                            skipRouterRestore = true;
-                            return;
-                        }
-
-                        const ready = await prepareApprovedPlanForWork(
-                            projectRoot,
-                            plan,
-                            uiAPI,
-                        );
-                        if (!ready) {
-                            skipRouterRestore = true;
-                            return;
-                        }
-                        if (approvalAction === PLAN_APPROVAL_ACTIONS.RUN) {
-                            const confirmed = await confirmAffectedPathChangesBeforeExecution({
-                                projectRoot,
-                                planName: plan.planName,
-                                triageMeta: plan.attrs,
-                                uiAPI,
-                            });
-                            if (!confirmed) return;
-
-                            const execRes = await executePlan({
-                                planName: plan.planName,
-                                triageMeta: plan.attrs,
-                                reviewFeedback: reviewResult.feedback,
-                                reviewImages: reviewResult.images,
-                            });
-                            const policy = resolvePlanExecutionPolicy(plan.attrs);
-                            const executionDecision = decidePostExecution(execRes, {
-                                planName: plan.planName,
-                                triageMeta: plan.attrs,
-                                executionAgentName: policy.ok ? policy.policy.executionAgent : agentName,
-                            });
-                            await validatePostExecutionDecision({
-                                executionDecision,
-                                executionResult: execRes,
-                                fallbackPlanContent: plan.markdown || plan.body || "",
-                                continueWorkflowValidation,
-                                session,
-                                uiAPI,
-                            });
-                        } else {
-                            uiAPI.appendSystemMessage(
-                                appendSessionCompleteGuidance(
-                                    `Plan saved. Resume later with: ${CLI_BIN} load-plan ${plan.planName}`,
-                                ),
-                                false,
-                                "RunWield",
-                            );
-                            skipRouterRestore = true;
-                        }
-                        return;
-                    }
-
-                    // User submitted feedback — kick off the planning agent to revise.
-                    const outcome = await runPlanningAgent({
+                    const reviewResult = await reviewLoadedPlanDirectly({
+                        projectRoot,
+                        plan,
                         agentName,
-                        initialRequest: buildReReviewRevisionRequest(plan.planName, reviewResult.feedback),
-                        triageMeta: plan.attrs,
-                        images: reviewResult.images,
-                        planName: plan.planName,
-                    });
-
-                    const planningDecision = decidePostPlanning(outcome, {
-                        planningAgentName: agentName,
-                        fallbackTriageMeta: plan.attrs,
-                    });
-                    await executePostPlanningDecision({
-                        decision: planningDecision,
-                        fallbackPlanContent: plan.markdown || plan.body || "",
                         uiAPI,
                         executePlan,
                         continueWorkflowValidation,
+                        runPlanningAgent,
                         runSlicerAgent,
                         session,
                     });
-                    if (shouldKeepPlanningAgentActive(planningDecision)) {
+                    if (reviewResult.keepPlanAgentActive) {
                         skipRouterRestore = true;
                     }
                     return;
@@ -795,6 +601,7 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
             while (true) {
                 const answer = await uiAPI.promptSelect("What would you like to do?", [
                     { value: "resume", label: "Resume planning" },
+                    ...(directReviewEligibility.eligible ? [{ value: "review", label: "Review plan" }] : []),
                     ...(isUserVerifiableStatus(plan.attrs.status)
                         ? [{
                             value: "user_verify",
@@ -820,6 +627,24 @@ export async function runLoadPlanCommand(argv: string[], options: CommandContext
                         plan,
                         uiAPI,
                     });
+                    return;
+                }
+                if (answer === "review") {
+                    restoreAgentName = planFlowRestoreAgent;
+                    const reviewResult = await reviewLoadedPlanDirectly({
+                        projectRoot,
+                        plan,
+                        agentName,
+                        uiAPI,
+                        executePlan,
+                        continueWorkflowValidation,
+                        runPlanningAgent,
+                        runSlicerAgent,
+                        session,
+                    });
+                    if (reviewResult.keepPlanAgentActive) {
+                        skipRouterRestore = true;
+                    }
                     return;
                 }
                 if (answer === "resume") break;

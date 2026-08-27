@@ -4,7 +4,12 @@
  */
 
 import { AGENTS, SUBAGENTS } from "../../constants.js";
-import { readPersistedModelState, resolveResumeAgentName } from "./active-agent-session.js";
+import {
+    readPersistedManualModelState,
+    readPersistedModelState,
+    recordManualModelSelection,
+    resolveResumeAgentName,
+} from "./active-agent-session.js";
 import { resolveActiveWorkflowRuntimeAgent, resolvePlanExecutionRuntimeAgent } from "../workflow/execution-agent.ts";
 import { getAgentDisplayName } from "./agents.js";
 import { runActiveAgentTurn, switchActiveAgent } from "./agent-switching.js";
@@ -76,6 +81,7 @@ import { getSessionKeyboardHelp } from "./session-help.js";
 import {
     deriveWorkflowContextFromExecutionWorkflow,
     readPersistedPendingSegmentContinuationEntry,
+    readPersistedWorkflowContext,
     recordSegmentLineageEvidence,
 } from "./workflow-context-session.js";
 import { executePlanAction } from "../workflow/plan-actions.ts";
@@ -91,6 +97,28 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 /** @type {AsyncLocalStorage<ManagedOperationContext>} */
 const ACTIVE_MANAGED_OPERATION = new AsyncLocalStorage();
+
+/**
+ * Rebuild the workflow-owned root configuration that an active-agent marker
+ * alone cannot describe. Slicer needs both its hidden definition and the
+ * finalize tool bound to the current Epic.
+ *
+ * @param {string} agentName
+ * @param {import('@earendil-works/pi-coding-agent').SessionManager} sessionManager
+ * @param {string} cwd
+ */
+async function resolvePersistedRootConfiguration(agentName, sessionManager, cwd) {
+    if (agentName !== AGENTS.SLICER) return {};
+    const planName = readPersistedWorkflowContext(sessionManager)?.planName || "";
+    if (!planName) {
+        throw new Error("Cannot resume Slicer because its Epic context is missing from the Session transcript.");
+    }
+    const { createSlicerFinalizeTool } = await import("../workflow/workflow-slicer.ts");
+    return {
+        subAgentDefinition: { id: SUBAGENTS.SLICER },
+        customTools: [createSlicerFinalizeTool({ planName, cwd })],
+    };
+}
 
 /**
  * @typedef {Object} SessionRuntimeComposition
@@ -407,6 +435,17 @@ export function shouldEmitProjectedAttention(summary, previousAttentionEventId) 
 }
 
 /**
+ * @param {NonNullable<import('./hosted-session.js').ManagedSessionMetadata['syncState']> | null | undefined} previous
+ * @param {NonNullable<import('./hosted-session.js').ManagedSessionMetadata['syncState']>} next
+ * @returns {boolean}
+ */
+function isSameManagedSyncState(previous, next) {
+    return previous?.status === next.status && previous.localGeneration === next.localGeneration &&
+        previous.latestGeneration === next.latestGeneration && previous.owningSurfaceKind === next.owningSurfaceKind &&
+        previous.message === next.message;
+}
+
+/**
  * @param {*} options
  * @param {*} workflow
  * @param {*} handoff
@@ -416,9 +455,6 @@ function buildSemanticRepairCiState(options, workflow, handoff) {
     const state = {
         status: typeof triageMeta.status === "string" ? triageMeta.status : "",
         validationCiAttempts: typeof triageMeta.validationCiAttempts === "number" ? triageMeta.validationCiAttempts : 0,
-        validationObjectiveCheckAttempts: typeof triageMeta.validationObjectiveCheckAttempts === "number"
-            ? triageMeta.validationObjectiveCheckAttempts
-            : 0,
         validationSemanticRounds: typeof triageMeta.validationSemanticRounds === "number"
             ? triageMeta.validationSemanticRounds
             : handoff.semanticRound,
@@ -1175,7 +1211,7 @@ export class SessionRuntime {
             !promptReadySession.getManagedMetadata?.()
         ) {
             promptReadySession.setActiveModelState(model, provider, true);
-            promptReadySession.mergePendingManagedTurnIntent?.({ model, provider });
+            promptReadySession.mergePendingManagedTurnIntent?.({ model, provider, manualModel: true });
             this.#emitSessionEvent(sessionId, { type: RuntimeEventTypes.MODEL_CHANGED, model, provider });
             return { ok: true, model, provider };
         }
@@ -1194,6 +1230,13 @@ export class SessionRuntime {
                     });
                 }
                 session.getRootSessionManager?.()?.appendModelChange?.(provider, model);
+                recordManualModelSelection(
+                    /** @type {import('@earendil-works/pi-coding-agent').SessionManager | undefined} */ (
+                        session.getRootSessionManager?.() || undefined
+                    ),
+                    provider,
+                    model,
+                );
             } catch (error) {
                 if (previousUserOverride) {
                     session.setActiveModelState(previousModelState.model, previousModelState.provider || "", true);
@@ -1647,7 +1690,8 @@ export class SessionRuntime {
                         "",
                         buildDiffInspectionSection(continuation.repair.diffText),
                     ].join("\n"),
-                    completionInstruction: "Report a disposition for every finding, then call task_completed.",
+                    completionInstruction:
+                        "Report a disposition for every finding, then call task_completed. If a finding is still open because something blocked you, stop in plain text instead and name it.",
                 }),
                 cwd: executionCwd,
                 dispatchKind: "validation_repair",
@@ -2922,9 +2966,12 @@ export class SessionRuntime {
         const emitSyncState = (
             /** @type {NonNullable<import('./hosted-session.js').ManagedSessionMetadata['syncState']>} */ state,
         ) => {
+            const previousState = managed.syncState;
             hostedSession.setManagedMetadata({ ...managed, syncState: state });
             managed = hostedSession.getManagedMetadata?.() || managed;
-            this.#emitSessionEvent(sessionId, state);
+            if (!isSameManagedSyncState(previousState, state)) {
+                this.#emitSessionEvent(sessionId, state);
+            }
         };
         const sanitizedSurface = (/** @type {unknown} */ processKind) => {
             if (processKind === "workspace" || processKind === "tui" || processKind === "acp") return processKind;
@@ -2940,6 +2987,10 @@ export class SessionRuntime {
         }
         const latestGeneration = activationState.generation?.generation ?? null;
         const currentLocalGeneration = managed.acknowledgedGeneration ?? managed.generation ?? null;
+        const managedAlreadyCurrent = !options.replayFromStart && latestGeneration === currentLocalGeneration &&
+            !managed.acknowledgedEventId && !Number.isInteger(managed.acknowledgedEventOrdinal) &&
+            managed.syncState?.status === "current" && managed.syncState.localGeneration === currentLocalGeneration &&
+            managed.syncState.latestGeneration === latestGeneration;
         const activeOwnerKind = activationState.activation?.ownerProcessKind || null;
         const activeOwnerInstanceId = activationState.activation?.ownerInstanceId || null;
         const activeElsewhere = Boolean(
@@ -2976,7 +3027,8 @@ export class SessionRuntime {
         }
         if (
             !options.replayFromStart && latestGeneration === currentLocalGeneration &&
-            (managed.acknowledgedEventId || latestGeneration === null)
+            (managed.acknowledgedEventId || Number.isInteger(managed.acknowledgedEventOrdinal) ||
+                latestGeneration === null)
         ) {
             /** @type {NonNullable<import('./hosted-session.js').ManagedSessionMetadata['syncState']>} */
             const state = {
@@ -2989,15 +3041,17 @@ export class SessionRuntime {
             emitSyncState(state);
             return { ok: true, events: [], state };
         }
-        emitSyncState(
-            /** @type {NonNullable<import('./hosted-session.js').ManagedSessionMetadata['syncState']>} */ ({
-                type: RuntimeEventTypes.MANAGED_SYNC_STATE_CHANGED,
-                status: "syncing",
-                localGeneration: currentLocalGeneration,
-                latestGeneration,
-                ...(owningSurfaceKind ? { owningSurfaceKind } : {}),
-            }),
-        );
+        if (!managedAlreadyCurrent) {
+            emitSyncState(
+                /** @type {NonNullable<import('./hosted-session.js').ManagedSessionMetadata['syncState']>} */ ({
+                    type: RuntimeEventTypes.MANAGED_SYNC_STATE_CHANGED,
+                    status: "syncing",
+                    localGeneration: currentLocalGeneration,
+                    latestGeneration,
+                    ...(owningSurfaceKind ? { owningSurfaceKind } : {}),
+                }),
+            );
+        }
         try {
             /** @type {any[]} */
             const events = [];
@@ -3028,6 +3082,7 @@ export class SessionRuntime {
                     : cursorEventOrdinal;
             } while (!projected.complete);
             const summary = /** @type {any} */ (projected.snapshot || {});
+            const previousSyncState = managed.syncState;
             /** @type {import('./hosted-session.js').ManagedSessionMetadata} */
             const nextMetadata = {
                 ...managed,
@@ -3072,7 +3127,9 @@ export class SessionRuntime {
                     });
                 }
             }
-            if (managed.syncState) this.#emitSessionEvent(sessionId, managed.syncState);
+            if (managed.syncState && !isSameManagedSyncState(previousSyncState, managed.syncState)) {
+                this.#emitSessionEvent(sessionId, managed.syncState);
+            }
             return { ok: true, events, state: managed.syncState || null, snapshot: summary };
         } catch (error) {
             const failure = toProjectionFailure(error);
@@ -3160,13 +3217,15 @@ export class SessionRuntime {
      * Adopt a Session as a dormant Runtime shell. This path deliberately
      * does not open a writable Pi Session Manager.
      *
-     * @param {{ session: import('../owner-coordination/sessions.js').CatalogedSession, generation?: number | null, acknowledgedEventId?: string | null, name?: string | null, activeAgent?: string | null, model?: string | null, provider?: string | null, thinkingLevel?: string | null, workflowContext?: import('./workflow-context-session.js').WorkflowContext | null }} options
+     * @param {{ session: import('../owner-coordination/sessions.js').CatalogedSession, generation?: number | null, acknowledgedEventId?: string | null, hostedSessionId?: string | null, name?: string | null, activeAgent?: string | null, model?: string | null, provider?: string | null, thinkingLevel?: string | null, workflowContext?: import('./workflow-context-session.js').WorkflowContext | null }} options
      */
     adoptManagedSession(options) {
         const cataloged = options?.session;
         if (!cataloged) throw new Error("SessionRuntime.adoptManagedSession requires a cataloged Session");
         const hostedSession = this.#sessionHost.createSession({
-            id: crypto.randomUUID(),
+            id: typeof options.hostedSessionId === "string" && options.hostedSessionId
+                ? options.hostedSessionId
+                : crypto.randomUUID(),
             cwd: cataloged.transcriptCwd,
             sessionManager: null,
             managed: {
@@ -3432,8 +3491,21 @@ export class SessionRuntime {
                 sessionPath: managed.transcriptPath,
             });
             hostedSession.setRootSessionManager(/** @type {any} */ (sessionManager), capability);
+            const pendingModel = pendingIntent.model || pendingIntent.provider
+                ? pendingIntent.provider && pendingIntent.model
+                    ? `${pendingIntent.provider}/${pendingIntent.model}`
+                    : pendingIntent.model || undefined
+                : undefined;
             if (pendingIntent.model || pendingIntent.provider) {
                 hostedSession.setActiveModelState(pendingIntent.model || "", pendingIntent.provider || "", true);
+            }
+            if (pendingIntent.manualModel && pendingModel) {
+                const parsedPendingModel = parseProviderModel(pendingModel);
+                recordManualModelSelection(
+                    sessionManager,
+                    parsedPendingModel.ok ? parsedPendingModel.provider : "",
+                    parsedPendingModel.ok ? parsedPendingModel.id : pendingModel,
+                );
             }
             if (pendingIntent.thinkingLevel || managed.thinkingLevel) {
                 hostedSession.setThinkingLevel(normalizeThinkingLevel(
@@ -3441,19 +3513,29 @@ export class SessionRuntime {
                 ));
             }
             let agentName = options.agentName || pendingIntent.agentName || null;
-            const persistedModel = resolvePersistedResumeModel(sessionManager);
             if (descriptor.activateAgent !== false) {
-                agentName ||= await resolveResumeAgentName(sessionManager);
-                const pendingModel = pendingIntent.model || pendingIntent.provider
-                    ? pendingIntent.provider && pendingIntent.model
-                        ? `${pendingIntent.provider}/${pendingIntent.model}`
-                        : pendingIntent.model || undefined
+                const resumeAgent = await resolveResumeAgentName(sessionManager);
+                agentName ||= resumeAgent;
+                const persistedManualModel = readPersistedManualModelState(sessionManager, agentName);
+                const persistedModel = agentName === resumeAgent
+                    ? resolvePersistedResumeModel(sessionManager)
                     : undefined;
-                await this.#activateSessionAgent(hostedSession, {
+                const persistedRootConfiguration = await resolvePersistedRootConfiguration(
                     agentName,
-                    model: pendingModel || persistedModel,
+                    sessionManager,
+                    hostedSession.cwd,
+                );
+                await this.#activateSessionAgent(hostedSession, {
+                    ...persistedRootConfiguration,
+                    agentName,
+                    model: pendingModel ||
+                        (persistedManualModel
+                            ? persistedManualModel.provider
+                                ? `${persistedManualModel.provider}/${persistedManualModel.model}`
+                                : persistedManualModel.model
+                            : persistedModel),
                     toolNames: options.toolNames,
-                    customTools: options.customTools,
+                    customTools: options.customTools || persistedRootConfiguration.customTools,
                     includeEditFallback: options.includeEditFallback,
                     managedOperationCapability: capability,
                 });
@@ -3643,6 +3725,23 @@ export class SessionRuntime {
                         cwd: cataloged.transcriptCwd,
                     };
                 }
+                if (!selectedSession) {
+                    const located = await classifyRootSessionLocator({
+                        cwd: options.cwd,
+                        sessionId: options.resumeSessionId,
+                        ownerCoordinationStore,
+                    });
+                    if (
+                        located.kind === "managed" && located.session &&
+                        located.session.projectId === managedProject?.projectId
+                    ) {
+                        selectedSession = {
+                            id: located.session.piSessionId,
+                            path: located.session.transcriptPath,
+                            cwd: located.session.transcriptCwd,
+                        };
+                    }
+                }
             } else {
                 const persistedSessions = classified.kind === "managed"
                     ? (await listCatalogSafeRootSessionLocators(options.cwd)).locators.map((locator) => ({
@@ -3829,6 +3928,53 @@ export class SessionRuntime {
             return hostedSession.id;
         } catch (error) {
             await this.closeSession(hostedSession.id);
+            throw error;
+        }
+    }
+
+    /**
+     * Replace a live Session with one rooted at an execution workflow cwd.
+     * UI adapters listen to the runtime replacement event and rebind themselves.
+     *
+     * @param {string} oldSessionId
+     * @param {import('../types.js').ActiveExecutionWorkflow} workflow
+     * @returns {Promise<string>}
+     */
+    async replaceSessionForExecutionFollowUp(oldSessionId, workflow) {
+        const oldSession = this.#sessionHost.getSession(oldSessionId);
+        if (!oldSession) throw new Error("SessionRuntime.replaceSessionForExecutionFollowUp: old session not found");
+        const executionCwd = typeof workflow?.executionCwd === "string" ? workflow.executionCwd : "";
+        if (!executionCwd || !isAbsolute(executionCwd)) {
+            throw new Error("SessionRuntime.replaceSessionForExecutionFollowUp requires an absolute execution cwd");
+        }
+        const executionAgent = resolveActiveWorkflowRuntimeAgent(workflow);
+        if (!executionAgent) {
+            throw new Error("SessionRuntime.replaceSessionForExecutionFollowUp requires an execution Agent");
+        }
+        const created = await this.createInteractiveSession({
+            cwd: executionCwd,
+            mode: "new",
+            deferManagedActivationUntilAgentReady: true,
+        });
+        const newSessionId = created.sessionId;
+        const newSession = this.#sessionHost.getSession(newSessionId);
+        if (!newSession) throw new Error("Execution follow-up replacement session was not retained");
+        try {
+            newSession.setInteractionAdapter(oldSession.getInteractionAdapter());
+            await this.#activateSessionAgent(newSession, { agentName: executionAgent });
+            newSession.setActiveExecutionWorkflow(workflow);
+            if (workflow.planName) await this.renameSession(newSessionId, workflow.planName);
+            this.#emitSessionEvent(oldSession.id, {
+                type: RuntimeEventTypes.SESSION_REPLACED,
+                oldSessionId: oldSession.id,
+                newSessionId,
+                reason: "execution_follow_up",
+                planName: workflow.planName || "Plan follow-up",
+            });
+            await this.closeSession(oldSession.id);
+            return newSessionId;
+        } catch (error) {
+            await this.closeSession(newSessionId);
             throw error;
         }
     }

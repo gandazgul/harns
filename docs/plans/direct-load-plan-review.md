@@ -1,8 +1,8 @@
 ---
+planId: "5169e4f7-fbc7-4c1b-9d7d-c394581c64c3"
 classification: "PLANNED_CHANGE"
 workKind: "FEATURE"
 complexity: "MEDIUM"
-summary: "Let load-plan open direct Plan Review for eligible draft, feedback, and ready_for_work Plans and route every review decision through the normal workflow."
 affectedPaths:
     - "src/cmd/load-plan/index.ts"
     - "src/cmd/load-plan/plan-epic-flow.ts"
@@ -10,21 +10,18 @@ affectedPaths:
     - "src/cmd/load-plan/index.integration.test.ts"
     - "src/ui/tui/golden-scenarios/load-plan-workflow.ts"
     - "src/ui/tui/golden-scenarios/load-plan-epic-workflow.ts"
-objectiveChecks:
-    - id: "OC1"
-      command: "deno run -A scripts/run-tests.js src/cmd/load-plan/index.integration.test.ts --filter \"direct review\""
-      rationale: "The current integration suite has no direct-review cases, so this focused behavior check is red until real load-plan menu paths open Plan Review and complete the requested flows."
-    - id: "OC2"
-      command: "grep -q 'Review plan' src/cmd/load-plan/index.ts && grep -q 'Review plan' src/cmd/load-plan/plan-epic-flow.ts"
-      rationale: "The requested user-visible direct-review action is absent from both the non-Epic and PROJECT menu implementations today."
 executionAgent: "engineer"
 collaborationRecommendation: "autonomous"
 createdAt: "2026-08-20T21:30:12-04:00"
-updatedAt: "2026-08-21T01:58:39.148Z"
-status: "ready_for_work"
+status: "validated"
 origin: "internal"
 userVerifiedAt: null
-planId: "5169e4f7-fbc7-4c1b-9d7d-c394581c64c3"
+workRecord:
+    status: "generated"
+    recordId: "9cdf7a0e-0078-45a9-a932-eaeacd7cd5b9"
+    path: "docs/work-records/2026-08-26-direct-plan-review-from-load-plan.md"
+    lastAttemptAt: "2026-08-26T23:50:00.661Z"
+targetBranch: "main"
 ---
 
 # Direct Plan Review from load-plan

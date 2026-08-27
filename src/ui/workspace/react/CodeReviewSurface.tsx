@@ -1,13 +1,14 @@
 // @ts-nocheck: Workspace React islands compile TSX, but this module uses JSDoc-style JavaScript only.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import mermaid from "mermaid";
 import { ThemeProvider } from "@plannotator/ui/components/ThemeProvider.tsx";
 import { TooltipProvider } from "@plannotator/ui/components/Tooltip.tsx";
 import { ApproveButton, FeedbackButton } from "@plannotator/ui/components/ToolbarButtons.tsx";
 import { CompletionOverlay } from "@plannotator/ui/components/CompletionOverlay.tsx";
 import { ActionMenu, ActionMenuItem } from "@plannotator/ui/components/ActionMenu.tsx";
 import { CommentPopover } from "@plannotator/ui/components/CommentPopover.tsx";
-import { useConfigValue } from "@plannotator/ui/config/index.ts";
+import { configStore, setReviewPanelView, useConfigValue } from "@plannotator/ui/config/index.ts";
 import { AllFilesCodeView } from "../../../../third_party/plannotator/packages/review-editor/components/AllFilesCodeView.tsx";
 import { FileTree } from "../../../../third_party/plannotator/packages/review-editor/components/FileTree.tsx";
 import { ReviewSidebar } from "../../../../third_party/plannotator/packages/review-editor/components/ReviewSidebar.tsx";
@@ -27,6 +28,54 @@ const DEFAULT_CODE_PAYLOAD = {
     reviewStatus: null,
     guidedReview: null,
 };
+
+const FILE_PANEL_DEFAULT_WIDTH = 288;
+const FILE_PANEL_MIN_WIDTH = 208;
+const FILE_PANEL_MAX_WIDTH = 520;
+const DIFF_STYLE_STORAGE_KEY = "runwield-code-review-diff-style";
+const FILE_PANEL_MODE_STORAGE_KEY = "runwield-code-review-file-panel-mode";
+
+function readLocalPreference(key) {
+    try {
+        return globalThis.localStorage?.getItem(key) || null;
+    } catch {
+        return null;
+    }
+}
+
+function writeLocalPreference(key, value) {
+    try {
+        globalThis.localStorage?.setItem(key, value);
+    } catch {
+        // The in-memory choice can continue when browser storage is unavailable.
+    }
+}
+
+function readStoredDiffStyle() {
+    const value = readLocalPreference(DIFF_STYLE_STORAGE_KEY);
+    return value === "split" || value === "unified" ? value : null;
+}
+
+function readStoredFilePanelMode() {
+    const value = readLocalPreference(FILE_PANEL_MODE_STORAGE_KEY);
+    return value === "tree" || value === "changes" ? value : null;
+}
+
+function toReviewPanelView(filePanelMode) {
+    return filePanelMode === "tree" ? "tree" : "sections";
+}
+
+function getInitialFilePanelMode() {
+    return readStoredFilePanelMode() || "tree";
+}
+
+function getInitialDiffStyle() {
+    return readStoredDiffStyle() || configStore.get("diffStyle") || "split";
+}
+
+function clampFilePanelWidth(width) {
+    return Math.min(FILE_PANEL_MAX_WIDTH, Math.max(FILE_PANEL_MIN_WIDTH, width));
+}
 
 async function waitForGuideJob(jobId, token, setGuideJob) {
     const started = Date.now();
@@ -61,7 +110,9 @@ export function CodeReviewSurface({ payload }) {
     const [globalCommentOpen, setGlobalCommentOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [fileTreeOpen, setFileTreeOpen] = useState(true);
-    const [filePanelMode, setFilePanelMode] = useState("changes");
+    const [filePanelMode, setFilePanelMode] = useState(getInitialFilePanelMode);
+    const [filePanelWidth, setFilePanelWidth] = useState(FILE_PANEL_DEFAULT_WIDTH);
+    const [resizingFilePanel, setResizingFilePanel] = useState(false);
     const [annotationsOpen, setAnnotationsOpen] = useState(true);
     const [submitting, setSubmitting] = useState(null);
     const [submitted, setSubmitted] = useState(null);
@@ -76,10 +127,12 @@ export function CodeReviewSurface({ payload }) {
     const [guideGenerating, setGuideGenerating] = useState(false);
     const [guideError, setGuideError] = useState("");
     const autoGuideStartedRef = useRef(false);
+    const filePanelResizeRef = useRef(null);
     const globalCommentButtonRef = useRef(null);
     const allFilesHostRef = useRef(null);
     const navigationLockRef = useRef(null);
-    const diffStyle = useConfigValue("diffStyle") || "split";
+    const configuredDiffStyle = useConfigValue("diffStyle") || "split";
+    const [diffStyle, setLocalDiffStyle] = useState(getInitialDiffStyle);
     const diffOverflow = useConfigValue("diffOverflow") || "scroll";
     const diffIndicators = useConfigValue("diffIndicators") || "bars";
     const diffLineDiffType = useConfigValue("diffLineDiffType") || "word-alt";
@@ -88,6 +141,16 @@ export function CodeReviewSurface({ payload }) {
     const diffExpandUnchanged = useConfigValue("diffExpandUnchanged") === true;
     const diffFontFamily = useConfigValue("diffFontFamily") || undefined;
     const diffFontSize = useConfigValue("diffFontSize") || undefined;
+    const setDiffStyle = useCallback((style) => {
+        setLocalDiffStyle(style);
+        writeLocalPreference(DIFF_STYLE_STORAGE_KEY, style);
+        configStore.setLocal("diffStyle", style);
+    }, []);
+    const setRememberedFilePanelMode = useCallback((mode) => {
+        setFilePanelMode(mode);
+        writeLocalPreference(FILE_PANEL_MODE_STORAGE_KEY, mode);
+        setReviewPanelView(toReviewPanelView(mode));
+    }, []);
     const currentFile = files[activeFileIndex] || files[0] || null;
     const sections = useMemo(
         () => buildReviewSections(files, initialPayload.reviewStatus),
@@ -114,6 +177,10 @@ export function CodeReviewSurface({ payload }) {
     const guideProviderAvailable = initialPayload.mode === "dev"
         ? guideCapabilities?.available !== false
         : Boolean(guideCapabilities?.available);
+
+    useEffect(() => {
+        if (!readStoredDiffStyle()) setLocalDiffStyle(configuredDiffStyle);
+    }, [configuredDiffStyle]);
 
     useEffect(() => {
         let canceled = false;
@@ -180,6 +247,49 @@ export function CodeReviewSurface({ payload }) {
         autoGuideStartedRef.current = true;
         void generateGuide();
     }, [generateGuide, guideCapabilitiesKnown, guidePolicy.autoStart, guideProviderAvailable, guideReady]);
+
+    const startFilePanelResize = useCallback((event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        filePanelResizeRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startWidth: filePanelWidth,
+        };
+        setResizingFilePanel(true);
+    }, [filePanelWidth]);
+
+    const resizeFilePanel = useCallback((event) => {
+        const resize = filePanelResizeRef.current;
+        if (!resize || resize.pointerId !== event.pointerId) return;
+        setFilePanelWidth(clampFilePanelWidth(resize.startWidth + event.clientX - resize.startX));
+    }, []);
+
+    const finishFilePanelResize = useCallback((event) => {
+        const resize = filePanelResizeRef.current;
+        if (!resize || resize.pointerId !== event.pointerId) return;
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        filePanelResizeRef.current = null;
+        setResizingFilePanel(false);
+    }, []);
+
+    const resizeFilePanelWithKeyboard = useCallback((event) => {
+        const step = event.shiftKey ? 48 : 16;
+        if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            setFilePanelWidth((width) => clampFilePanelWidth(width - step));
+        } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            setFilePanelWidth((width) => clampFilePanelWidth(width + step));
+        } else if (event.key === "Home") {
+            event.preventDefault();
+            setFilePanelWidth(FILE_PANEL_MIN_WIDTH);
+        } else if (event.key === "End") {
+            event.preventDefault();
+            setFilePanelWidth(FILE_PANEL_MAX_WIDTH);
+        }
+    }, []);
 
     const toggleViewedFile = useCallback((filePath) => {
         const wasViewed = viewedFiles.has(filePath);
@@ -452,6 +562,14 @@ export function CodeReviewSurface({ payload }) {
                 <div className="rw-plannotator-host rw-code-review" data-review-mode={initialPayload.mode}>
                     <header className="rw-plannotator-toolbar">
                         <div className="rw-plan-review-heading">
+                            <CodeReviewOptionsMenu
+                                iconOnly
+                                annotationsOpen={annotationsOpen}
+                                fileTreeOpen={fileTreeOpen}
+                                onOpenSettings={() => setSettingsOpen(true)}
+                                onToggleAnnotations={() => setAnnotationsOpen((open) => !open)}
+                                onToggleFileTree={() => setFileTreeOpen((open) => !open)}
+                            />
                             <img src="/logo.svg" alt="" aria-hidden="true" />
                             <h1>Code Review</h1>
                             {initialPayload.mode === "dev" && (
@@ -461,22 +579,6 @@ export function CodeReviewSurface({ payload }) {
                             )}
                         </div>
                         <div className="rw-plannotator-actions">
-                            <CodeReviewOptionsMenu
-                                annotationsOpen={annotationsOpen}
-                                fileTreeOpen={fileTreeOpen}
-                                onOpenSettings={() => setSettingsOpen(true)}
-                                onPrint={() => globalThis.print?.()}
-                                onToggleAnnotations={() => setAnnotationsOpen((open) => !open)}
-                                onToggleFileTree={() => setFileTreeOpen((open) => !open)}
-                            />
-                            <FeedbackButton
-                                onClick={submitFeedback}
-                                disabled={annotations.length === 0 || submitting !== null}
-                                isLoading={submitting === "feedback"}
-                                title={annotations.length === 0
-                                    ? "Add an annotation before sending feedback"
-                                    : "Send all annotations"}
-                            />
                             <ApproveButton
                                 onClick={submitApprove}
                                 disabled={submitting !== null}
@@ -485,69 +587,65 @@ export function CodeReviewSurface({ payload }) {
                         </div>
                     </header>
                     {error && <p className="rw-review-error" role="alert">{error}</p>}
-                    <div className="rw-code-review-controls">
-                        <p
-                            title={`${initialPayload.gitRef || "Working diff"} · ${
-                                initialPayload.agentCwd || "workspace"
-                            }`}
-                        >
-                            {initialPayload.gitRef || "Working diff"}
-                        </p>
-                        <div className="rw-guide-actions">
-                            <button
-                                className="rw-code-control-button rw-guide-generate-button"
-                                type="button"
-                                onClick={guideReady ? () => setGuideOpen((open) => !open) : generateGuide}
-                                disabled={guideGenerating || (!guideReady && !guideProviderAvailable)}
-                                title="Guided Review generation uses an additional LLM call when backed by an agent provider."
-                            >
-                                {guideGenerating
-                                    ? "Generating guided review…"
-                                    : guideReady
-                                    ? (guideOpen ? "Back to diff" : "Guided Review ready")
-                                    : "Generate guided review"}
-                            </button>
-                            <span className="rw-guide-cost-note">
-                                {formatGuideStatus(guideJob, guideCapabilities, guidePolicy)}
-                            </span>
-                        </div>
-                        <button
-                            ref={globalCommentButtonRef}
-                            className="rw-code-control-button"
-                            type="button"
-                            onClick={() => setGlobalCommentOpen((open) => !open)}
-                        >
-                            <CommentIcon />
-                            Global comment
-                        </button>
-                    </div>
                     <div
                         className="rw-plannotator-code-layout"
                         data-annotations-open={annotationsOpen}
                         data-file-tree-open={fileTreeOpen}
+                        data-resizing-file-panel={resizingFilePanel}
+                        style={{ "--rw-code-review-files-width": `${filePanelWidth}px` }}
                     >
                         {fileTreeOpen && (
                             <aside className="rw-review-file-tree">
-                                <div className="rw-code-file-tabs" role="tablist" aria-label="Code review files">
+                                <div className="rw-code-file-tabs">
+                                    <div className="rw-segmented-toggle" role="tablist" aria-label="Code review files">
+                                        <button
+                                            aria-selected={filePanelMode === "tree"}
+                                            className={filePanelMode === "tree" ? "active" : ""}
+                                            onClick={() => setRememberedFilePanelMode("tree")}
+                                            role="tab"
+                                            title="Files"
+                                            type="button"
+                                        >
+                                            <FileTreeIcon />
+                                            <span>Files</span>
+                                        </button>
+                                        <button
+                                            aria-selected={filePanelMode === "changes"}
+                                            className={filePanelMode === "changes" ? "active" : ""}
+                                            onClick={() => setRememberedFilePanelMode("changes")}
+                                            role="tab"
+                                            title="Changes"
+                                            type="button"
+                                        >
+                                            <CodeToggleIcon name="changes" />
+                                            <span>Changes</span>
+                                        </button>
+                                    </div>
                                     <button
-                                        aria-selected={filePanelMode === "changes"}
-                                        className={filePanelMode === "changes" ? "active" : ""}
-                                        onClick={() => setFilePanelMode("changes")}
-                                        role="tab"
+                                        className="rw-code-file-sidebar-close"
                                         type="button"
+                                        onClick={() => setFileTreeOpen(false)}
+                                        title="Collapse file sidebar"
+                                        aria-label="Collapse file sidebar"
                                     >
-                                        Changes
-                                    </button>
-                                    <button
-                                        aria-selected={filePanelMode === "tree"}
-                                        className={filePanelMode === "tree" ? "active" : ""}
-                                        onClick={() => setFilePanelMode("tree")}
-                                        role="tab"
-                                        type="button"
-                                    >
-                                        Files
+                                        <PanelCollapseIcon side="left" />
                                     </button>
                                 </div>
+                                <div
+                                    aria-label="Resize file panel"
+                                    aria-orientation="vertical"
+                                    aria-valuemax={FILE_PANEL_MAX_WIDTH}
+                                    aria-valuemin={FILE_PANEL_MIN_WIDTH}
+                                    aria-valuenow={filePanelWidth}
+                                    className="rw-code-file-resize-handle"
+                                    onKeyDown={resizeFilePanelWithKeyboard}
+                                    onPointerDown={startFilePanelResize}
+                                    onPointerMove={resizeFilePanel}
+                                    onPointerUp={finishFilePanelResize}
+                                    onPointerCancel={finishFilePanelResize}
+                                    role="separator"
+                                    tabIndex={0}
+                                />
                                 <div className="rw-code-file-panel">
                                     {filePanelMode === "tree"
                                         ? (
@@ -588,112 +686,162 @@ export function CodeReviewSurface({ payload }) {
                             aria-label="All file changes"
                             data-content-fits={allFilesContentFits}
                         >
-                            {!highlightingReady
-                                ? <div className="rw-empty-diff">Preparing syntax highlighting…</div>
-                                : guideOpen && guide
-                                ? (
-                                    <GuidedReviewExplainer
-                                        guide={guide}
-                                        files={files}
-                                        token={initialPayload.token}
-                                        jobId={guideJob?.id || "dev-guide"}
-                                        diffProps={{
-                                            diffStyle,
-                                            diffOverflow,
-                                            diffIndicators,
-                                            diffLineDiffType,
-                                            diffShowLineNumbers,
-                                            diffShowBackground,
-                                            diffExpandUnchanged,
-                                            diffFontFamily,
-                                            diffFontSize,
-                                            annotations,
-                                            selectedAnnotationId,
-                                            scrollTargetAnnotation,
-                                            pendingSelection,
-                                            setPendingSelection,
-                                            addAnnotationForFile,
-                                            editAnnotation,
-                                            setSelectedAnnotationId,
-                                            setAnnotations,
-                                            addFileComment,
-                                            viewedFiles,
-                                            toggleViewedFile,
-                                            stagedFiles,
-                                        }}
-                                    />
-                                )
-                                : files.length > 0
-                                ? (
-                                    <AllFilesCodeView
-                                        key={[
-                                            diffStyle,
-                                            diffOverflow,
-                                            diffIndicators,
-                                            diffLineDiffType,
-                                            diffShowLineNumbers,
-                                            diffShowBackground,
-                                            diffExpandUnchanged,
-                                            diffFontFamily,
-                                            diffFontSize,
-                                        ].join("|")}
-                                        files={accordionFiles}
-                                        diffStyle={diffStyle}
-                                        diffOverflow={diffOverflow}
-                                        diffIndicators={diffIndicators}
-                                        lineDiffType={diffLineDiffType}
-                                        disableLineNumbers={!diffShowLineNumbers}
-                                        disableBackground={!diffShowBackground}
-                                        expandUnchanged={diffExpandUnchanged}
-                                        fontFamily={diffFontFamily}
-                                        fontSize={diffFontSize}
-                                        annotations={annotations}
-                                        selectedAnnotationId={selectedAnnotationId}
-                                        scrollTargetAnnotation={scrollTargetAnnotation}
-                                        pendingSelection={pendingSelection}
-                                        onLineSelection={setPendingSelection}
-                                        onAddAnnotationForFile={(filePath, ...args) =>
-                                            addAnnotationForFile(
-                                                files.find((file) => file.path === filePath),
-                                                ...args,
-                                            )}
-                                        onEditAnnotation={editAnnotation}
-                                        onSelectAnnotation={setSelectedAnnotationId}
-                                        onDeleteAnnotation={(id) =>
-                                            setAnnotations((items) => items.filter((item) => item.id !== id))}
-                                        onAddFileCommentForFile={addFileComment}
-                                        viewedFiles={viewedFiles}
-                                        onToggleViewed={toggleViewedFile}
-                                        stagedFiles={stagedFiles}
-                                        activeSearchMatchId={fileNavigationTarget?.id ?? null}
-                                        activeSearchMatch={fileNavigationTarget}
-                                        onVisibleFileChange={handleVisibleFileChange}
-                                        fileOrder={filePanelMode === "tree" ? "tree" : "list"}
-                                        isActive
-                                    />
-                                )
-                                : <div className="rw-empty-diff">No diff content.</div>}
-                            {guideError && <p className="rw-review-error" role="alert">{guideError}</p>}
+                            <DiffStyleToggle
+                                diffStyle={diffStyle}
+                                onChange={setDiffStyle}
+                                fileTreeOpen={fileTreeOpen}
+                                annotationsOpen={annotationsOpen}
+                                onRestoreFiles={() => setFileTreeOpen(true)}
+                                onRestoreAnnotations={() => setAnnotationsOpen(true)}
+                                guideReady={guideReady}
+                                guideOpen={guideOpen}
+                                guideGenerating={guideGenerating}
+                                guideProviderAvailable={guideProviderAvailable}
+                                guideJob={guideJob}
+                                guideCapabilities={guideCapabilities}
+                                guidePolicy={guidePolicy}
+                                onToggleGuide={guideReady ? () => setGuideOpen((open) => !open) : generateGuide}
+                                globalCommentButtonRef={globalCommentButtonRef}
+                                onToggleGlobalComment={() => setGlobalCommentOpen((open) => !open)}
+                            />
+                            <div className="rw-code-diff-stage">
+                                {!highlightingReady
+                                    ? <div className="rw-empty-diff">Preparing syntax highlighting…</div>
+                                    : guideOpen && guide
+                                    ? (
+                                        <GuidedReviewExplainer
+                                            guide={guide}
+                                            files={files}
+                                            token={initialPayload.token}
+                                            jobId={guideJob?.id || "dev-guide"}
+                                            diffProps={{
+                                                diffStyle,
+                                                diffOverflow,
+                                                diffIndicators,
+                                                diffLineDiffType,
+                                                diffShowLineNumbers,
+                                                diffShowBackground,
+                                                diffExpandUnchanged,
+                                                diffFontFamily,
+                                                diffFontSize,
+                                                annotations,
+                                                selectedAnnotationId,
+                                                scrollTargetAnnotation,
+                                                pendingSelection,
+                                                setPendingSelection,
+                                                addAnnotationForFile,
+                                                editAnnotation,
+                                                setSelectedAnnotationId,
+                                                setAnnotations,
+                                                addFileComment,
+                                                viewedFiles,
+                                                toggleViewedFile,
+                                                stagedFiles,
+                                            }}
+                                        />
+                                    )
+                                    : files.length > 0
+                                    ? (
+                                        <AllFilesCodeView
+                                            key={[
+                                                diffStyle,
+                                                diffOverflow,
+                                                diffIndicators,
+                                                diffLineDiffType,
+                                                diffShowLineNumbers,
+                                                diffShowBackground,
+                                                diffExpandUnchanged,
+                                                diffFontFamily,
+                                                diffFontSize,
+                                            ].join("|")}
+                                            files={accordionFiles}
+                                            diffStyle={diffStyle}
+                                            diffOverflow={diffOverflow}
+                                            diffIndicators={diffIndicators}
+                                            lineDiffType={diffLineDiffType}
+                                            disableLineNumbers={!diffShowLineNumbers}
+                                            disableBackground={!diffShowBackground}
+                                            expandUnchanged={diffExpandUnchanged}
+                                            fontFamily={diffFontFamily}
+                                            fontSize={diffFontSize}
+                                            annotations={annotations}
+                                            selectedAnnotationId={selectedAnnotationId}
+                                            scrollTargetAnnotation={scrollTargetAnnotation}
+                                            pendingSelection={pendingSelection}
+                                            onLineSelection={setPendingSelection}
+                                            onAddAnnotationForFile={(filePath, ...args) =>
+                                                addAnnotationForFile(
+                                                    files.find((file) => file.path === filePath),
+                                                    ...args,
+                                                )}
+                                            onEditAnnotation={editAnnotation}
+                                            onSelectAnnotation={setSelectedAnnotationId}
+                                            onDeleteAnnotation={(id) =>
+                                                setAnnotations((items) => items.filter((item) => item.id !== id))}
+                                            onAddFileCommentForFile={addFileComment}
+                                            viewedFiles={viewedFiles}
+                                            onToggleViewed={toggleViewedFile}
+                                            stagedFiles={stagedFiles}
+                                            activeSearchMatchId={fileNavigationTarget?.id ?? null}
+                                            activeSearchMatch={fileNavigationTarget}
+                                            onVisibleFileChange={handleVisibleFileChange}
+                                            fileOrder={filePanelMode === "tree" ? "tree" : "list"}
+                                            isActive
+                                        />
+                                    )
+                                    : <div className="rw-empty-diff">No diff content.</div>}
+                                {guideError && <p className="rw-review-error" role="alert">{guideError}</p>}
+                            </div>
                         </main>
                         {annotationsOpen && (
-                            <ReviewSidebar
-                                isOpen
-                                width={352}
-                                onClose={() => setAnnotationsOpen(false)}
-                                activeTab="annotations"
-                                annotations={annotations}
-                                files={files}
-                                selectedAnnotationId={selectedAnnotationId}
-                                onSelectAnnotation={setSelectedAnnotationId}
-                                onNavigateToAnnotation={(id) => {
-                                    setSelectedAnnotationId(id);
-                                    if (id) setScrollTargetAnnotation({ id, token: Date.now() });
-                                }}
-                                onDeleteAnnotation={(id) =>
-                                    setAnnotations((items) => items.filter((item) => item.id !== id))}
-                                feedbackMarkdown={feedbackMarkdown}
-                                activeFilePath={currentFile?.path}
-                            />
+                            <div className="rw-code-review-annotation-sidebar">
+                                <div className="rw-review-annotation-heading">
+                                    <div>
+                                        <CommentIcon />
+                                        <h2>Annotations</h2>
+                                        {annotations.length > 0 && <span>{annotations.length}</span>}
+                                    </div>
+                                    <button
+                                        className="rw-code-annotation-sidebar-close"
+                                        type="button"
+                                        onClick={() => setAnnotationsOpen(false)}
+                                        title="Collapse annotations sidebar"
+                                        aria-label="Collapse annotations sidebar"
+                                    >
+                                        <PanelCollapseIcon side="right" />
+                                    </button>
+                                </div>
+                                <div className="rw-review-feedback-action rw-review-action">
+                                    <FeedbackButton
+                                        onClick={submitFeedback}
+                                        disabled={annotations.length === 0 || submitting !== null}
+                                        isLoading={submitting === "feedback"}
+                                        label="Send Annotations"
+                                        loadingLabel="Sending Annotations…"
+                                        title={annotations.length === 0
+                                            ? "Add an annotation before sending annotations"
+                                            : "Send annotations"}
+                                    />
+                                </div>
+                                <ReviewSidebar
+                                    isOpen
+                                    width={352}
+                                    onClose={() => setAnnotationsOpen(false)}
+                                    activeTab="annotations"
+                                    annotations={annotations}
+                                    files={files}
+                                    selectedAnnotationId={selectedAnnotationId}
+                                    onSelectAnnotation={setSelectedAnnotationId}
+                                    onNavigateToAnnotation={(id) => {
+                                        setSelectedAnnotationId(id);
+                                        if (id) setScrollTargetAnnotation({ id, token: Date.now() });
+                                    }}
+                                    onDeleteAnnotation={(id) =>
+                                        setAnnotations((items) => items.filter((item) => item.id !== id))}
+                                    feedbackMarkdown={feedbackMarkdown}
+                                    activeFilePath={currentFile?.path}
+                                />
+                            </div>
                         )}
                     </div>
                     {globalCommentOpen && globalCommentButtonRef.current && (
@@ -742,6 +890,111 @@ export function CodeReviewSurface({ payload }) {
             throw new Error(message || `Decision failed: ${response.status}`);
         }
     }
+}
+
+function DiffStyleToggle({
+    diffStyle,
+    onChange,
+    fileTreeOpen,
+    annotationsOpen,
+    onRestoreFiles,
+    onRestoreAnnotations,
+    guideReady,
+    guideOpen,
+    guideGenerating,
+    guideProviderAvailable,
+    guideJob,
+    guideCapabilities,
+    guidePolicy,
+    onToggleGuide,
+    globalCommentButtonRef,
+    onToggleGlobalComment,
+}) {
+    return (
+        <div className="rw-review-toolbar rw-code-diff-toolbar" aria-label="Diff view options">
+            <div className="rw-review-toolbar-edge rw-review-toolbar-edge-left rw-code-diff-left-controls">
+                <div className="rw-code-diff-sidebar-restore rw-code-diff-sidebar-restore-left">
+                    {!fileTreeOpen && (
+                        <button className="rw-toolbar-button" type="button" onClick={onRestoreFiles}>
+                            <FileTreeIcon />
+                            <span>Files</span>
+                        </button>
+                    )}
+                </div>
+                <div className="rw-guide-actions">
+                    <button
+                        className="rw-toolbar-button"
+                        type="button"
+                        onClick={onToggleGuide}
+                        disabled={guideGenerating || (!guideReady && !guideProviderAvailable)}
+                        title="Guided Review generation uses an additional LLM call when backed by an agent provider."
+                    >
+                        {guideGenerating
+                            ? "Generating guided review…"
+                            : guideReady
+                            ? (guideOpen ? "Back to diff" : "Guided Review ready")
+                            : "Generate guided review"}
+                    </button>
+                    <span className="rw-guide-cost-note">
+                        {formatGuideStatus(guideJob, guideCapabilities, guidePolicy)}
+                    </span>
+                </div>
+            </div>
+            <div className="rw-review-toolbar-edge rw-review-toolbar-edge-right rw-code-diff-layout-controls">
+                <span>Diff view</span>
+                <div className="rw-segmented-toggle rw-code-diff-style-toggle" role="group" aria-label="Diff layout">
+                    <button
+                        aria-pressed={diffStyle === "split"}
+                        className={diffStyle === "split" ? "active" : ""}
+                        onClick={() => onChange("split")}
+                        title="Side by side"
+                        type="button"
+                    >
+                        <CodeToggleIcon name="side-by-side" />
+                        <span>Side by side</span>
+                    </button>
+                    <button
+                        aria-pressed={diffStyle === "unified"}
+                        className={diffStyle === "unified" ? "active" : ""}
+                        onClick={() => onChange("unified")}
+                        title="Unified"
+                        type="button"
+                    >
+                        <CodeToggleIcon name="unified" />
+                        <span>Unified</span>
+                    </button>
+                </div>
+                <button
+                    ref={globalCommentButtonRef}
+                    className="rw-toolbar-button"
+                    type="button"
+                    onClick={onToggleGlobalComment}
+                >
+                    <CommentIcon />
+                    Global comment
+                </button>
+                <div className="rw-code-diff-sidebar-restore rw-code-diff-sidebar-restore-right">
+                    {!annotationsOpen && (
+                        <button className="rw-toolbar-button" type="button" onClick={onRestoreAnnotations}>
+                            <CommentIcon />
+                            <span>Annotations</span>
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PanelCollapseIcon({ side }) {
+    const path = side === "left" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6";
+    return (
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor">
+            <path d="M5 4v16" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M19 4v16" strokeWidth="1.5" strokeLinecap="round" />
+            <path d={path} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
 }
 
 function formatGuideStatus(job, capabilities, policy) {
@@ -888,12 +1141,14 @@ function MermaidBlock({ block }) {
     const [error, setError] = useState("");
     useEffect(() => {
         let canceled = false;
-        import("mermaid").then(({ default: mermaid }) => {
-            mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
-            return mermaid.render(`guide-${crypto.randomUUID()}`, block.source || "flowchart TD\nA[Empty diagram]");
-        }).then((result) => {
-            if (!canceled) setSvg(result.svg || "");
-        }).catch((err) => {
+        setError("");
+        setSvg("");
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
+        mermaid.render(`guide-${crypto.randomUUID()}`, block.source || "flowchart TD\nA[Empty diagram]").then(
+            (result) => {
+                if (!canceled) setSvg(result.svg || "");
+            },
+        ).catch((err) => {
             if (!canceled) setError(err instanceof Error ? err.message : String(err));
         });
         return () => {
@@ -1006,20 +1261,25 @@ function exportReviewFeedbackWithImages(annotations) {
 }
 
 function CodeReviewOptionsMenu({
+    iconOnly = false,
     annotationsOpen,
     fileTreeOpen,
     onOpenSettings,
-    onPrint,
     onToggleAnnotations,
     onToggleFileTree,
 }) {
     return (
         <ActionMenu
+            panelClassName={iconOnly
+                ? "absolute top-full left-0 mt-1 w-56 rounded-lg border border-border bg-popover py-1 shadow-xl z-[70]"
+                : undefined}
             renderTrigger={({ isOpen, toggleMenu }) => (
                 <button
                     type="button"
                     onClick={toggleMenu}
-                    className={`relative flex items-center gap-1.5 p-1.5 md:px-2.5 md:py-1 rounded-md text-xs font-medium transition-colors ${
+                    className={`relative flex items-center gap-1.5 p-1.5 ${
+                        iconOnly ? "" : "md:px-2.5 md:py-1"
+                    } rounded-md text-xs font-medium transition-colors ${
                         isOpen
                             ? "bg-muted text-foreground"
                             : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -1029,7 +1289,7 @@ function CodeReviewOptionsMenu({
                     aria-expanded={isOpen}
                 >
                     <MenuIcon />
-                    <span className="hidden md:inline">Options</span>
+                    {!iconOnly && <span className="hidden md:inline">Options</span>}
                 </button>
             )}
         >
@@ -1054,14 +1314,6 @@ function CodeReviewOptionsMenu({
                     <ActionMenuItem
                         onClick={() => {
                             closeMenu();
-                            onPrint();
-                        }}
-                        icon={<PrintIcon />}
-                        label="Print / Save PDF"
-                    />
-                    <ActionMenuItem
-                        onClick={() => {
-                            closeMenu();
                             onOpenSettings();
                         }}
                         icon={<SettingsIcon />}
@@ -1070,6 +1322,26 @@ function CodeReviewOptionsMenu({
                 </>
             )}
         </ActionMenu>
+    );
+}
+
+function CodeToggleIcon({ name }) {
+    const paths = {
+        changes: "M7 7h10M7 12h6M7 17h10",
+        "side-by-side": "M4 5h7v14H4z M13 5h7v14h-7z",
+        unified: "M5 5h14v14H5z M8 9h8M8 13h8M8 17h5",
+    };
+    return (
+        <svg
+            aria-hidden="true"
+            className="w-3.5 h-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+        >
+            <path strokeLinecap="round" strokeLinejoin="round" d={paths[name]} />
+        </svg>
     );
 }
 
@@ -1096,18 +1368,6 @@ function CommentIcon() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 d="M7 8h10M7 12h6m-8 8 3.5-4H19a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"
-            />
-        </svg>
-    );
-}
-
-function PrintIcon() {
-    return (
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6v-8z"
             />
         </svg>
     );

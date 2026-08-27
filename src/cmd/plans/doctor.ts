@@ -9,6 +9,7 @@ import {
     CLI_BIN,
     getCwd,
     getRunWieldRuntimeDir,
+    isPlannedChangeClassification,
     PLAN_LOCKS_DIR_NAME,
     RUNWIELD_DIR_NAME,
     WORKTREE_BRANCH_PREFIX,
@@ -18,9 +19,10 @@ import {
     getPlansDir,
     listArchivedPlans,
     listPlanResources,
+    loadPlanFileStrict,
     loadPlanStrict,
-    parsePlanFrontMatter,
 } from "../../plan-store.js";
+import { inspectPlanIdentityDocuments } from "../../shared/workflow/plan-diagnostic-evidence.ts";
 import {
     getTransitionJournalDir,
     reconcileTransitionRecoveryRecords,
@@ -40,6 +42,7 @@ import {
     pruneEntry,
     reconcileEntryIdentity,
 } from "../../shared/worktree-registry.js";
+import { isEpicArtifactPlanName } from "../../shared/epic-artifacts.ts";
 
 /** A registry attempt as stored, before doctor proves anything about it. */
 type RegistryEntry = Awaited<ReturnType<typeof inspectWorktreeRegistry>>["entries"][number];
@@ -349,6 +352,7 @@ async function collectPlanIssues(
                 continue;
             }
             if (!isPlanPath) continue;
+            if (isEpicArtifactPlanName(planName)) continue;
             const result = await loadPlanStrict(projectRoot, planName);
             if (result.kind === "malformed") {
                 issues.push({
@@ -396,7 +400,7 @@ function collectPlanAttributeIssues(
             planIds.set(planId, planName);
         }
     }
-    if (plan.attrs.status === "verified" && plan.attrs.classification === "FEATURE") {
+    if (plan.attrs.status === "verified" && isPlannedChangeClassification(plan.attrs.classification)) {
         const evidence = plan.attrs.deliveryEvidence as DeliveryEvidenceSnapshot | undefined;
         if (!evidence && plan.attrs.executionMode !== "non_git_in_place") {
             issues.push({
@@ -436,8 +440,13 @@ async function collectArchivedPlanParseIssues(
                 }
                 if (!isPlanPath || entry.isSymlink) continue;
                 const planName = [...prefix, entry.name.replace(/\.md$/, "")].join("/");
+                if (isEpicArtifactPlanName(planName)) continue;
                 try {
-                    const parsed = parsePlanFrontMatter(await Deno.readTextFile(entryPath));
+                    const parsed = await loadPlanFileStrict(entryPath);
+                    if (parsed.kind !== "loaded") {
+                        if (parsed.kind === "malformed") throw parsed.error;
+                        throw new Error("Archived Plan could not be read.");
+                    }
                     collectPlanAttributeIssues({ name: planName, attrs: parsed.attrs }, issues, planIds, {
                         archived: true,
                     });
@@ -738,6 +747,7 @@ async function runPlansDoctorPass(projectRoot: string, repair: boolean) {
     }
 
     const planResources = await listPlanResources(projectRoot, { backfillMissing: repair }).catch(() => []);
+    const identityDocuments = await inspectPlanIdentityDocuments(projectRoot, entries);
     const archivedPlans = await listArchivedPlans(projectRoot).catch(() => []);
     for (
         const plan of [
@@ -769,8 +779,10 @@ async function runPlansDoctorPass(projectRoot: string, repair: boolean) {
     // so resolving ids from active Plans alone reports a healthy archived attempt
     // as a dangling reference. Track both, and remember which is which.
     const planIdOwners = new Map<string, { name: string; archived: boolean }>();
-    for (const plan of planResources) {
-        if (plan.attrs.planId) planIdOwners.set(plan.attrs.planId, { name: plan.name, archived: false });
+    for (const plan of identityDocuments) {
+        if (!plan.attrs.planId) continue;
+        const owners = identityDocuments.filter((candidate) => candidate.attrs.planId === plan.attrs.planId);
+        if (owners.length === 1) planIdOwners.set(plan.attrs.planId, { name: plan.name, archived: false });
     }
     for (const plan of archivedPlans) {
         const planId = (plan.attrs as { planId?: unknown }).planId;
@@ -784,7 +796,7 @@ async function runPlansDoctorPass(projectRoot: string, repair: boolean) {
         // sees the whole file at once. Only the legacy shape — a live attempt with no
         // stable id — needs a name-keyed check here, and only that shape is reported,
         // so a conflict is never listed twice.
-        if (!entry.planId && !["merged", "abandoned", "removed"].includes(entry.status)) {
+        if (!entry.planId && entry.status !== "abandoned") {
             const prior = activeByPlan.get(entry.planName);
             if (prior) {
                 issues.push({
@@ -846,7 +858,9 @@ async function runPlansDoctorPass(projectRoot: string, repair: boolean) {
             // this exact attempt. That back-pointer is real evidence; matching on
             // Plan name is not, and name-based migration cannot resolve an entry
             // whose cached name has drifted. Ambiguity is left for a human.
-            const claimants = planResources.filter((plan) => plan.attrs.worktreeId === entry.id && plan.attrs.planId);
+            const claimants = identityDocuments.filter((plan) =>
+                plan.attrs.worktreeId === entry.id && plan.attrs.planId
+            );
             const claimant = claimants.length === 1 ? claimants[0] : undefined;
             issues.push({
                 kind: "registry_missing_plan_id",
@@ -883,14 +897,14 @@ async function runPlansDoctorPass(projectRoot: string, repair: boolean) {
             const stat = await Deno.stat(entry.path);
             if (!stat.isDirectory) throw new Error("not a directory");
         } catch {
-            const safelyPrunable = entry.status === "merged" || entry.status === "abandoned";
+            const safelyPrunable = entry.status === "abandoned" || entry.publication?.phase === "cleanup_complete";
             issues.push({
                 kind: "missing_worktree_path",
                 planName: entry.planName,
                 worktreeId: entry.id,
                 repairable: safelyPrunable,
                 message: safelyPrunable
-                    ? `Registry attempt ${entry.id} points at ${entry.path}, which no longer exists. The attempt is already ${entry.status}, so this is leftover bookkeeping.`
+                    ? `Registry attempt ${entry.id} points at ${entry.path}, which no longer exists. Its cleanup is already settled, so this is leftover bookkeeping.`
                     : `Registry attempt ${entry.id} is ${entry.status} but its worktree ${entry.path} is gone, so RunWield cannot reach the work it recorded.`,
                 commands: safelyPrunable ? [`${CLI_BIN} plans doctor --repair`] : [
                     `git log --oneline ${entry.branch} -10`,

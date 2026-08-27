@@ -3,7 +3,8 @@
  * The Plan Recovery menu coordinator for in-progress, failed, and implemented Plans.
  */
 
-import { loadPlan, resolvePlanExecutionPolicy } from "../../plan-store.js";
+import { resolvePlanExecutionPolicy } from "../../plan-store.js";
+import { resolveWorkflowPlanLocation } from "../../shared/workflow/plan-location.ts";
 import { probeGitRepository } from "../../shared/git.js";
 import { createGitPort } from "../../shared/git-port.ts";
 import {
@@ -14,9 +15,10 @@ import {
 import { runPlansDoctor } from "../plans/doctor.ts";
 import { isInValidation } from "../../shared/workflow/plan-lifecycle.js";
 import { recordWorkflowMetric } from "../../shared/workflow/metrics.js";
+import { healSettledTransitionRecords } from "../../shared/workflow/transition-recovery.ts";
+import { verifyRecordedPublication } from "../../shared/workflow/validation-merge-verification.ts";
 import { isUserVerifiableStatus } from "./plan-hold.ts";
 import {
-    canManuallyMergeRecoveredWorktree,
     hasWorktreeContext,
     persistRecoveredWorktreeMetadata,
     reportInvalidRecoveryPolicy,
@@ -27,6 +29,7 @@ import {
     continueRecoveryPlan,
     holdRecoveryPlan,
     inspectRecoveryPlan,
+    openFollowUpRecoveryPlan,
     restoreRecoveryWorktreeRecord,
     reviewRecoveryPlan,
     settleRecoveryRecords,
@@ -35,7 +38,6 @@ import {
     validateRecoveryPlan,
 } from "./plan-recovery-actions.ts";
 import { resetRecoveryPlan } from "./plan-recovery-reset.ts";
-import { mergeRecoveredWorktree } from "./plan-recovery-merge.ts";
 
 import type { PlanSessionSurface, RecoveryWorktreeContext } from "./plan-session-types.ts";
 import type { PlanFrontMatter } from "../../plan-store.js";
@@ -60,6 +62,7 @@ export interface UnresolvedTransitionRecord {
     transitionId?: string;
     operation?: string;
     reason?: string;
+    authorityRoot?: string;
 }
 
 export interface HandlePlanRecoveryOptions {
@@ -93,14 +96,7 @@ export async function handlePlanRecovery(opts: HandlePlanRecoveryOptions): Promi
     const { projectRoot, plan, uiAPI } = opts;
     try {
         await runPlansDoctor(projectRoot, true);
-        const primaryPlan = await loadPlan(projectRoot, plan.planName);
-        const recordedAttempt = await resolveRecoveryWorktree(
-            projectRoot,
-            primaryPlan ? { planName: plan.planName, attrs: primaryPlan.attrs, revision: primaryPlan.revision } : plan,
-        );
-        const refreshed = recordedAttempt?.path
-            ? await loadPlan(recordedAttempt.path, plan.planName).catch(() => null) || primaryPlan
-            : primaryPlan;
+        const { plan: refreshed } = await resolveWorkflowPlanLocation(projectRoot, plan.planName);
         if (refreshed) {
             plan.path = refreshed.path;
             plan.markdown = refreshed.markdown;
@@ -144,19 +140,55 @@ export async function handlePlanRecovery(opts: HandlePlanRecoveryOptions): Promi
     };
     context.recordRecoveryResult = async (action: string, result: string, details: RecoveryMetricDetails = {}) => {
         const hasWorktree = hasWorktreeContext(context.worktreeContext);
-        const canMergeWorktree = canManuallyMergeRecoveredWorktree(context.worktreeContext);
         await opts.ports.recordWorkflowMetric({
             category: "recovery",
             event: "recovery_action_result",
             planName: plan.planName,
-            details: { action, result, currentStatus: plan.attrs.status, hasWorktree, canMergeWorktree, ...details },
+            details: { action, result, currentStatus: plan.attrs.status, hasWorktree, ...details },
         }, projectRoot);
     };
     context.worktreeContext = await context.refreshRecoveryWorktree();
+    if (context.worktreeContext?.path && context.worktreeContext.path !== projectRoot) {
+        const executionRecovery = await healSettledTransitionRecords(context.worktreeContext.path, {
+            planName: plan.planName,
+            evidenceProjectRoot: projectRoot,
+        });
+        const settledIds = new Set(executionRecovery.closed.map((record) => record.transitionId));
+        context.unresolvedRecords = context.unresolvedRecords
+            .filter((record) => !record.transitionId || !settledIds.has(record.transitionId))
+            .concat(executionRecovery.remaining.map((record) => ({
+                ...record,
+                authorityRoot: context.worktreeContext?.path,
+            })));
+        if (executionRecovery.closed.length > 0) {
+            uiAPI.appendSystemMessage(
+                buildPlanRecoveryUserMessage({ kind: "records_settled", count: executionRecovery.closed.length }),
+                false,
+                "RunWield",
+            );
+        }
+    }
+    if (!context.worktreeContext) {
+        const publication = await verifyRecordedPublication(projectRoot, plan.attrs);
+        if (publication.published) {
+            uiAPI.appendSystemMessage(
+                buildValidationUserMessage({
+                    kind: "verified",
+                    planName: plan.planName,
+                    targetBranch: publication.targetBranch,
+                }),
+                false,
+                "RunWield",
+            );
+            await context.recordRecoveryResult("validate", "already_published", {
+                targetBranch: publication.targetBranch,
+            });
+            return "settled";
+        }
+    }
 
     while (true) {
         const hasWorktree = hasWorktreeContext(context.worktreeContext);
-        const canMergeWorktree = canManuallyMergeRecoveredWorktree(context.worktreeContext);
         const gitProbe = await opts.ports.probeGitRepository(projectRoot);
         const hasGitRecoveryMetadata = hasWorktree ||
             (plan.attrs.executionMode !== "non_git_in_place" && Boolean(plan.attrs.executionBaselineTree));
@@ -166,14 +198,13 @@ export async function handlePlanRecovery(opts: HandlePlanRecoveryOptions): Promi
             context,
             gitRecoveryBlocked,
             hasWorktree,
-            canMergeWorktree,
             physicallyLost,
         );
         await opts.ports.recordWorkflowMetric({
             category: "recovery",
             event: "recovery_action_selected",
             planName: plan.planName,
-            details: { action: answer || "cancel", currentStatus: plan.attrs.status, hasWorktree, canMergeWorktree },
+            details: { action: answer || "cancel", currentStatus: plan.attrs.status, hasWorktree },
         }, projectRoot);
         if (!answer || answer === "cancel") {
             await context.recordRecoveryResult("cancel", "handled");
@@ -223,7 +254,6 @@ async function promptRecoveryAction(
     context: RecoveryActionContext,
     gitRecoveryBlocked: boolean,
     hasWorktree: boolean,
-    canMergeWorktree: boolean,
     physicallyLost: boolean,
 ): Promise<RecoveryMenuAnswer | null | undefined> {
     if (physicallyLost) {
@@ -275,20 +305,24 @@ async function promptRecoveryAction(
         { value: "hold", label: "Put on hold" },
         { value: "cancel", label: "Cancel" },
     ];
+    const policy = resolvePlanExecutionPolicy(context.plan.attrs);
+    const followUpAgentLabel = policy.ok && policy.policy.executionAgent === "frontend-engineer"
+        ? "Frontend Engineer"
+        : "Plan Engineer";
+    const followUpOptions: RecoveryMenuOption[] = context.plan.attrs.status === "implemented" && hasWorktree &&
+            !gitRecoveryBlocked
+        ? [{ value: "follow_up", label: `Open ${followUpAgentLabel} for follow-up` }]
+        : [];
     const options = isInValidation(context.plan.attrs.status)
         ? [
             ...recordOptions,
             ...restoreRecordOptions,
-            ...(gitRecoveryBlocked ? [] : [{ value: "validate" as const, label: "Retry Workflow Validation" }]),
+            ...(gitRecoveryBlocked ? [] : [{
+                value: "validate" as const,
+                label: context.worktreeContext?.publication ? "Resume publication" : "Retry Workflow Validation",
+            }]),
+            ...followUpOptions,
             common[0],
-            ...(canMergeWorktree && !gitRecoveryBlocked
-                ? [{
-                    value: "merge" as const,
-                    label: context.worktreeContext?.status === "publication_failed"
-                        ? "Retry publication"
-                        : "Merge validated worktree changes",
-                }]
-                : []),
             ...common.slice(1),
         ]
         : [
@@ -310,7 +344,7 @@ async function dispatchRecoveryAction(
     gitRecoveryBlocked: boolean,
     gitState: string,
 ): Promise<RecoveryActionOutcome> {
-    if (gitRecoveryBlocked && ["continue", "validate", "merge"].includes(action)) {
+    if (gitRecoveryBlocked && ["continue", "validate", "follow_up", "merge"].includes(action)) {
         context.uiAPI.appendSystemMessage(
             buildPlanRecoveryUserMessage({ kind: "git_blocked" }),
             true,
@@ -334,6 +368,8 @@ async function dispatchRecoveryAction(
             return await inspectRecoveryPlan(context);
         case "validate":
             return await validateRecoveryPlan(context);
+        case "follow_up":
+            return await openFollowUpRecoveryPlan(context);
         case "continue":
             return await continueRecoveryPlan(context);
         case "abandon":
@@ -342,8 +378,6 @@ async function dispatchRecoveryAction(
             return await reviewRecoveryPlan(context);
         case "reset":
             return await resetRecoveryPlan(context, gitRecoveryBlocked, gitState);
-        case "merge":
-            return await mergeRecoveredWorktree(context);
     }
 }
 

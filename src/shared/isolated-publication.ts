@@ -22,8 +22,24 @@ export interface IsolatedPublicationArgs {
     planDescription?: string;
     sealedExecutionCommit: string;
     allowedPlanPaths: string[];
+    publicationRoot?: string;
     repairedPublicationRoot?: string;
     onProgress?: (progress: IsolatedPublicationProgress) => void;
+    onIntegrated?: (evidence: PublicationIntegrationEvidence) => Promise<void>;
+    onPublished?: (evidence: PublicationPublishedEvidence) => Promise<void>;
+    onVerified?: (evidence: PublicationPublishedEvidence) => Promise<void>;
+}
+
+export interface PublicationIntegrationEvidence {
+    targetBaseCommit: string;
+    integrationCommit: string;
+}
+
+export interface PublicationPublishedEvidence extends PublicationIntegrationEvidence {
+    publicationMode: "local" | "remote";
+    publishedCommit: string;
+    upstreamRemote?: string;
+    upstreamBranch?: string;
 }
 
 export type IsolatedPublicationProgress =
@@ -127,11 +143,22 @@ async function remoteHead(cwd: string, remote: string, branch: string): Promise<
     return /^[0-9a-f]{40}$/i.test(hash || "") ? hash : null;
 }
 
-function classifyRemoteFailure(message: string): "permission_denied" | "remote_unavailable" {
-    return /authentication failed|permission denied|access denied|authorization failed|publickey|could not read username/i
+type RemoteFailureKind = "permission_denied" | "policy_violation" | "remote_unavailable";
+
+function classifyRemoteFailure(message: string): RemoteFailureKind {
+    if (
+        /authentication failed|permission denied|access denied|authorization failed|publickey|could not read username/i
             .test(message)
-        ? "permission_denied"
-        : "remote_unavailable";
+    ) {
+        return "permission_denied";
+    }
+    if (
+        /protected branch|repository rules?|rule violations?|pre-receive hook declined|hook declined|prohibited|not allowed to push|branch permissions?|GH00[136]/i
+            .test(message)
+    ) {
+        return "policy_violation";
+    }
+    return "remote_unavailable";
 }
 
 function isLeaseRace(message: string): boolean {
@@ -151,7 +178,7 @@ async function pushPublication(
     const remoteFailure = classifyRemoteFailure(detail);
     const mergeFailureKind = isLeaseRace(detail)
         ? "target_reference_race"
-        : remoteFailure === "permission_denied"
+        : remoteFailure === "permission_denied" || remoteFailure === "policy_violation"
         ? remoteFailure
         : /could not resolve host|unable to access|connection (?:timed out|refused|reset)|network is unreachable|connection closed/i
                 .test(detail)
@@ -252,11 +279,15 @@ export async function publishExecutionWorktreeIsolated(
         args.onProgress?.("using_local_target");
         return await publishToLocalTarget(args, checkpoint.executionCommit);
     }
-    const publicationRoot = args.repairedPublicationRoot ||
+    const requestedPublicationRoot = args.repairedPublicationRoot || args.publicationRoot;
+    const requestedRootExists = requestedPublicationRoot
+        ? await Deno.stat(requestedPublicationRoot).then((stat) => stat.isDirectory).catch(() => false)
+        : false;
+    const publicationRoot = requestedPublicationRoot ||
         await Deno.makeTempDir({ prefix: `runwield-publish-${basename(args.projectRoot)}-` });
-    let preserveForRecovery = Boolean(args.repairedPublicationRoot);
+    let preserveForRecovery = Boolean(requestedPublicationRoot);
     try {
-        if (args.repairedPublicationRoot) {
+        if (requestedRootExists) {
             const unfinishedMerge = await runGitResult(publicationRoot, ["rev-parse", "--verify", "MERGE_HEAD"]);
             if (unfinishedMerge.code === 0) {
                 throw new IsolatedPublicationError(
@@ -336,6 +367,10 @@ export async function publishExecutionWorktreeIsolated(
             }
             const deliveryCommit = await runGit(publicationRoot, ["rev-parse", "HEAD"]);
             const publicationCommit = await commitPublicationMetadata(publicationRoot, args.planName);
+            await args.onIntegrated?.({
+                targetBaseCommit: targetHeadBeforeMerge,
+                integrationCommit: publicationCommit,
+            });
             const lease = expectedRemoteHead || "";
             args.onProgress?.("publishing");
             await pushPublication(
@@ -348,6 +383,15 @@ export async function publishExecutionWorktreeIsolated(
                 upstream.branch,
                 publicationRoot,
             );
+            const publishedEvidence: PublicationPublishedEvidence = {
+                targetBaseCommit: targetHeadBeforeMerge,
+                integrationCommit: publicationCommit,
+                publicationMode: "remote",
+                publishedCommit: publicationCommit,
+                upstreamRemote: upstream.remote,
+                upstreamBranch: upstream.branch,
+            };
+            await args.onPublished?.(publishedEvidence);
             args.onProgress?.("verifying");
             const confirmedRemoteHead = await remoteHead(publicationRoot, upstream.url, upstream.branch);
             if (confirmedRemoteHead !== publicationCommit) {
@@ -356,7 +400,7 @@ export async function publishExecutionWorktreeIsolated(
                     { mergeFailureKind: "publication_verification_failed", repairCwd: publicationRoot },
                 );
             }
-            preserveForRecovery = false;
+            await args.onVerified?.(publishedEvidence);
             return {
                 publicationMode: "remote",
                 updatedPrimaryCheckout: false,
@@ -368,6 +412,7 @@ export async function publishExecutionWorktreeIsolated(
                 upstreamBranch: upstream.branch,
             };
         }
+        await Deno.mkdir(dirname(publicationRoot), { recursive: true });
         await runGit(args.projectRoot, ["clone", "--no-hardlinks", args.projectRoot, publicationRoot]);
         await runGit(publicationRoot, ["remote", "rename", "origin", "runwield-source"]);
         await runGit(publicationRoot, ["remote", "add", "publication", upstream.url]);
@@ -452,6 +497,10 @@ export async function publishExecutionWorktreeIsolated(
         }
         const deliveryCommit = await runGit(publicationRoot, ["rev-parse", "HEAD"]);
         const publicationCommit = await commitPublicationMetadata(publicationRoot, args.planName);
+        await args.onIntegrated?.({
+            targetBaseCommit: targetHeadBeforeMerge,
+            integrationCommit: publicationCommit,
+        });
         const lease = expectedRemoteHead || "";
         args.onProgress?.("publishing");
         await pushPublication(publicationRoot, [
@@ -459,6 +508,15 @@ export async function publishExecutionWorktreeIsolated(
             "publication",
             `HEAD:refs/heads/${upstream.branch}`,
         ], upstream.branch);
+        const publishedEvidence: PublicationPublishedEvidence = {
+            targetBaseCommit: targetHeadBeforeMerge,
+            integrationCommit: publicationCommit,
+            publicationMode: "remote",
+            publishedCommit: publicationCommit,
+            upstreamRemote: upstream.remote,
+            upstreamBranch: upstream.branch,
+        };
+        await args.onPublished?.(publishedEvidence);
         args.onProgress?.("verifying");
         const confirmedRemoteHead = await remoteHead(publicationRoot, "publication", upstream.branch);
         if (confirmedRemoteHead !== publicationCommit) {
@@ -467,6 +525,7 @@ export async function publishExecutionWorktreeIsolated(
                 { mergeFailureKind: "publication_verification_failed" },
             );
         }
+        await args.onVerified?.(publishedEvidence);
         return {
             publicationMode: "remote",
             updatedPrimaryCheckout: false,
@@ -495,9 +554,28 @@ async function publishToLocalTarget(
     const targetHeadBeforeMerge = await runGit(args.projectRoot, ["rev-parse", `refs/heads/${args.targetBranch}`]);
     const gitignorePath = join(args.projectRoot, ".gitignore");
     const trackedGitignore = await runGitResult(args.projectRoot, ["ls-files", "--error-unmatch", ".gitignore"]);
+    const currentGitignore = await Deno.readTextFile(gitignorePath).catch((error) => {
+        if (error instanceof Deno.errors.NotFound) return "";
+        throw error;
+    });
+    const hasOwnedGitignore = currentGitignore === RUNWIELD_GITIGNORE_BLOCK;
     let savedOwnedGitignore: string | undefined;
     const savedAuthoritativePlans = new Map<string, Uint8Array>();
     try {
+        const trackedChanges = (await runGit(args.projectRoot, ["diff", "--name-only", "HEAD", "--"]))
+            .split("\n")
+            .map((path) => path.trim())
+            .filter(Boolean);
+        const allowedPrimaryChanges = new Set(args.allowedPlanPaths);
+        if (hasOwnedGitignore) allowedPrimaryChanges.add(".gitignore");
+        const blockingTrackedChanges = trackedChanges.filter((path) => !allowedPrimaryChanges.has(path));
+        if (blockingTrackedChanges.length > 0) {
+            throw new IsolatedPublicationError(
+                `The checked-out ${args.targetBranch} branch has unsaved tracked changes. ` +
+                    `Commit or discard them before retrying local publication: ${blockingTrackedChanges.join(", ")}.`,
+                { mergeFailureKind: "primary_checkout_dirty" },
+            );
+        }
         for (const relativePath of args.allowedPlanPaths) {
             const staged = await runGitResult(args.projectRoot, ["diff", "--cached", "--quiet", "--", relativePath]);
             if (staged.code !== 0) {
@@ -524,14 +602,23 @@ async function publishToLocalTarget(
                 await Deno.remove(path);
             }
         }
-        if (trackedGitignore.code !== 0) {
-            const current = await Deno.readTextFile(gitignorePath).catch((error) => {
-                if (error instanceof Deno.errors.NotFound) return "";
-                throw error;
-            });
-            if (current === RUNWIELD_GITIGNORE_BLOCK) {
+        if (hasOwnedGitignore) {
+            const staged = await runGitResult(args.projectRoot, ["diff", "--cached", "--quiet", "--", ".gitignore"]);
+            if (staged.code !== 0) {
+                throw new IsolatedPublicationError(
+                    "The project folder has a staged change to .gitignore. Commit or unstage it before retrying.",
+                    { mergeFailureKind: "primary_checkout_dirty" },
+                );
+            }
+            const changed = await runGitResult(args.projectRoot, ["diff", "--quiet", "--", ".gitignore"]);
+            if (trackedGitignore.code !== 0 || changed.code !== 0) {
                 savedOwnedGitignore = await Deno.makeTempFile({ prefix: "runwield-owned-gitignore-" });
-                await Deno.rename(gitignorePath, savedOwnedGitignore);
+                await Deno.writeTextFile(savedOwnedGitignore, currentGitignore);
+                if (trackedGitignore.code === 0) {
+                    await runGit(args.projectRoot, ["restore", "--worktree", "--source=HEAD", "--", ".gitignore"]);
+                } else {
+                    await Deno.remove(gitignorePath);
+                }
             }
         }
         args.onProgress?.("combining_work");
@@ -548,6 +635,17 @@ async function publishToLocalTarget(
         });
         args.onProgress?.("verifying");
         const publicationCommit = await runGit(args.projectRoot, ["rev-parse", `refs/heads/${args.targetBranch}`]);
+        await args.onIntegrated?.({
+            targetBaseCommit: targetHeadBeforeMerge,
+            integrationCommit: publicationCommit,
+        });
+        const publishedEvidence: PublicationPublishedEvidence = {
+            targetBaseCommit: targetHeadBeforeMerge,
+            integrationCommit: publicationCommit,
+            publicationMode: "local",
+            publishedCommit: publicationCommit,
+        };
+        await args.onPublished?.(publishedEvidence);
         const containsCandidate = await runGitResult(args.projectRoot, [
             "merge-base",
             "--is-ancestor",
@@ -560,6 +658,7 @@ async function publishToLocalTarget(
                 { mergeFailureKind: "publication_verification_failed" },
             );
         }
+        await args.onVerified?.(publishedEvidence);
         if (savedOwnedGitignore) await Deno.remove(savedOwnedGitignore).catch(() => {});
         return {
             publicationMode: "local",
@@ -590,10 +689,10 @@ async function publishToLocalTarget(
             }
         }
         if (savedOwnedGitignore) {
-            const pathExists = await Deno.stat(gitignorePath).then(() => true).catch(() => false);
-            if (!pathExists && !targetMoved) {
+            if (!targetMoved) {
                 try {
-                    await Deno.rename(savedOwnedGitignore, gitignorePath);
+                    await Deno.writeTextFile(gitignorePath, await Deno.readTextFile(savedOwnedGitignore));
+                    await Deno.remove(savedOwnedGitignore);
                 } catch (restoreError) {
                     restorationError = restoreError instanceof Error ? restoreError : new Error(String(restoreError));
                 }

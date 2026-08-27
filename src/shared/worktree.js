@@ -124,6 +124,39 @@ function filterUserDirtyPaths(paths, allowed = new Set()) {
     return paths.filter((path) => !isRunWieldOwnedRuntimePath(path) && !isAllowedDirtyPath(path, allowed));
 }
 
+/** @param {string} path */
+function isExecutionPreparationPath(path) {
+    return path === ".gitignore" || path === "docs/plans" || path.startsWith("docs/plans/") ||
+        isRunWieldOwnedRuntimePath(path);
+}
+
+/**
+ * Detect evidence that an execution Agent already changed a reusable worktree.
+ * Plan materialization, the owned ignore block, and runtime files are setup—not
+ * implementation evidence.
+ *
+ * @param {Object} opts
+ * @param {string} opts.worktreePath
+ * @param {string} opts.baseRef
+ * @param {string} [opts.targetRef]
+ * @param {boolean} [opts.includeWorkingTree]
+ * @returns {Promise<boolean>}
+ */
+export async function hasExecutionChangesSince({
+    worktreePath,
+    baseRef,
+    targetRef = "HEAD",
+    includeWorkingTree = false,
+}) {
+    const committed = parseNameOnlyPaths(
+        await runGit(worktreePath, ["diff", "--name-only", `${baseRef}..${targetRef}`]),
+    );
+    const dirty = includeWorkingTree
+        ? parseStatusPaths(await runGit(worktreePath, ["status", "--porcelain", "--untracked-files=all"]))
+        : [];
+    return [...new Set([...committed, ...dirty])].some((path) => !isExecutionPreparationPath(path));
+}
+
 /**
  * @param {string} cwd
  * @param {string[]} paths
@@ -140,20 +173,25 @@ async function restoreExistingPathsFromHead(cwd, paths) {
 }
 
 /**
- * Stage all changed files except RunWield-owned runtime files.
- * Listing paths first avoids passing ignored exclusion paths to `git add`.
+ * Stage all changed files except RunWield-owned runtime files. Tracked updates
+ * and new files are staged separately so an ignored working copy left behind
+ * by an index removal is not accidentally passed back to `git add`.
  *
  * @param {string} worktreePath
  */
 async function stageDirtyPathsExceptOwnedRuntime(worktreePath) {
     const tracked = parseNameOnlyPaths(
         await runGit(worktreePath, ["diff", "--name-only", "--no-renames", "HEAD", "--"]),
-    );
+    ).filter((path) => !isRunWieldOwnedRuntimePath(path));
     const untracked = parseNameOnlyPaths(
         await runGit(worktreePath, ["ls-files", "--others", "--exclude-standard"]),
-    );
-    const paths = [...new Set([...tracked, ...untracked])].filter((path) => !isRunWieldOwnedRuntimePath(path));
-    if (paths.length > 0) await runGit(worktreePath, ["add", "-A", "--", ...paths]);
+    ).filter((path) => !isRunWieldOwnedRuntimePath(path));
+    const indexed = tracked.length > 0
+        ? new Set(parseNameOnlyPaths(await runGit(worktreePath, ["ls-files", "--cached", "--", ...tracked])))
+        : new Set();
+    const trackedUpdates = tracked.filter((path) => indexed.has(path));
+    if (trackedUpdates.length > 0) await runGit(worktreePath, ["add", "-u", "--", ...trackedUpdates]);
+    if (untracked.length > 0) await runGit(worktreePath, ["add", "--", ...untracked]);
 }
 
 /**
@@ -356,7 +394,9 @@ async function isSameFilesystemPath(a, b) {
  * @typedef {Object} WorktreeCommitMessageOptions
  * @property {string} [planName]
  * @property {string} [planDescription]
- * @property {"completion"|"preparation"} [phase]
+ * @property {"completion"|"preparation"|"publication"} [phase]
+ * @property {string} [publicationAttemptId]
+ * @property {string[]} [publicationPlanPaths]
  */
 
 /**
@@ -381,12 +421,24 @@ function formatStagedPaths(stagedPaths) {
  * @param {WorktreeCommitMessageOptions & { branch: string, stagedPaths: string[] }} options
  * @returns {WorktreeCommitMessage}
  */
-function buildWorktreeCommitMessage({ planName, planDescription, phase, branch, stagedPaths }) {
+function buildWorktreeCommitMessage({
+    planName,
+    planDescription,
+    phase,
+    branch,
+    stagedPaths,
+    publicationAttemptId,
+    publicationPlanPaths = [],
+}) {
     const normalizedPlanName = normalizeCommitMessageLine(planName);
     const normalizedDescription = normalizeCommitMessageLine(planDescription);
     const subject = normalizedPlanName
         ? normalizeCommitMessageLine(
-            phase === "preparation" ? `Prepare ${normalizedPlanName} execution` : `Complete ${normalizedPlanName}`,
+            phase === "preparation"
+                ? `Prepare ${normalizedPlanName} execution`
+                : phase === "publication"
+                ? `Finalize validated artifacts for ${normalizedPlanName}`
+                : `Complete ${normalizedPlanName}`,
         )
         : "Commit execution worktree updates";
     const bodyLines = [];
@@ -394,6 +446,10 @@ function buildWorktreeCommitMessage({ planName, planDescription, phase, branch, 
     if (normalizedDescription) bodyLines.push(`- Description: ${normalizedDescription}`);
     bodyLines.push(`- Branch: ${branch}`);
     bodyLines.push(`- Files: ${formatStagedPaths(stagedPaths)}`);
+    if (publicationAttemptId) {
+        bodyLines.push(`RunWield-Publication-Attempt: ${publicationAttemptId}`);
+        for (const path of publicationPlanPaths) bodyLines.push(`RunWield-Publication-Plan-Path: ${path}`);
+    }
     return { subject, body: bodyLines.join("\n") };
 }
 
@@ -543,11 +599,29 @@ export async function assertPreMergeCandidateUnchanged({ worktreePath, sealedExe
 }
 
 /**
- * @param {{ worktreePath: string, branch: string, planName?: string, planDescription?: string, mergeTargetRef?: string }} opts
+ * @param {{ worktreePath: string, branch: string, planName?: string, planDescription?: string, mergeTargetRef?: string, publicationAttemptId?: string, publicationPlanPaths?: string[] }} opts
  * @returns {Promise<{ executionCommit: string }>}
  */
-export async function checkpointExecutionWorktree({ worktreePath, branch, planName, planDescription, mergeTargetRef }) {
-    await commitDirtyWorktreeState(worktreePath, branch, { planName, planDescription }, [], mergeTargetRef);
+export async function checkpointExecutionWorktree({
+    worktreePath,
+    branch,
+    planName,
+    planDescription,
+    mergeTargetRef,
+    publicationAttemptId,
+    publicationPlanPaths,
+}) {
+    await commitDirtyWorktreeState(
+        worktreePath,
+        branch,
+        {
+            planName,
+            planDescription,
+            ...(publicationAttemptId ? { phase: "publication", publicationAttemptId, publicationPlanPaths } : {}),
+        },
+        [],
+        mergeTargetRef,
+    );
     const status = await runGit(worktreePath, ["status", "--porcelain", "--untracked-files=all"]);
     const remainingDirtyPaths = parseStatusPaths(status).filter((path) => !isRunWieldOwnedRuntimePath(path));
     if (remainingDirtyPaths.length > 0) {
@@ -1410,9 +1484,33 @@ export async function deleteRemotelyPublishedWorktreeBranch({
         }
         const contains = await runGitResult(projectRoot, ["merge-base", "--is-ancestor", branch, proofRef]);
         if (contains.code !== 0) {
+            // Cleanup can be resumed by more than one process after publication.
+            // If another cleanup removed the branch between our existence check
+            // and this proof, the desired effect is already complete.
+            const branchStillExists = await runGitResult(projectRoot, [
+                "show-ref",
+                "--verify",
+                "--quiet",
+                `refs/heads/${branch}`,
+            ]);
+            if (branchStillExists.code !== 0) {
+                return { deleted: true, reason: `${branch} was already deleted.` };
+            }
             return { deleted: false, reason: `The upstream target does not contain ${branch}, so it was kept.` };
         }
-        await runGit(projectRoot, ["branch", "-D", branch]);
+        const deletion = await runGitResult(projectRoot, ["branch", "-D", branch]);
+        if (deletion.code !== 0) {
+            const branchStillExists = await runGitResult(projectRoot, [
+                "show-ref",
+                "--verify",
+                "--quiet",
+                `refs/heads/${branch}`,
+            ]);
+            if (branchStillExists.code !== 0) {
+                return { deleted: true, reason: `${branch} was already deleted.` };
+            }
+            throw new Error(deletion.stderr || deletion.stdout);
+        }
         return { deleted: true, reason: `${branch} is published upstream and was deleted.` };
     } finally {
         await runGitResult(projectRoot, ["update-ref", "-d", proofRef]);
@@ -1438,7 +1536,7 @@ export async function findReusableWorktree({ projectRoot, planName, planId, work
         if (entry.planId !== planId) continue;
         if (entry.planName !== planName) continue;
         if (worktreeId && entry.id !== worktreeId) continue;
-        if (["active", "completed", "execution_failed", "validation_failed", "merge_conflict"].includes(entry.status)) {
+        if (["active", "completed", "execution_failed", "validation_failed", "validated"].includes(entry.status)) {
             if (await pathExists(entry.path)) return entry;
         }
     }

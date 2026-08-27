@@ -493,11 +493,11 @@ and root-affecting configuration remain active.
 
 `SessionRuntime.cancelSession()` is the sole cancellation authority: TUI Escape, ACP, and every other consumer call it
 and never hold process handles themselves. Process-tree ownership lives one layer down, in
-`src/shared/foreground-process.ts`. Every RunWield-owned foreground shell — local `!`/`!!` commands, configured local
-CI, and Objective-Failing Checks — is spawned through that module as an independently terminable process tree (detached
-process group plus negative-pid group signal on Unix-like systems, `taskkill /F /T` on Windows), bound to a Session
-active-interaction `AbortSignal` and an optional timeout. Cancellation therefore terminates the whole descendant tree,
-not just the wrapper shell, and the spawn/abort race is closed inside the module rather than re-implemented per caller.
+`src/shared/foreground-process.ts`. Every RunWield-owned foreground shell — local `!`/`!!` commands and configured local
+CI — is spawned through that module as an independently terminable process tree (detached process group plus
+negative-pid group signal on Unix-like systems, `taskkill /F /T` on Windows), bound to a Session active-interaction
+`AbortSignal` and an optional timeout. Cancellation therefore terminates the whole descendant tree, not just the wrapper
+shell, and the spawn/abort race is closed inside the module rather than re-implemented per caller.
 
 ### Runtime events and interactions
 
@@ -790,13 +790,15 @@ flowchart TD
 - With Git, execution uses a registered worktree and a captured baseline tree.
 - Without Git, in-place execution requires remembered, scope-specific user consent.
 - Engineer output is not completion. The protected `task_completed` tool is the completion gate.
+- A blocker is not a completion. An execution Agent that cannot finish the work stops in plain text instead of calling
+  `task_completed`, so RunWield pauses with the Agent active rather than validating work that never happened.
 - Workflow Validation begins from `implemented`, not directly from `in_progress`.
-- A Git-backed Plan becomes canonically `verified` through the worktree merge, so Plan verification evidence and code
-  changes land together.
+- A Git-backed Plan becomes canonically `validated` before publication. The registry publication record then proves the
+  exact commits through integration, target update, verification, and cleanup without rewriting the Plan again.
 - Merge and validation failures preserve worktree/Plan metadata for recovery instead of discarding the execution state.
-- CI, Objective Check, semantic-review, and merge repairs run in independent Agent sessions. Each repair receives a
-  bounded packet with the repair checkout, Plan path, available worktree identity, and current feedback instead of the
-  implementation transcript or an inline Plan copy.
+- CI, semantic-review, and merge repairs run in independent Agent sessions. Each repair receives a bounded packet with
+  the repair checkout, Plan path, available worktree identity, and current feedback instead of the implementation
+  transcript or an inline Plan copy.
 
 ### Worktree ownership
 
@@ -804,10 +806,11 @@ flowchart TD
 stores the live workflow on the hosted session, updates `.wld/worktrees.json`, and records `execution_started` in the
 Plan.
 
-`worktree.js` owns branch resolution, worktree creation, dirty-path risk checks, committing execution changes,
-merge-back, detached target-branch merge worktrees, merge-repair metadata, and cleanup. The worktree registry has a
-best-effort lock file with stale-lock detection. The Plan front matter contains the durable recovery pointer; the
-registry tracks local operational state.
+`worktree.js` owns branch resolution, worktree creation, dirty-path risk checks, committing execution changes, and
+cleanup. `isolated-publication.ts` assembles and publishes the target in a separate clone. `publication-machine.ts` owns
+the monotonic publication record and reconciles it with Git after restart. The worktree registry lock and
+compare-and-swap revision serialize its writes. Plan Front Matter does not own publication progress or merge-repair
+location.
 
 ### Validation modes
 

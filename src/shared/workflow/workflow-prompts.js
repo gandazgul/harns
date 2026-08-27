@@ -115,7 +115,7 @@ export function buildSlicerRequest(input, legacyTriageMeta) {
 
     if (attrs.summary) lines.push(`- Summary: ${attrs.summary}`);
     if (attrs.parentPlan) lines.push(`- Parent plan: ${attrs.parentPlan}`);
-    if (attrs.worktreeBaseBranch) lines.push(`- Target branch: ${attrs.worktreeBaseBranch}`);
+    if (attrs.targetBranch) lines.push(`- Target branch: ${attrs.targetBranch}`);
     if (Array.isArray(attrs.tickets) && attrs.tickets.length) {
         lines.push("- Epic Ticket references (context only; do not copy to every child):");
         for (const ticket of attrs.tickets) {
@@ -205,7 +205,7 @@ const RE_ANCHOR_ARTIFACTS = Object.freeze({
     },
     [AGENTS.ARCHITECT]: {
         label: "Epic",
-        sections: "Objective, Vertical Slice Findings, Files to Modify, and Verification Plan",
+        sections: "Objective, Vertical Slice Findings, Expected Change Surface, and Verification Plan",
     },
     [AGENTS.PLAN_ENGINEER]: {
         label: "Plan",

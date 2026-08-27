@@ -9,6 +9,7 @@ import {
     getStoredPlanPath,
     mergeFrontMatterText,
     parsePlanFrontMatter,
+    planDocumentMarkdown,
     writePlanMarkdownWithRevision,
 } from "../../plan-store.js";
 
@@ -60,73 +61,39 @@ function executionMetadataOverrides(canonicalAttrs, executionAttrs) {
     if (executionAttrs.status !== canonicalAttrs.status) {
         overrides.status = canonicalAttrs.status;
     }
-    // These values are policy and identity facts from the locked primary Plan.
-    // The execution copy is derived storage, so stale or missing values always
-    // move in this direction. User-owned body and definition fields stay intact.
+    // At initial setup the source is the locked primary Plan; on continuation
+    // it is the execution Plan itself. Runtime facts are not document fields.
     if (mustReconcilePlanId(canonicalAttrs.planId, executionAttrs.planId)) {
         overrides.planId = canonicalAttrs.planId;
     }
     /** @type {(keyof import('../../plan-store.js').PlanFrontMatter)[]} */
-    const primaryOwnedKeys = [
+    const documentKeys = [
         "executionAgent",
         "collaborationRecommendation",
+        "targetBranch",
         "origin",
         "parentPlan",
         "order",
         "dependencies",
-        // Plan Lifecycle owns these values. The worktree copy can propose body and
-        // definition edits, but it cannot propose an older review, attempt, or
-        // delivery state back to the primary Plan.
         "createdAt",
-        "updatedAt",
-        "objectiveChecksBaseline",
-        "objectiveCheckWaivers",
-        "failureReason",
-        "failedAt",
-        "implementedAt",
-        "verifiedAt",
         "userVerifiedAt",
         "userVerificationNote",
         "closedWithoutVerificationReason",
-        "executionReport",
         "workRecord",
-        "humanReviewMode",
-        "humanReviewDecision",
-        "humanReviewedAt",
-        "validationMergeRepairWorktree",
-        "validationCheckpoint",
-        "validationCiAttempts",
-        "validationObjectiveCheckAttempts",
-        "validationSemanticRounds",
         "epicCompletionMode",
         "epicDoneEnoughAt",
         "epicDoneEnoughSummary",
-        "executionMode",
-        "deliveryEvidence",
-        "executionBaselineTree",
-        "worktreeId",
-        "worktreePath",
-        "worktreeBranch",
-        "worktreeBaseBranch",
-        "worktreeStatus",
         "heldFromStatus",
         "heldAt",
         "holdReason",
-        "holdStalenessBaseline",
         "archivedAt",
         "archiveReason",
         "archivedFromStatus",
         "archivedFromPath",
         "restoredAt",
         "restoredFromPath",
-        "collaborationState",
-        "collaborationServerUrl",
-        "collaborationSpaceId",
-        "collaborationRevision",
-        "collaborationBodyHash",
-        "collaborationSyncedAt",
     ];
-    for (const key of primaryOwnedKeys) {
+    for (const key of documentKeys) {
         if (JSON.stringify(canonicalAttrs[key]) !== JSON.stringify(executionAttrs[key])) {
             Object.assign(overrides, { [key]: canonicalAttrs[key] });
         }
@@ -360,7 +327,7 @@ async function verifyParentChain(root, segments, createMissing) {
 }
 
 /**
- * @param {{ executionCwd: string, planName: string, canonicalSource: Extract<Awaited<ReturnType<typeof loadCanonicalExecutionPlanSource>>, {kind:"loaded"}>, reconcileFromCanonical?: boolean }} opts
+ * @param {{ executionCwd: string, planName: string, canonicalSource: Extract<Awaited<ReturnType<typeof loadCanonicalExecutionPlanSource>>, {kind:"loaded"}>, reconcileFromCanonical?: boolean, replaceFromCanonical?: boolean }} opts
  * @returns {Promise<ExecutionPlanFileResult>}
  */
 export async function ensureExecutionPlanFile({
@@ -368,6 +335,7 @@ export async function ensureExecutionPlanFile({
     planName,
     canonicalSource,
     reconcileFromCanonical = true,
+    replaceFromCanonical = false,
 }) {
     const targetPath = getStoredPlanPath(executionCwd, planName);
     const relativePath = projectRelativePath(executionCwd, targetPath);
@@ -418,21 +386,51 @@ export async function ensureExecutionPlanFile({
         }
         try {
             const { attrs } = parsePlanFrontMatter(markdown);
-            if (!reconcileFromCanonical) {
-                if (hasPlanIdConflict(canonicalSource.attrs.planId, attrs.planId)) {
+            if (
+                !replaceFromCanonical && !reconcileFromCanonical &&
+                hasPlanIdConflict(canonicalSource.attrs.planId, attrs.planId)
+            ) {
+                return {
+                    kind: "restore_failed",
+                    path: targetPath,
+                    relativePath,
+                    reason: `Execution Plan identity does not match ${relativePath}. Existing evidence was preserved.`,
+                };
+            }
+            if (replaceFromCanonical) {
+                if (markdown === canonicalSource.markdown) return { kind: "present", path: targetPath, relativePath };
+                const expectedRevision = await getPlanRevisionForText(markdown);
+                try {
+                    await writePlanMarkdownWithRevision(targetPath, canonicalSource.markdown, expectedRevision);
+                } catch {
+                    const concurrentMarkdown = await Deno.readTextFile(targetPath).catch(() => null);
+                    if (concurrentMarkdown === canonicalSource.markdown) {
+                        return { kind: "present", path: targetPath, relativePath };
+                    }
                     return {
                         kind: "restore_failed",
                         path: targetPath,
                         relativePath,
                         reason:
-                            `Execution Plan identity does not match ${relativePath}. Existing evidence was preserved.`,
+                            `Could not materialize the latest execution Plan at ${relativePath}. Existing evidence was preserved.`,
                     };
                 }
+                if (await Deno.readTextFile(targetPath) !== planDocumentMarkdown(canonicalSource.markdown)) {
+                    return {
+                        kind: "restore_failed",
+                        path: targetPath,
+                        relativePath,
+                        reason: `Could not verify the latest execution Plan at ${relativePath}.`,
+                    };
+                }
+                return { kind: "reconciled", path: targetPath, relativePath };
+            }
+            if (!reconcileFromCanonical) {
                 return { kind: "present", path: targetPath, relativePath };
             }
             const overrides = executionMetadataOverrides(canonicalSource.attrs, attrs);
             if (Object.keys(overrides).length > 0) {
-                const reconciledMarkdown = mergeFrontMatterText(markdown, overrides);
+                const reconciledMarkdown = planDocumentMarkdown(mergeFrontMatterText(markdown, overrides));
                 const expectedRevision = await getPlanRevisionForText(markdown);
                 try {
                     await writePlanMarkdownWithRevision(targetPath, reconciledMarkdown, expectedRevision);
@@ -524,7 +522,7 @@ export async function ensureExecutionPlanFile({
         }
         await Deno.mkdir(targetDir, { recursive: true });
         try {
-            await atomicWriteTextFileIfAbsent(targetPath, canonicalSource.markdown);
+            await atomicWriteTextFileIfAbsent(targetPath, planDocumentMarkdown(canonicalSource.markdown));
         } catch (error) {
             if (error instanceof Deno.errors.AlreadyExists) {
                 const concurrent = await ensureExecutionPlanFile({ executionCwd, planName, canonicalSource });
@@ -533,7 +531,7 @@ export async function ensureExecutionPlanFile({
             throw error;
         }
         const restoredMarkdown = await Deno.readTextFile(targetPath);
-        if (restoredMarkdown !== canonicalSource.markdown) {
+        if (restoredMarkdown !== planDocumentMarkdown(canonicalSource.markdown)) {
             return {
                 kind: "restore_failed",
                 path: targetPath,

@@ -184,8 +184,9 @@ Request. _Avoid_: Execution worktree, unvalidated branch, implementation draft
 **Change Request Finalization**: The post-merge RunWield action that proves Forge delivery and records terminal Plan and
 Work Record evidence in the canonical repository. _Avoid_: Forge merge, contributor synchronization, local-only status
 
-**Direct Delivery**: The default delivery mode that merges validated implementation and verified Plan metadata into the
-local target branch without a Forge Change Request. _Avoid_: Local review, unreviewed delivery
+**Direct Delivery**: The default delivery mode that assembles validated commits with the latest target branch outside
+the user's checkout, publishes the exact result to that target, and verifies it without a Forge Change Request. _Avoid_:
+Local review, unreviewed delivery
 
 **Change Request Delivery**: An explicitly selected delivery mode that verifies the canonical Plan only after a proven
 Forge merge of the validated Publication Candidate. _Avoid_: PR mode, remote merge-back, Direct Delivery
@@ -407,6 +408,11 @@ recall, plan search, Engineer context tool
 **Project Knowledge Search**: Deliberate Agent retrieval over durable artifacts within the active Project. _Avoid_:
 Session Transcript search, automatic context injection, code search
 
+**Possible test-seam risks**: The advisory `wld init` result section for evidence-backed candidates where representative
+project tests appear able to replace product-owned behavior. Each candidate stays speculative until the user classifies
+it, and RunWield asks before it writes an issue or Plan for the risk. _Avoid_: seam check, clean test architecture
+report, automatic refactor
+
 **Engineer**: The selectable full-stack Agent for bounded no-plan QUICK_FIX code changes. Engineer can work in any layer
 by loading the relevant Skills, including browser UI Skills, but does not execute approved Plans. _Avoid_: Plan
 Engineer, Coder, implementer, developer
@@ -470,9 +476,9 @@ onto the base delegated prompt and declaring an authority ceiling that can reduc
 Omitting it yields the unspecialized `general` role. _Avoid_: Subagent type, delegated persona, Agent subtype
 
 **Verification Adversary**: The read-only Delegated Agent Role (`verification-adversary`) that receives a draft Plan and
-returns the cheapest counterfeit implementation passing every listed check with the objective absent, a verdict of
-`discriminating` or `not-discriminating`, and the check that would catch it. Recommended for structural Plans; never a
-required gate. _Avoid_: Plan reviewer, Reviewer, red team, adversarial validation
+looks for ways an implementation could satisfy its stated verification without achieving the intended behavior.
+Recommended for structural Plans; never a required gate. _Avoid_: Plan reviewer, Reviewer, red team, adversarial
+validation
 
 **Epic**: A PROJECT Plan that contains design and decomposition context for child PLANNED_CHANGE Plans rather than
 executable implementation work. _Avoid_: Initiative, umbrella task, PROJECT subtype
@@ -484,8 +490,8 @@ FEATURE Plan, subtask, ticket, DAG node
 Artifact is `docs/plans/<epic>/manual-qa.md`. It is ordinary user-owned Markdown, has no Plan Lifecycle, and has no
 verification, dependency, delivery, or Epic completion authority. _Avoid_: QA tracker, child Plan, artifact lifecycle
 
-**Task Completion**: The `task_completed` signal an execution Agent emits when its assigned work is complete. _Avoid_:
-Done message, final response
+**Task Completion**: The `task_completed` signal an execution Agent emits when its assigned work is complete. An Agent
+that is blocked ends its turn in plain text instead, and the workflow pauses. _Avoid_: Done message, final response
 
 **Scope Escalation**: A conversational boundary where the active Agent states a concrete role or tool limit and offers
 the user explicit options, such as a suitable `/agent <name>`, an in-role alternative, or returning to the prior
@@ -507,21 +513,14 @@ builds that port over the HostedSession machinery; other runtimes can drive the 
 _Avoid_: Second validation implementation, session-coupled engine
 
 **Mechanical Validation**: RunWield's automated command validation loop. In no-plan QUICK_FIX work it runs local CI only
-without semantic review or Plan status transitions; inside Workflow Validation for executable Plans it runs local CI
-plus that Plan's Objective-Failing Checks before Semantic Review. _Avoid_: Workflow Validation, Reviewer review, agent
-self-check
+without semantic review or Plan status transitions; inside Workflow Validation for executable Plans it runs the
+repository's configured CI before Semantic Review. _Avoid_: Workflow Validation, Reviewer review, agent self-check
 
 **Plan Amendment**: A user-approved change to reviewable Plan definition during active execution or Workflow Validation.
-The execution worktree can propose Plan body, summary, affected path, browser verification, Ticket Reference, or
-Objective-Failing Check edits. RunWield shows the diff, asks the user to approve it, writes the accepted definition to
-the primary Plan, and reconciles the execution copy. Plan Status, worktree metadata, Delivery Evidence, validation
-counters, waivers, and other lifecycle fields remain RunWield-owned. _Avoid_: silent worktree Plan edit, lifecycle edit
-
-**Objective-Failing Check**: A Plan-owned shell command with one contract: exit 0 means the Plan objective is met. It
-must be red before implementation and green after implementation; RunWield stores the executable copy in Plan Front
-Matter as `objectiveChecks`, mechanically verifies the red state before execution starts, and reruns it during Workflow
-Validation's Mechanical Validation phase to verify the green state. _Avoid_: Manual check, verification note,
-lint/type-check only
+The execution worktree can propose Plan body, summary, affected path, browser verification, or Ticket Reference edits.
+RunWield shows the diff, asks the user to approve it, writes the accepted definition to the execution Plan, and
+reconciles its canonical copy. Plan Status, worktree metadata, Delivery Evidence, validation counters, and other
+lifecycle fields remain RunWield-owned. _Avoid_: silent worktree Plan edit, lifecycle edit
 
 **Pair Execution**: A user-steered Plan execution style where Plan Engineer or Frontend Engineer delivers coherent
 observable increments and blocks at intentional feedback checkpoints. It is a collaboration style, not validation

@@ -5,7 +5,6 @@ import { withRuntimeCommandFixture } from "../../cmd/testing/runtime-command-fix
 import { createWorktreeGitArtifacts, settleWorktreeAttempt } from "../worktree.js";
 import {
     buildSlicerRequest,
-    executePlan,
     extractAssistantOutput,
     finalizePlanImplementation,
     readLatestPlanOutcome,
@@ -20,6 +19,7 @@ import { loadCanonicalExecutionPlanSource } from "./execution-plan-file.js";
 import { createExecutionStartPorts } from "./execution-start.ts";
 import { defineCommittedGitFixture, git } from "../git-test-fixture.ts";
 import { withProcessGlobalTestLock } from "../../testing/process-global-lock.js";
+import { getCwd } from "../../constants.js";
 import {
     findById as findWorktreeRegistryEntryById,
     listEntries as listWorktreeRegistryEntries,
@@ -29,7 +29,7 @@ import {
  * @param {string} [id]
  * @param {string} [cwd]
  */
-function makeHostedSession(id = "workflow-test", cwd = Deno.cwd()) {
+function makeHostedSession(id = "workflow-test", cwd = getCwd()) {
     return new HostedSession({ id, cwd, sessionManager: null });
 }
 
@@ -141,93 +141,11 @@ Deno.test("HostedSession scopes active execution workflow independently", () => 
     assertEquals(sessionB.getActiveExecutionCwd(), "/work/b");
 });
 
-Deno.test("baseline rejects already-met Objective-Failing Checks before Engineer starts", async () => {
-    await withRuntimeCommandFixture("workflow-already-met-", async ({ setModelResponseFactory }) => {
-        const projectRoot = await makeWorkflowProject([{
-            name: "already-met-plan",
-            status: "ready_for_work",
-            attrs: {
-                objectiveChecks: [{ id: "OC_TRUE", command: "true" }],
-            },
-        }]);
-        const hostedSession = makeAgentHostedSession("already-met-baseline", projectRoot);
-        let planningContext = "";
-        setModelResponseFactory((context) => {
-            planningContext = JSON.stringify(context.messages);
-            return fauxAssistantMessage(fauxText("The baseline feedback needs a revised objective check."));
-        });
-
-        try {
-            const result = await executePlan({
-                planName: "already-met-plan",
-                triageMeta: { planId: PLAN_UNDER_TEST, classification: "FEATURE" },
-                hostedSession,
-            });
-
-            assertEquals(result.executionComplete, false);
-            assertEquals(hostedSession.getActiveExecutionWorkflow(), null);
-            assertEquals(hostedSession.getRootAgentName(), "planner");
-            assertStringIncludes(planningContext, "already satisfied before implementation");
-            const plan = await loadPlan(projectRoot, "already-met-plan");
-            assertEquals(plan?.attrs.status, "feedback");
-            assertEquals(plan?.attrs.objectiveChecksBaseline, undefined);
-            assertEquals((await listWorktreeRegistryEntries(projectRoot)).length, 0);
-        } finally {
-            hostedSession.dispose();
-        }
-    });
-});
-
-Deno.test("re-baselines Objective-Failing Checks when head or command set changes", async () => {
-    const projectRoot = await makeWorkflowProject([{
-        name: "stale-baseline-plan",
-        status: "ready_for_work",
-        attrs: {
-            objectiveChecks: [{ id: "OC1", command: "test -f rebaseline-marker" }],
-            objectiveChecksBaseline: {
-                recordedAt: "2026-01-01T00:00:00.000Z",
-                head: "0000000000000000000000000000000000000000",
-                results: [{
-                    id: "OC1",
-                    command: "false",
-                    status: "unmet",
-                    stdout: "",
-                    stderr: "",
-                    exitCode: 1,
-                    durationMs: 1,
-                    output: "",
-                }],
-            },
-        },
-    }]);
-    const hostedSession = makeHostedSession("stale-baseline", projectRoot);
-
-    const workflow = await startActiveExecutionWorkflow({
-        planName: "stale-baseline-plan",
-        triageMeta: { planId: PLAN_UNDER_TEST, classification: "FEATURE" },
-        currentStatus: "ready_for_work",
-        hostedSession,
-        ports: createExecutionStartPorts(),
-    });
-
-    const plan = await loadPlan(/** @type {string} */ (workflow.executionCwd), "stale-baseline-plan");
-    assertEquals(plan?.attrs.objectiveChecksBaseline?.head, workflow.worktreeBaseCommit);
-    assertEquals(
-        plan?.attrs.objectiveChecksBaseline?.results.map((result) => [result.id, result.command, result.status]),
-        [
-            ["OC1", "test -f rebaseline-marker", "unmet"],
-        ],
-    );
-    assertEquals(hostedSession.getActiveExecutionWorkflow()?.planName, "stale-baseline-plan");
-});
-
-Deno.test("startActiveExecutionWorkflow trusts existing Objective-Failing Checks when continuing an in-progress worktree", async () => {
+Deno.test("startActiveExecutionWorkflow continues an existing in-progress worktree", async () => {
     const projectRoot = await makeWorkflowProject([{
         name: "continued-plan",
         status: "in_progress",
-        attrs: {
-            objectiveChecks: [{ id: "OC_ALREADY_GREEN", command: "true" }],
-        },
+        attrs: {},
     }]);
     const hostedSession = makeHostedSession("continued-workflow", projectRoot);
     const recorded = await settleWorktreeAttempt(
@@ -235,8 +153,8 @@ Deno.test("startActiveExecutionWorkflow trusts existing Objective-Failing Checks
         await createWorktreeGitArtifacts({ projectRoot, planName: "continued-plan", planId: PLAN_UNDER_TEST }),
     );
     await savePlan(recorded.path, "continued-plan", "# continued-plan", {
+        planId: PLAN_UNDER_TEST,
         status: "in_progress",
-        objectiveChecks: [{ id: "OC_ALREADY_GREEN", command: "true" }],
     });
     await Deno.writeTextFile(`${recorded.path}/continued-implementation.ts`, "export const continued = true;\n");
     await git(recorded.path, ["add", "continued-implementation.ts"]);
@@ -255,7 +173,6 @@ Deno.test("startActiveExecutionWorkflow trusts existing Objective-Failing Checks
     assertEquals(workflow.baselineTree, recorded.baseTree);
     const plan = await loadPlan(recorded.path, "continued-plan");
     assertEquals(plan?.attrs.status, "in_progress");
-    assertEquals(plan?.attrs.objectiveChecksBaseline, undefined);
     assertEquals(hostedSession.getActiveExecutionWorkflow()?.planName, "continued-plan");
 });
 
@@ -308,9 +225,7 @@ Deno.test("startActiveExecutionWorkflow bases the execution worktree on the requ
     const projectRoot = await makeWorkflowProject([{
         name: "targeted-plan",
         status: "ready_for_work",
-        attrs: {
-            objectiveChecks: [{ id: "OC_TARGET_BASE", command: "test -f current-only-marker" }],
-        },
+        attrs: { targetBranch: " feature-base " },
     }]);
     const hostedSession = makeHostedSession("targeted-workflow", projectRoot);
     await Deno.writeTextFile(`${projectRoot}/current-only-marker`, "present only in the current checkout\n");
@@ -318,7 +233,7 @@ Deno.test("startActiveExecutionWorkflow bases the execution worktree on the requ
     const result = await startActiveExecutionWorkflow({
         // Padded on purpose: the target branch arrives from Front Matter a user edited.
         planName: "targeted-plan",
-        triageMeta: { planId: "plan-under-test", worktreeBaseBranch: " feature-base " },
+        triageMeta: { planId: "plan-under-test", targetBranch: " feature-base " },
         currentStatus: "ready_for_work",
         hostedSession,
         ports: createExecutionStartPorts(),
@@ -349,24 +264,59 @@ Deno.test("startActiveExecutionWorkflow bases the execution worktree on the requ
     );
     assertEquals(await git(/** @type {string} */ (result.executionCwd), ["status", "--porcelain"]), "");
     const plan = await loadPlan(/** @type {string} */ (result.executionCwd), "targeted-plan");
-    assertEquals(plan?.attrs.objectiveChecksBaseline?.head, targetCommit);
-    assertEquals(
-        plan?.attrs.objectiveChecksBaseline?.results.map((result) => [result.id, result.command, result.status]),
-        [["OC_TARGET_BASE", "test -f current-only-marker", "unmet"]],
-    );
+    assertEquals(plan?.attrs.status, "in_progress");
 });
 
-Deno.test("startActiveExecutionWorkflow captures baseline after restored Plan preparation and records metric", async () => {
+Deno.test("startActiveExecutionWorkflow uses the latest uncommitted Plan revision instead of the target branch copy", async () => {
+    const projectRoot = await makeWorkflowProject([{
+        name: "revised-before-execution",
+        status: "ready_for_work",
+        attrs: {},
+    }]);
+    await git(projectRoot, ["add", "."]);
+    await git(projectRoot, ["commit", "-m", "commit old Plan revision"]);
+    const committedPlan = await loadPlan(projectRoot, "revised-before-execution");
+    if (!committedPlan) throw new Error("committed Plan fixture disappeared");
+    await savePlan(
+        projectRoot,
+        "revised-before-execution",
+        "# Latest approved Plan\n\n## Context\n\nlatest approved Plan",
+        {
+            classification: "PLANNED_CHANGE",
+            status: "ready_for_work",
+            summary: "latest approved Plan",
+            affectedPaths: [],
+            planId: PLAN_UNDER_TEST,
+        },
+        { expectedRevision: committedPlan.revision },
+    );
+    const hostedSession = makeHostedSession("revised-before-execution", projectRoot);
+    let executionCwd;
+    try {
+        const result = await startActiveExecutionWorkflow({
+            planName: "revised-before-execution",
+            triageMeta: { planId: PLAN_UNDER_TEST, classification: "PLANNED_CHANGE" },
+            currentStatus: "ready_for_work",
+            hostedSession,
+            ports: createExecutionStartPorts(),
+        });
+        executionCwd = result.executionCwd;
+        const executionPlan = await loadPlan(result.executionCwd, "revised-before-execution");
+        assertEquals(executionPlan?.body.trim(), "# Latest approved Plan\n\n## Context\n\nlatest approved Plan");
+        assertEquals(executionPlan?.attrs.summary, "latest approved Plan");
+    } finally {
+        hostedSession.dispose();
+        if (executionCwd) {
+            await git(projectRoot, ["worktree", "remove", "--force", executionCwd]).catch(() => "");
+        }
+    }
+});
+
+Deno.test("startActiveExecutionWorkflow captures baseline after first Plan materialization and records metric", async () => {
     const projectRoot = await makeWorkflowProject([{ name: "p", status: "ready_for_work" }]);
     const hostedSession = makeHostedSession("baseline-after-plan-restore", projectRoot);
-    // A real execution worktree that is already registered but has no Plan copy in it,
-    // while the session still remembers a baseline from when one was there. Built with
-    // the real helpers rather than faked: this is the environment the test needs, not the
-    // behaviour it is checking.
-    const existingWorktree = await settleWorktreeAttempt(
-        projectRoot,
-        await createWorktreeGitArtifacts({ projectRoot, planName: "p", planId: PLAN_UNDER_TEST }),
-    );
+    // The target commit has no Plan: initial materialization must use the approved
+    // source and capture the baseline afterwards. A stale Session is not authority.
     hostedSession.setActiveExecutionWorkflow({
         planName: "p",
         triageMeta: { planId: PLAN_UNDER_TEST },
@@ -374,10 +324,10 @@ Deno.test("startActiveExecutionWorkflow captures baseline after restored Plan pr
         executionMode: "worktree",
         baselineTree: "stale-tree-without-plan",
         projectRoot: hostedSession.cwd,
-        executionCwd: existingWorktree.path,
-        worktreeId: existingWorktree.id,
-        worktreeBranch: existingWorktree.branch,
-        worktreeBaseBranch: existingWorktree.baseBranch,
+        executionCwd: "/not-a-registered-attempt",
+        worktreeId: "retired",
+        worktreeBranch: "worktree/retired",
+        worktreeBaseBranch: "main",
     });
     /** @type {string[]} */
     const order = [];
@@ -386,7 +336,7 @@ Deno.test("startActiveExecutionWorkflow captures baseline after restored Plan pr
 
     const result = await startActiveExecutionWorkflow({
         planName: "p",
-        triageMeta: { planId: PLAN_UNDER_TEST, worktreeId: existingWorktree.id },
+        triageMeta: { planId: PLAN_UNDER_TEST },
         currentStatus: "ready_for_work",
         hostedSession,
         ports: {
@@ -404,7 +354,7 @@ Deno.test("startActiveExecutionWorkflow captures baseline after restored Plan pr
         },
     });
 
-    assertEquals(order, ["load-source", "load-source", "load-source"]);
+    assertEquals(order, ["load-source", "load-source"]);
     assertEquals(metrics.at(-1)?.details.planFileMaterialized, true);
     // The ordering used to be asserted by spying on the Plan restore and the baseline
     // capture. It did not need to be: a baseline that contains the restored Plan can
@@ -457,7 +407,7 @@ Deno.test("startActiveExecutionWorkflow rejects an unsafe canonical source befor
         "docs/plans/p.md",
     );
 
-    assertEquals(reuseLookups, 1);
+    assertEquals(reuseLookups, 0);
     assertEquals(ensureCalls, 0);
     // "Before creation" is a claim about the repository and the registry, so ask them
     // rather than a fake that was told to refuse.
@@ -495,7 +445,7 @@ Deno.test("startActiveExecutionWorkflow preserves a malformed derived Plan and b
                     },
                 }),
             Error,
-            "malformed",
+            "could not be parsed",
         );
 
         assertEquals((await Deno.stat(reused.path)).isDirectory, true);
@@ -508,7 +458,11 @@ Deno.test("startActiveExecutionWorkflow preserves a malformed derived Plan and b
 });
 
 Deno.test("startActiveExecutionWorkflow rolls back a worktree that fails before execution begins", async () => {
-    const projectRoot = await makeWorkflowProject([{ name: "p", status: "ready_for_work" }]);
+    const projectRoot = await makeWorkflowProject([{
+        name: "p",
+        status: "ready_for_work",
+        attrs: { targetBranch: "docs-as-file" },
+    }]);
     const hostedSession = makeHostedSession("fresh-cleanup-failure", projectRoot);
     // A branch whose tree has `docs` as a *file*, built with plumbing so the working
     // tree is untouched. A worktree checked out from it cannot hold docs/plans/p.md, so the
@@ -535,7 +489,7 @@ Deno.test("startActiveExecutionWorkflow rolls back a worktree that fails before 
             () =>
                 startActiveExecutionWorkflow({
                     planName: "p",
-                    triageMeta: { planId: PLAN_UNDER_TEST, worktreeBaseBranch: "docs-as-file" },
+                    triageMeta: { planId: PLAN_UNDER_TEST, targetBranch: "docs-as-file" },
                     currentStatus: "ready_for_work",
                     hostedSession,
                     ports: {
@@ -600,7 +554,10 @@ Deno.test("startActiveExecutionWorkflow resolves implicit current branch before 
         projectRoot,
         await createWorktreeGitArtifacts({ projectRoot, planName: "untargeted-plan", planId: PLAN_UNDER_TEST }),
     );
-    await savePlan(recorded.path, "untargeted-plan", "# untargeted-plan", { status: "ready_for_work" });
+    await savePlan(recorded.path, "untargeted-plan", "# untargeted-plan", {
+        status: "ready_for_work",
+        planId: PLAN_UNDER_TEST,
+    });
     /** @type {unknown[]} */
     const reuseCalls = [];
     const result = await startActiveExecutionWorkflow({
@@ -637,39 +594,31 @@ Deno.test("startActiveExecutionWorkflow resolves implicit current branch before 
 Deno.test("startActiveExecutionWorkflow rejects reusable worktree target mismatches", async () => {
     const projectRoot = await makeWorkflowProject([{ name: "targeted-plan", status: "ready_for_work" }]);
     const hostedSession = makeHostedSession("mismatched-workflow", projectRoot);
-    let prepareCalls = 0;
+    const recorded = await settleWorktreeAttempt(
+        projectRoot,
+        await createWorktreeGitArtifacts({ projectRoot, planName: "targeted-plan", planId: PLAN_UNDER_TEST }),
+    );
+    await savePlan(recorded.path, "targeted-plan", "# targeted-plan", {
+        planId: PLAN_UNDER_TEST,
+        status: "ready_for_work",
+        targetBranch: "feature-base",
+    });
+    const entriesBefore = await listWorktreeRegistryEntries(projectRoot);
+    const selected = await loadPlan(recorded.path, "targeted-plan");
     await assertRejects(
         () =>
             startActiveExecutionWorkflow({
                 planName: "targeted-plan",
-                triageMeta: { planId: "plan-under-test", worktreeId: "wt3", worktreeBaseBranch: "feature-base" },
+                triageMeta: selected.attrs,
                 currentStatus: "ready_for_work",
                 hostedSession,
-                ports: {
-                    ...createExecutionStartPorts(),
-                    probeGitRepository: () => Promise.resolve({ ok: true, state: "work_tree", cwd: "" }),
-                    findReusableWorktree: () =>
-                        Promise.resolve(
-                            /** @type {any} */ ({
-                                id: "wt3",
-                                path: "/tmp/wt3",
-                                branch: "runwield/worktree/targeted-plan-wt3",
-                                baseBranch: "other-base",
-                            }),
-                        ),
-                    resolveTargetBranchName: () => Promise.resolve("feature-base"),
-                    prepareTargetBranchRef: () => {
-                        prepareCalls++;
-                        return Promise.resolve({ baseRef: "refs/heads/feature-base", baseBranch: "feature-base" });
-                    },
-                },
+                ports: createExecutionStartPorts(),
             }),
         Error,
-        "Existing execution worktree targets other-base, but plan targets feature-base",
+        "Existing execution worktree targets main, but plan targets feature-base",
     );
-    assertEquals(prepareCalls, 0);
     // Refused before anything durable happened.
-    assertEquals(await listWorktreeRegistryEntries(projectRoot), []);
+    assertEquals(await listWorktreeRegistryEntries(projectRoot), entriesBefore);
 });
 
 Deno.test("startActiveExecutionWorkflow matches explicit remote target to recorded local reusable target", async () => {
@@ -685,13 +634,14 @@ Deno.test("startActiveExecutionWorkflow matches explicit remote target to record
         }),
     );
     await savePlan(recorded.path, "targeted-plan", "# targeted-plan", {
+        planId: PLAN_UNDER_TEST,
         status: "ready_for_work",
-        worktreeBaseBranch: "origin/feature-base",
+        targetBranch: "origin/feature-base",
     });
     let prepareCalls = 0;
     const result = await startActiveExecutionWorkflow({
         planName: "targeted-plan",
-        triageMeta: { planId: PLAN_UNDER_TEST, worktreeId: recorded.id, worktreeBaseBranch: "origin/feature-base" },
+        triageMeta: { planId: PLAN_UNDER_TEST, worktreeId: recorded.id, targetBranch: "origin/feature-base" },
         currentStatus: "ready_for_work",
         hostedSession,
         ports: {
@@ -713,8 +663,12 @@ Deno.test("startActiveExecutionWorkflow matches explicit remote target to record
     assertEquals(result.worktreeBaseBranch, "feature-base");
 });
 
-Deno.test("startActiveExecutionWorkflow does not let plan target overwrite unknown active worktree target", async () => {
-    const projectRoot = await makeWorkflowProject([{ name: "targeted-plan", status: "ready_for_work" }]);
+Deno.test("startActiveExecutionWorkflow ignores an unregistered cached attempt and uses the saved target", async () => {
+    const projectRoot = await makeWorkflowProject([{
+        name: "targeted-plan",
+        status: "ready_for_work",
+        attrs: { targetBranch: "feature-base" },
+    }]);
     const hostedSession = makeHostedSession("unknown-active-target-workflow", projectRoot);
     hostedSession.setActiveExecutionWorkflow({
         planName: "targeted-plan",
@@ -726,30 +680,16 @@ Deno.test("startActiveExecutionWorkflow does not let plan target overwrite unkno
         worktreeId: "wt4",
         worktreeBranch: "runwield/worktree/targeted-plan-wt4",
     });
-    let prepareCalls = 0;
-
-    await assertRejects(
-        () =>
-            startActiveExecutionWorkflow({
-                planName: "targeted-plan",
-                triageMeta: { planId: "plan-under-test", worktreeBaseBranch: "feature-base" },
-                currentStatus: "ready_for_work",
-                hostedSession,
-                ports: {
-                    ...createExecutionStartPorts(),
-                    probeGitRepository: () => Promise.resolve({ ok: true, state: "work_tree", cwd: "" }),
-                    findReusableWorktree: () => Promise.reject(new Error("should use active workflow")),
-                    resolveTargetBranchName: () => Promise.resolve("feature-base"),
-                    prepareTargetBranchRef: () => {
-                        prepareCalls++;
-                        return Promise.resolve({ baseRef: "refs/heads/feature-base", baseBranch: "feature-base" });
-                    },
-                },
-            }),
-        Error,
-        "Existing execution worktree targets HEAD/current checkout, but plan targets feature-base",
-    );
-    assertEquals(prepareCalls, 0);
+    const started = await startActiveExecutionWorkflow({
+        planName: "targeted-plan",
+        triageMeta: { planId: PLAN_UNDER_TEST, targetBranch: "stale-target" },
+        currentStatus: "ready_for_work",
+        hostedSession,
+        ports: createExecutionStartPorts(),
+    });
+    assertEquals(started.worktreeId === "wt4", false);
+    assertEquals(started.worktreeBaseBranch, "feature-base");
+    assertEquals((await findWorktreeRegistryEntryById(projectRoot, started.worktreeId))?.baseBranch, "feature-base");
 });
 
 Deno.test("startActiveExecutionWorkflow prompts once and uses CWD for non-Git in-place execution", async () => {
@@ -958,7 +898,11 @@ Deno.test("finalizePlanImplementation checkpoints worktree changes before lifecy
     assertEquals(finalized?.attrs.status, "implemented");
     assertEquals(finalized?.attrs.executionReport, "- Implemented.");
     assertEquals(finalized?.attrs.worktreeId, worktree.id);
-    assertEquals(finalized?.attrs.executionBaselineTree, "attempt-tree");
+    assertEquals(
+        finalized?.attrs.executionBaselineTree,
+        worktree.baseTree,
+        "registry baseline wins over stale caller data",
+    );
     assertEquals((await findWorktreeRegistryEntryById(projectRoot, worktree.id))?.status, "completed");
 });
 
