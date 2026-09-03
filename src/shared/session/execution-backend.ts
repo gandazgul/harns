@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ClaudeCliExecutionSession } from "./backends/claude-cli/execution-session.ts";
+import type { AgyCliExecutionSession } from "./backends/agy-cli/execution-session.ts";
 
 export interface PiExecutionSession {
     kind: "pi";
@@ -12,7 +13,12 @@ export interface ClaudeExecutionSession {
     session: ClaudeCliExecutionSession;
 }
 
-export type ExecutionSession = PiExecutionSession | ClaudeExecutionSession;
+export interface AgyExecutionSession {
+    kind: "agy-cli";
+    session: AgyCliExecutionSession;
+}
+
+export type ExecutionSession = PiExecutionSession | ClaudeExecutionSession | AgyExecutionSession;
 
 export interface ExecutionRunOptions {
     userRequest: string;
@@ -28,6 +34,10 @@ export function createClaudeExecutionSession(session: ClaudeCliExecutionSession)
     return { kind: "claude-cli", session };
 }
 
+export function createAgyExecutionSession(session: AgyCliExecutionSession): AgyExecutionSession {
+    return { kind: "agy-cli", session };
+}
+
 export function getRootExecutionMessages(rootSession: ExecutionSession | AgentSession | null): AgentMessage[] {
     if (!rootSession) return [];
     if (isExecutionSession(rootSession)) {
@@ -36,7 +46,9 @@ export function getRootExecutionMessages(rootSession: ExecutionSession | AgentSe
     return rootSession.agent.state.messages;
 }
 
-export function getExecutionSteeringTarget(rootSession: ExecutionSession): AgentSession | ClaudeCliExecutionSession {
+export function getExecutionSteeringTarget(
+    rootSession: ExecutionSession,
+): AgentSession | ClaudeCliExecutionSession | AgyCliExecutionSession {
     return rootSession.session;
 }
 
@@ -45,5 +57,6 @@ export function disposeExecutionSession(rootSession: ExecutionSession): void | P
 }
 
 export function isExecutionSession(rootSession: ExecutionSession | AgentSession): rootSession is ExecutionSession {
-    return "kind" in rootSession && (rootSession.kind === "pi" || rootSession.kind === "claude-cli");
+    return "kind" in rootSession &&
+        (rootSession.kind === "pi" || rootSession.kind === "claude-cli" || rootSession.kind === "agy-cli");
 }

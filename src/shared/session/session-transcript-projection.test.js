@@ -93,7 +93,7 @@ Deno.test("committed projection verifies exact prefix and ignores later tail", a
     });
 });
 
-Deno.test("committed projection replays Claude CLI final messages as ordinary transcript text", async () => {
+Deno.test("committed projection replays CLI backend final messages as ordinary transcript text", async () => {
     await withHome(async (home) => {
         const cwd = `${home}/project`;
         await Deno.mkdir(cwd, { recursive: true });
@@ -104,16 +104,39 @@ Deno.test("committed projection replays Claude CLI final messages as ordinary tr
             { type: "session", id: "claude", cwd, timestamp: "2026-01-01T00:00:00.000Z" },
             {
                 type: "custom",
-                id: "backend",
+                id: "backend-claude",
                 customType: "runwield.execution_backend",
                 data: { backend: "claude-cli" },
             },
-            { type: "message", id: "user", message: { role: "user", content: [{ type: "text", text: "hi claude" }] } },
-            { type: "model_change", id: "model", provider: "claude-cli", modelId: "sonnet" },
             {
                 type: "message",
-                id: "assistant",
+                id: "user-claude",
+                message: { role: "user", content: [{ type: "text", text: "hi claude" }] },
+            },
+            { type: "model_change", id: "model-claude", provider: "claude-cli", modelId: "sonnet" },
+            {
+                type: "message",
+                id: "assistant-claude",
                 message: { role: "assistant", content: [{ type: "text", text: "stream complete" }] },
+            },
+            {
+                type: "custom",
+                id: "agent-agy",
+                customType: "runwield.active_agent",
+                data: { agentName: "planner" },
+            },
+            {
+                type: "custom",
+                id: "backend-agy",
+                customType: "runwield.execution_backend",
+                data: { backend: "agy-cli", model: "gemini-fixture" },
+            },
+            { type: "message", id: "user-agy", message: { role: "user", content: [{ type: "text", text: "hi agy" }] } },
+            { type: "model_change", id: "model-agy", provider: "agy-cli", modelId: "gemini-fixture" },
+            {
+                type: "message",
+                id: "assistant-agy",
+                message: { role: "assistant", content: [{ type: "text", text: "agy complete" }] },
             },
         ].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
         await Deno.writeTextFile(sessionPath, committed);
@@ -131,11 +154,14 @@ Deno.test("committed projection replays Claude CLI final messages as ordinary tr
             terminalEntryId: evidence.terminalEntryId,
             digestHex: evidence.digestHex,
         });
-        assertEquals(projected.events.map((event) => event.type), ["user_message", "assistant_text_delta"]);
-        assertEquals(
-            projected.events.map((event) => "text" in event ? event.text : "delta" in event ? event.delta : ""),
-            ["hi claude", "stream complete"],
+        const replayedText = projected.events.map((event) =>
+            "text" in event ? event.text : "delta" in event ? event.delta : ""
         );
+        assertEquals(replayedText.includes("hi claude"), true);
+        assertEquals(replayedText.includes("stream complete"), true);
+        assertEquals(replayedText.includes("hi agy"), true);
+        assertEquals(replayedText.includes("agy complete"), true);
+        assertEquals(JSON.stringify(projected.events).includes("runwield-planner-"), false);
     });
 });
 

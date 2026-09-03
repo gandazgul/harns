@@ -1,27 +1,20 @@
-import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { runModelsCommand } from "../../cmd/models/index.ts";
 import { withRuntimeCommandFixture } from "../../cmd/testing/runtime-command-fixture.ts";
-import {
-    assertModelExecutionBackendSupported,
-    UnsupportedModelExecutionBackendError,
-} from "../models/model-execution.ts";
+import { assertModelExecutionBackendSupported } from "../models/model-execution.ts";
 import { getModelRegistry } from "../models/model-registry.ts";
 import { getSettingsManager } from "../settings.js";
 import { createSessionRuntime } from "./session-runtime.js";
 
 const FIXTURE_MODEL = "runtime-command-fixture/fixture-model";
 
-Deno.test("configured Agy CLI model is registered but rejected by typed execution backend dispatch", () => {
+Deno.test("configured Agy CLI model is registered and accepted by typed execution backend dispatch", () => {
     const model = getModelRegistry().find("agy-cli", `selection-${crypto.randomUUID()}`);
     assert(model);
-    const error = assertThrows(
-        () => assertModelExecutionBackendSupported(model),
-        UnsupportedModelExecutionBackendError,
-    );
-    assertEquals(error.executionBackend, "agy-cli");
+    assertModelExecutionBackendSupported(model);
 });
 
-Deno.test("explicit Agy CLI selection persists a deferred default and leaves the runtime Session unchanged", async () => {
+Deno.test("explicit Agy CLI selection persists and updates the active runtime Session model", async () => {
     await withRuntimeCommandFixture("runwield-agy-cli-selection-", async ({ projectRoot }) => {
         const runtime = createSessionRuntime();
         const messages: string[] = [];
@@ -54,13 +47,12 @@ Deno.test("explicit Agy CLI selection persists a deferred default and leaves the
             });
 
             assertEquals(runtime.getSessionSnapshot(sessionId)?.activeModel, {
-                model: "fixture-model",
-                provider: "runtime-command-fixture",
+                model: modelId,
+                provider: "agy-cli",
             });
             assertEquals(getSettingsManager(projectRoot).getDefaultProvider(), "agy-cli");
             assertEquals(getSettingsManager(projectRoot).getDefaultModel(), modelId);
-            assertStringIncludes(messages.at(-1) || "", `Saved agy-cli/${modelId} for later.`);
-            assertStringIncludes(messages.at(-1) || "", "The current Session was not switched.");
+            assertStringIncludes(messages.at(-1) || "", `Switched model to agy-cli/${modelId}`);
         } finally {
             runtime.closeAllSessions();
         }
