@@ -1,6 +1,10 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import { withProcessGlobalTestLock } from "../../../../testing/process-global-lock.js";
+import {
+    assertModelExecutionBackendSupported,
+    UnsupportedModelExecutionBackendError,
+} from "../../../models/model-execution.ts";
 import { getModelRegistry } from "../../../models/model-registry.ts";
 import { prepareAgyCliStreamCommand } from "./command.ts";
 import { cleanupAgyCustomAgent, materializeAgyCustomAgent, resolveAgyCustomAgentPaths } from "./custom-agent.ts";
@@ -391,8 +395,15 @@ Deno.test("Agy preflight requires the exact name from /agents output", async () 
     });
 });
 
-Deno.test("Agy spike remains unavailable to normal model selection", () => {
+Deno.test("Agy spike remains unavailable to normal catalog selection or execution", () => {
     const registry = getModelRegistry();
-    assertEquals(registry.getSelectable().some((model) => model.provider === "agy-cli"), false);
-    assertEquals(registry.find("agy-cli", "runwield-spike-test-agent"), undefined);
+    const model = registry.find("agy-cli", "runwield-spike-test-agent");
+    assert(model);
+    assertEquals(registry.getSelectable().some((entry) => entry.provider === "agy-cli"), false);
+    assertEquals(registry.getAvailable().some((entry) => entry.provider === "agy-cli"), false);
+    assertEquals(model.executionBackend, "agy-cli");
+    assertThrows(
+        () => assertModelExecutionBackendSupported(model),
+        UnsupportedModelExecutionBackendError,
+    );
 });
