@@ -70,6 +70,7 @@ import {
     preflightImageAttachments,
     resolveVisionFallbackModel,
 } from "./image-attachments.js";
+import { assertModelExecutionBackendSupported } from "../models/model-execution.ts";
 import { getModelRegistry, SYSTEM_MODEL_DISCOVERY_NETWORK } from "../models/model-registry.ts";
 import { parseProviderModel } from "../models/model-validation.ts";
 import { spawnForegroundShell } from "../foreground-process.ts";
@@ -1346,6 +1347,11 @@ export class SessionRuntime {
      * @param {string} [provider]
      */
     async reconfigureSessionModel(sessionId, model, provider = "") {
+        const registry = getModelRegistry();
+        const parsedModel = provider ? { ok: true, provider, id: model } : parseProviderModel(model);
+        const targetModel = parsedModel.ok ? registry.find(parsedModel.provider, parsedModel.id) : undefined;
+        assertModelExecutionBackendSupported(targetModel);
+
         const promptReadySession = this.#sessionHost.getSession(sessionId);
         if (
             promptReadySession &&
