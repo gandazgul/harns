@@ -28,6 +28,7 @@ const handlerMetadata = new WeakMap();
  * @property {string} agentName
  * @property {string} [model]
  * @property {string} [cwd]
+ * @property {Array<{base64: string, mimeType: string}>} [images]
  * @property {boolean} [forceRebuild]
  * @property {boolean} [reloadMcpTools]
  * @property {import('@earendil-works/pi-coding-agent').SessionManager} [sessionManager]
@@ -124,6 +125,7 @@ export async function switchActiveAgent(hostedSession, options) {
         modelOverride,
         cwd: cwdProvided ? options.cwd : effectiveCwd,
         sessionManager: options.sessionManager,
+        images: options.images,
         triageMeta: options.triageMeta,
         subAgentDefinition: options.subAgentDefinition,
         customTools: options.customTools,
@@ -287,6 +289,7 @@ export async function runActiveAgentTurn(options) {
         ...(cwd ? { cwd } : {}),
         ...(forceRebuild ? { forceRebuild } : {}),
         ...(sessionManager ? { sessionManager } : {}),
+        ...(images ? { images } : {}),
         ...(triageMeta ? { triageMeta } : {}),
         ...(subAgentDefinition ? { subAgentDefinition } : {}),
         ...(customTools ? { customTools } : {}),

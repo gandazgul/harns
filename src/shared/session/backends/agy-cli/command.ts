@@ -2,7 +2,9 @@ import { assertRunWieldAgentName } from "./custom-agent.ts";
 
 export interface AgyCliRunRequest {
     agentName: string;
+    model: string;
     userRequest: string;
+    effort?: "low" | "medium" | "high";
 }
 
 export interface PreparedAgyCliCommand {
@@ -14,9 +16,14 @@ export interface PreparedAgyCliCommand {
 export function prepareAgyCliStreamCommand(request: AgyCliRunRequest): PreparedAgyCliCommand {
     assertRunWieldAgentName(request.agentName);
     if (!request.userRequest) throw new Error("Agy user request is required");
+    const model = request.model.trim();
+    if (!model) throw new Error("Agy model selector is required");
+    const args = ["-p", request.userRequest, "--model", model];
+    args.push("--agent", request.agentName, "--output-format", "stream-json", "--disable-slash-commands");
+    if (request.effort) args.push("--effort", request.effort);
     return {
         command: "agy",
-        args: ["-p", request.userRequest, "--agent", request.agentName, "--output-format", "stream-json"],
+        args,
         env: {},
     };
 }

@@ -325,7 +325,7 @@ Deno.test("runModelsCommand accepts explicit Agy CLI references without catalog 
     }, { providerState: "provider-no-model" });
 });
 
-Deno.test("runModelsCommand defers unsupported Agy CLI activation and keeps the current Session model", async () => {
+Deno.test("runModelsCommand activates explicit Agy CLI model selection for the current Session", async () => {
     await withRuntimeCommandFixture("runwield-model-command-agy-deferred-", async ({ projectRoot }) => {
         const ui = makeUi();
         const runtime = createSessionRuntime();
@@ -352,13 +352,12 @@ Deno.test("runModelsCommand defers unsupported Agy CLI activation and keeps the 
             });
 
             assertEquals(runtime.getSessionSnapshot(sessionId)?.activeModel, {
-                model: "fixture-model",
-                provider: "runtime-command-fixture",
+                model: modelId,
+                provider: "agy-cli",
             });
             assertEquals(getSettingsManager(projectRoot).getDefaultModel(), modelId);
             assertEquals(getSettingsManager(projectRoot).getDefaultProvider(), "agy-cli");
-            assertStringIncludes(ui.messages.at(-1)?.text || "", `Unsupported model execution backend "agy-cli"`);
-            assertStringIncludes(ui.messages.at(-1)?.text || "", "The current Session was not switched.");
+            assertStringIncludes(ui.messages.at(-1)?.text || "", `Switched model to agy-cli/${modelId}`);
         } finally {
             runtime.closeAllSessions();
         }

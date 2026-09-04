@@ -58,13 +58,7 @@ Deno.test("Agy CLI lookup preserves every parser-accepted non-empty selector wit
             assertEquals(registry.isUsingOAuth(model), false);
             assertEquals(resolveTemplateModel(reference, registry), { ok: true, provider: "agy-cli", id: modelId });
 
-            const error = assertThrows(
-                () => assertModelExecutionBackendSupported(model),
-                UnsupportedModelExecutionBackendError,
-            );
-            assertEquals(error.executionBackend, "agy-cli");
-            assertEquals(error.provider, "agy-cli");
-            assertEquals(error.model, modelId);
+            assertModelExecutionBackendSupported(model);
         }
 
         assertEquals(registry.getAll().some((model) => model.provider === "agy-cli"), false);

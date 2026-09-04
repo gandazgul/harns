@@ -5,6 +5,7 @@ export interface AgyCliUsage {
 
 export interface AgyCliMetadata {
     agent?: string;
+    model?: string;
     sessionId?: string;
     usage: AgyCliUsage;
     toolInfo: string[];
@@ -32,7 +33,7 @@ interface JsonRecord {
 type JsonValue = JsonScalar | JsonArray | JsonRecord;
 
 type AgyCliStreamEvent =
-    | { kind: "init"; agent?: string; sessionId?: string }
+    | { kind: "init"; agent?: string; model?: string; sessionId?: string }
     | { kind: "text_delta"; text: string }
     | { kind: "tool_info"; text: string }
     | { kind: "result"; text: string; usage: AgyCliUsage; sessionId?: string };
@@ -97,6 +98,7 @@ export function parseAgyCliJsonLine(line: string): AgyCliStreamEvent | null {
         return {
             kind: "init",
             agent: asString(init.agent) || undefined,
+            model: asString(init.model) || asString(parsed.model) || undefined,
             sessionId: asString(parsed.conversation_id) || asString(init.conversation_id) ||
                 asString(init.session_id) ||
                 asString(init.sessionId) || undefined,
@@ -148,6 +150,7 @@ export async function parseAgyCliStream(
     let rawResultText = "";
     let sawResult = false;
     let agent: string | undefined;
+    let model: string | undefined;
     let sessionId: string | undefined;
     let usage = emptyUsage;
     const toolInfo: string[] = [];
@@ -155,6 +158,7 @@ export async function parseAgyCliStream(
     const applyEvent = (event: AgyCliStreamEvent) => {
         if (event.kind === "init") {
             if (event.agent) agent = event.agent;
+            if (event.model) model = event.model;
             if (event.sessionId) sessionId = event.sessionId;
             return;
         }
@@ -199,6 +203,12 @@ export async function parseAgyCliStream(
     return {
         text: rawResultText,
         rawResultText,
-        metadata: { ...(agent ? { agent } : {}), ...(sessionId ? { sessionId } : {}), usage, toolInfo },
+        metadata: {
+            ...(agent ? { agent } : {}),
+            ...(model ? { model } : {}),
+            ...(sessionId ? { sessionId } : {}),
+            usage,
+            toolInfo,
+        },
     };
 }

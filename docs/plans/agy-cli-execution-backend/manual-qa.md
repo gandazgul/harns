@@ -33,3 +33,23 @@ Manual verification steps for agy-cli-execution-backend/02-register-agy-cli-back
 - [ ] Confirm that no `agy` process starts during these checks and that Antigravity is not routed through Pi.
 
 <!-- runwield:manual-qa:end child="agy-cli-execution-backend/02-register-agy-cli-backend-models" -->
+
+<!-- runwield:manual-qa:start child="agy-cli-execution-backend/03-add-agy-cli-backend-transcript-tracer-bullet" -->
+
+## Add Agy CLI Backend Transcript Tracer Bullet
+
+Manual verification steps for agy-cli-execution-backend/03-add-agy-cli-backend-transcript-tracer-bullet
+
+- [ ] Select a valid `agy-cli/<model-id>` and run two text turns. Confirm that the second response uses the first
+      response as conversation history.
+- [ ] Confirm that RunWield shows the normal Agent Display Name, the selected model appears in Agy init data, and no
+      approval prompt appears.
+- [ ] Replace or close the Agent Session. Confirm that the owned `~/.gemini/config/agents/runwield-*` path is removed.
+- [ ] Close and reopen RunWield without starting Agy. Replay the Session and confirm that both assistant responses
+      remain visible.
+- [ ] Ask the Agy-backed Agent to complete a workflow. Confirm that it reports lifecycle completion is unavailable and
+      that workflow state does not change.
+- [ ] Check `docs/domain-language.md`. Confirm that it describes the Agy execution path without claiming MCP, image,
+      steering, or failure-hardening parity.
+
+<!-- runwield:manual-qa:end child="agy-cli-execution-backend/03-add-agy-cli-backend-transcript-tracer-bullet" -->
