@@ -5,6 +5,7 @@ import { AGENTS } from "../../constants.js";
 import { withProcessGlobalTestLock } from "../../testing/process-global-lock.js";
 import { HostedSession } from "./hosted-session.js";
 import { getRootSessionBranchEntries } from "./root-session.js";
+import { runActiveAgentTurn } from "./agent-switching.js";
 import {
     abortActiveSession,
     ensureRootAgentSession,
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
         Deno.exit(2);
     }
     if (logPath) await Deno.writeTextFile(logPath, JSON.stringify({ args, prompt, agent, model, definition }) + "\n", { append: true, create: true });
+    if (Deno.env.get("RUNWIELD_AGY_FAIL_TURN") === "1") Deno.exit(4);
 
     const resultText = prompt.includes("ASSISTANT: agy:first")
         ? "agy:second saw agy:first"
@@ -161,6 +163,7 @@ async function withAgyExecutionFixture(
         const previousLog = Deno.env.get("RUNWIELD_AGY_EXECUTION_LOG");
         const previousExpectedModel = Deno.env.get("RUNWIELD_AGY_EXPECTED_MODEL");
         const previousFailAgents = Deno.env.get("RUNWIELD_AGY_FAIL_AGENTS");
+        const previousFailTurn = Deno.env.get("RUNWIELD_AGY_FAIL_TURN");
         const home = await Deno.makeTempDir({ prefix: "runwield-agy-exec-home-" });
         const cwd = join(home, "project");
         const binDir = join(home, "bin");
@@ -173,6 +176,7 @@ async function withAgyExecutionFixture(
             Deno.env.set("RUNWIELD_AGY_EXECUTION_LOG", logPath);
             Deno.env.set("RUNWIELD_AGY_EXPECTED_MODEL", "fixture-model");
             Deno.env.delete("RUNWIELD_AGY_FAIL_AGENTS");
+            Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
             await callback(home, cwd, logPath);
         } finally {
             if (previousHome === undefined) Deno.env.delete("HOME");
@@ -185,6 +189,8 @@ async function withAgyExecutionFixture(
             else Deno.env.set("RUNWIELD_AGY_EXPECTED_MODEL", previousExpectedModel);
             if (previousFailAgents === undefined) Deno.env.delete("RUNWIELD_AGY_FAIL_AGENTS");
             else Deno.env.set("RUNWIELD_AGY_FAIL_AGENTS", previousFailAgents);
+            if (previousFailTurn === undefined) Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
+            else Deno.env.set("RUNWIELD_AGY_FAIL_TURN", previousFailTurn);
             await removeTempDir(home);
         }
     });
@@ -266,6 +272,152 @@ Deno.test("Agy CLI selected root turn dispatches through agy and rebuilds RunWie
         );
         assertEquals(JSON.stringify(events).includes(calls[0].agent), false);
 
+        await root.session.dispose();
+        await assertNoTemporaryAgents(home);
+    });
+});
+
+Deno.test("Agy CLI replay expands durable named invocations once", async () => {
+    await withAgyExecutionFixture(async (home, cwd, logPath) => {
+        const manager = SessionManager.inMemory(cwd);
+        manager.appendCustomEntry("runwield.named_invocation", {
+            version: 1,
+            compactInvocation: "/saved-template compact request",
+            expandedRequest: "Expanded saved template request",
+        });
+        manager.appendMessage({
+            role: "user",
+            timestamp: Date.now(),
+            content: [{ type: "text", text: "/saved-template compact request" }],
+        });
+        manager.appendMessage({
+            role: "assistant",
+            timestamp: Date.now(),
+            api: "agy-cli",
+            provider: "agy-cli",
+            model: "fixture-model",
+            usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 0,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "stop",
+            content: [{ type: "text", text: "prior assistant answer" }],
+        });
+        const hostedSession = createHostedSession(cwd, manager);
+        const root = await ensureRootAgentSession({ hostedSession, agentName: AGENTS.GUIDE }) as never as AgyRootRef;
+
+        await runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "continue after template" });
+
+        const calls = await readCalls(logPath);
+        assertEquals(calls.length, 1);
+        assertStringIncludes(calls[0].prompt, "USER: Expanded saved template request");
+        assertEquals(calls[0].prompt.includes("/saved-template compact request"), false);
+        await root.session.dispose();
+        await assertNoTemporaryAgents(home);
+    });
+});
+
+Deno.test("Agy CLI isolated image requests fail before agent creation or transcript mutation", async () => {
+    await withAgyExecutionFixture(async (home, cwd, logPath) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        await assertRejects(
+            () =>
+                runIsolatedAgentSession({
+                    hostedSession,
+                    agentName: AGENTS.GUIDE,
+                    userRequest: "image request",
+                    images: [{ base64: "abc", mimeType: "image/png" }],
+                    modelOverride: "agy-cli/fixture-model",
+                    sessionManager: manager,
+                }),
+            Error,
+            "does not support image attachments",
+        );
+        assertEquals(getRootSessionBranchEntries(manager).length, 0);
+        assertEquals((await readCalls(logPath)).length, 0);
+        await assertNoTemporaryAgents(home);
+    });
+});
+
+Deno.test("Agy CLI first root image requests fail before agent creation or transcript mutation", async () => {
+    await withAgyExecutionFixture(async (home, cwd, logPath) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+
+        await assertRejects(
+            () =>
+                runActiveAgentTurn({
+                    hostedSession,
+                    agentName: AGENTS.GUIDE,
+                    userRequest: "root image request",
+                    images: [{ base64: "abc", mimeType: "image/png" }],
+                    sessionManager: manager,
+                }),
+            Error,
+            "does not support image attachments",
+        );
+
+        assertEquals(getRootSessionBranchEntries(manager).length, 0);
+        assertEquals(hostedSession.getRootAgentSession(), null);
+        assertEquals((await readCalls(logPath)).length, 0);
+        await assertNoTemporaryAgents(home);
+    });
+});
+
+Deno.test("Agy CLI root process failure removes the temporary agent", async () => {
+    await withAgyExecutionFixture(async (home, cwd) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        const root = await ensureRootAgentSession({ hostedSession, agentName: AGENTS.GUIDE }) as never as AgyRootRef;
+        Deno.env.set("RUNWIELD_AGY_FAIL_TURN", "1");
+
+        await assertRejects(
+            () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "fail this turn" }),
+            Error,
+            "stream ended without output",
+        );
+
+        await assertNoTemporaryAgents(home);
+        await root.session.dispose();
+    });
+});
+
+Deno.test("HostedSession disposal reaches the Agy execution session", async () => {
+    await withAgyExecutionFixture(async (home, cwd) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        await ensureRootAgentSession({ hostedSession, agentName: AGENTS.GUIDE });
+
+        await hostedSession.dispose();
+
+        await assertNoTemporaryAgents(home);
+    });
+});
+
+Deno.test("Agy CLI root replacement disposes only the owned Agy root", async () => {
+    await withAgyExecutionFixture(async (home, cwd) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        let previousPlainRootDisposed = false;
+        hostedSession.setRootAgentSession({
+            dispose: () => {
+                previousPlainRootDisposed = true;
+            },
+        });
+        hostedSession.setRootAgentName(AGENTS.OPERATOR);
+
+        const root = await ensureRootAgentSession({
+            hostedSession,
+            agentName: AGENTS.GUIDE,
+            modelOverride: "agy-cli/fixture-model",
+        }) as never as AgyRootRef;
+
+        assertEquals(previousPlainRootDisposed, false);
         await root.session.dispose();
         await assertNoTemporaryAgents(home);
     });

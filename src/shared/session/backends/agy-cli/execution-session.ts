@@ -4,7 +4,7 @@ import type { RunWieldModel } from "../../../models/model-registry.ts";
 import type { HostedSession } from "../../hosted-session.js";
 import { emitHostedSessionRuntimeEvent, RuntimeEventTypes } from "../../session-runtime-events.js";
 import { getRootSessionBranchEntries } from "../../root-session.js";
-import { cleanupAgyCustomAgent, materializeAgyCustomAgent } from "./custom-agent.ts";
+import { cleanupAgyCustomAgent, materializeAgyCustomAgent, resolveAgyCustomAgentPaths } from "./custom-agent.ts";
 import type { AgyCustomAgentOwnership } from "./custom-agent.ts";
 import { prepareAgyCliAgentsCommand, prepareAgyCliStreamCommand } from "./command.ts";
 import { DenoAgyCliProcessPort } from "./process.ts";
@@ -26,7 +26,7 @@ interface TranscriptEntry {
     type?: string;
     message?: TranscriptMessage;
     customType?: string;
-    data?: { expandedText?: string; compactInvocation?: string };
+    data?: { version?: number; expandedRequest?: string; compactInvocation?: string };
 }
 
 interface ConversationMessage {
@@ -92,13 +92,23 @@ export class AgyCliExecutionSession {
     static async create(options: AgyCliExecutionSessionOptions): Promise<AgyCliExecutionSession> {
         const selector = makeTemporaryAgentSelector(options.agentName);
         const definition = formatAgyCustomAgentDefinition(options.finalSystemPrompt, options.agentDisplayName);
+        const paths = resolveAgyCustomAgentPaths(selector);
+        const pendingOwnership: AgyCustomAgentOwnership = {
+            name: selector,
+            definition,
+            agentsRootPath: paths.agentsRootPath,
+            agentDirectoryPath: paths.agentDirectoryPath,
+            definitionPath: paths.definitionPath,
+            createdAgentDirectory: true,
+            createdDefinition: true,
+        };
         let ownership: AgyCustomAgentOwnership | null = null;
         try {
             ownership = await materializeAgyCustomAgent(selector, definition);
             await verifyAgyCustomAgentListed(selector, options.cwd);
             return new AgyCliExecutionSession(options, ownership);
         } catch (error) {
-            if (ownership) await cleanupAgyCustomAgent(ownership).catch(() => undefined);
+            await cleanupAgyCustomAgent(ownership || pendingOwnership).catch(() => undefined);
             throw new Error(`Could not prepare Antigravity custom agent for ${options.agentDisplayName}.`, {
                 cause: error,
             });
@@ -197,6 +207,7 @@ export class AgyCliExecutionSession {
             return this.getMessages();
         } catch (error) {
             this.activeProcess?.kill();
+            await cleanupAgyCustomAgent(this.ownership).catch(() => undefined);
             throw error;
         } finally {
             this.activeProcess = null;
@@ -307,10 +318,9 @@ function agentListContainsExactName(value: JsonValue, expected: string): boolean
 }
 
 function readNamedInvocationExpandedText(entry: TranscriptEntry): string {
-    return entry.type === "custom" && entry.customType === "runwield.named_invocation_expanded" &&
-            typeof entry.data?.expandedText === "string"
-        ? entry.data.expandedText
-        : "";
+    if (entry.type !== "custom" || entry.customType !== "runwield.named_invocation") return "";
+    if (entry.data?.version !== 1 || typeof entry.data.expandedRequest !== "string") return "";
+    return entry.data.expandedRequest;
 }
 
 function normalizeTranscriptEntry(entry: TranscriptEntry): ConversationMessage[] {

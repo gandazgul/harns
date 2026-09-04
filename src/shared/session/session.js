@@ -2456,6 +2456,18 @@ export async function composeClaudeCliBridgedTools({
 }
 
 /**
+ * @typedef {Object} AgyImageInputOptions
+ * @property {{ base64: string, mimeType: string }[]} [images]
+ */
+
+/** @param {{ base64: string, mimeType: string }[] | undefined} images */
+function assertAgyCliImageInputSupported(images) {
+    if (images && images.length > 0) {
+        throw new Error("Agy CLI execution backend does not support image attachments in this slice");
+    }
+}
+
+/**
  * Build the model-selected execution session for root and HostedSession-backed isolated turns.
  * Pi models continue through buildAgentSession(); Claude CLI models bypass Pi entirely.
  *
@@ -2510,6 +2522,8 @@ export async function buildExecutionSession(opts) {
     );
     const backend =
         /** @type {import('../models/model-registry.ts').RunWieldModel} */ (resolvedModel)?.executionBackend || "pi";
+    const imageInputOptions = /** @type {AgyImageInputOptions} */ (opts);
+    if (backend === "agy-cli") assertAgyCliImageInputSupported(imageInputOptions.images);
     if (backend !== "pi") assertThinkingLevelBackendSupportedForInvocation(resolvedModel, backendThinking);
     if (backend === "pi") {
         const built = await buildAgentSession(opts);
@@ -3676,10 +3690,11 @@ export async function ensureRootAgentSession(opts) {
             if (existingMeta?.steeringTargetId) hostedSession.popSteeringTargetSession(existingMeta.steeringTargetId);
         } catch (_e) { /* ignore */ }
         rootSessionMetadata.delete(existing);
-        try {
-            if (isExecutionSession(existing)) await disposeExecutionSession(existing);
-            else existing.dispose?.();
-        } catch (_e) { /* ignore */ }
+        if (isExecutionSession(existing) && existing.kind === "agy-cli") {
+            try {
+                await disposeExecutionSession(existing);
+            } catch (_e) { /* ignore */ }
+        }
     }
 
     const finalModelForUi = resolvedModel ? `${resolvedModel.provider}/${resolvedModel.id}` : undefined;
@@ -3822,15 +3837,16 @@ export async function runRootTurn({
     const effectiveUserRequest = transitionText
         ? `${userRequest}\n\nUser steering received during Agent handoff:\n${transitionText}`
         : userRequest;
+    const effectiveImages = [
+        ...(images || []),
+        ...transitionSteering.flatMap((entry) => entry.images || []),
+    ];
+    if (backend === "agy-cli") assertAgyCliImageInputSupported(effectiveImages);
     const dispatch = prepareRequestDispatch(sessionManager, {
         userRequest: effectiveUserRequest,
         dispatchKind,
         backend,
     });
-    const effectiveImages = [
-        ...(images || []),
-        ...transitionSteering.flatMap((entry) => entry.images || []),
-    ];
     meta.rootTurnCount += 1;
     const finalRequest = dispatch.promptMode === "continuation"
         ? dispatch.userRequest
