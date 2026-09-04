@@ -32,7 +32,7 @@ import {
     setCurrentValidationProgress,
 } from "./validation-progress.ts";
 import { clearValidationPosition, rememberValidationPosition } from "./validation-position.ts";
-import { hasTrustedClaudeMcpReview, runFeaturePostVerificationHandoffs } from "./validation-helpers.ts";
+import { hasTrustedOpaqueMcpReview, runFeaturePostVerificationHandoffs } from "./validation-helpers.ts";
 import { extractAssistantOutput, readLatestTaskCompletedReport } from "./workflow.js";
 import { acknowledgeTaskCompletion, claimPendingTaskCompletion } from "../session/task-completion-session.ts";
 import { createReviewDiffTool } from "./review-diff-tool.js";
@@ -363,7 +363,7 @@ async function runIsolatedRequest(
             outcome: "completed",
             reviewOutcome,
             usedDiffTool: Boolean(diffEvent),
-            trustedClaudeMcpReview: hasTrustedClaudeMcpReview(messages),
+            trustedOpaqueMcpReview: hasTrustedOpaqueMcpReview(messages),
         };
     }
     if (request.kind === "manual_qa") {

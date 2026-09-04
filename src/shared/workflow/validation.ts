@@ -22,7 +22,7 @@ import type { LocalCIPort } from "./validation-local-ci.ts";
 import type { ValidationCheckpoint, ValidationCheckpointPhase } from "./validation-checkpoint.ts";
 
 export {
-    hasTrustedClaudeMcpReview,
+    hasTrustedOpaqueMcpReview,
     loadManualQaPrompt,
     loadReviewerFeedbackEngineerDef,
     loadReviewerPrompt,

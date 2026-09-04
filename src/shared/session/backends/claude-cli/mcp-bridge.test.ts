@@ -125,6 +125,7 @@ async function withBridgeWithSignal(
         },
         signal,
         assistantBase: { api: "anthropic-messages", provider: "anthropic", model: "claude-sonnet" },
+        provenance: CLAUDE_CLI_MCP_PROVENANCE,
     });
     const transport = new StreamableHTTPClientTransport(new URL(bridge.url), {
         requestInit: { headers: { Authorization: `Bearer ${bridge.token}` } },
@@ -388,6 +389,7 @@ Deno.test("RunWield MCP bridge rejects duplicate aliases", async () => {
                     cwd,
                     sessionManager: SessionManager.inMemory(cwd),
                     assistantBase: { api: "anthropic-messages", provider: "anthropic", model: "claude-sonnet" },
+                    provenance: CLAUDE_CLI_MCP_PROVENANCE,
                 }),
             Error,
             "duplicate MCP alias",

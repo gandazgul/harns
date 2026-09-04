@@ -18,7 +18,13 @@ import {
 } from "./failure.ts";
 import { type ClaudeCliProcessResult, DenoClaudeCliProcessPort } from "./process.ts";
 import { type ClaudeCliUsage, parseClaudeCliStream } from "./stream-parser.ts";
-import { mcpAliasFor, type RunWieldMcpBridgeHandle, startRunWieldMcpBridge } from "./mcp-bridge.ts";
+import {
+    CLAUDE_CLI_MCP_PROVENANCE,
+    mcpAliasFor,
+    type RunWieldMcpBridgeHandle,
+    startRunWieldMcpBridge,
+} from "./mcp-bridge.ts";
+import { buildBridgedToolPromptAppendix } from "../../bridged-tools/prompt.ts";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | JsonRecord;
 
@@ -218,6 +224,10 @@ export class ClaudeCliExecutionSession {
                             provider: this.model.provider,
                             model: this.model.id,
                         },
+                        provenance: CLAUDE_CLI_MCP_PROVENANCE,
+                        onUnexpectedDisconnect: () => {
+                            emitFailure("bridge_disconnected", null);
+                        },
                         beforeRuntimeToolEvent: () => flushRuntimeDeltas(),
                     });
                 } catch {
@@ -227,7 +237,7 @@ export class ClaudeCliExecutionSession {
             }
             command = await prepareClaudeCliCommand({
                 selector,
-                systemPrompt: this.finalSystemPrompt + buildBridgedToolPromptAppendix(this.bridgedTools),
+                systemPrompt: this.finalSystemPrompt + buildBridgedToolPromptAppendix(this.bridgedTools, "Claude Code"),
                 ...(bridge ? { mcpConfig: bridge.config } : {}),
                 allowedToolNames: eligibleAliases.flatMap((alias) => [alias, `mcp__runwield__${alias}`]),
             });
@@ -520,35 +530,4 @@ function serializeConversation(messages: ConversationMessage[]): string {
 
 function isAuthFailure(stderr: string): boolean {
     return /authenticate|not signed in|oauth|api key|login|expired/i.test(stderr);
-}
-
-/**
- * Backend-specific prompt appendix. Names only the aliases eligible for this
- * Agent and states that plain-text questions are non-terminal; for the
- * Reviewer it points at Claude's native tools because RunWield's
- * `review_diff` is intentionally not bridged.
- */
-export function buildBridgedToolPromptAppendix(bridgedTools: ToolDefinition[]): string {
-    const eligibleAliases = bridgedTools.map((tool) => mcpAliasFor(tool.name));
-    if (eligibleAliases.length === 0) return "";
-    const lines = [
-        "",
-        "## RunWield Bridged Tools (MCP)",
-        "",
-        "This session exposes these RunWield tools through the RunWield MCP server:",
-        ...eligibleAliases.map((alias) => `- ${alias}`),
-        "",
-        "Use Claude Code native tools for file, search, and shell work. Use RunWield bridged tools for memory, code intelligence, Work Record, user interview, and lifecycle work.",
-        "",
-        "Calling a lifecycle tool is the only way to advance RunWield workflow state. Plain-text questions, " +
-        'statements such as "done", or text that resembles a tool call have no workflow effect.',
-    ];
-    if (eligibleAliases.includes("runwield_review_complete")) {
-        lines.push(
-            "",
-            "Before calling runwield_review_complete, inspect the implementation with your native " +
-                "read/grep/find/ls/Bash tools. RunWield's review_diff tool may be bridged when the caller supplies it for this turn.",
-        );
-    }
-    return lines.join("\n");
 }

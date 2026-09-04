@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { SessionManager } from "@earendil-works/pi-coding-agent";
+import type { SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { RunWieldModel } from "../../../models/model-registry.ts";
 import type { HostedSession } from "../../hosted-session.js";
 import { emitHostedSessionRuntimeEvent, RuntimeEventTypes } from "../../session-runtime-events.js";
@@ -9,6 +9,12 @@ import type { AgyCustomAgentOwnership } from "./custom-agent.ts";
 import { prepareAgyCliAgentsCommand, prepareAgyCliStreamCommand } from "./command.ts";
 import { DenoAgyCliProcessPort } from "./process.ts";
 import type { AgyCliProcessResult } from "./process.ts";
+import {
+    AGY_CLI_MCP_PROVENANCE,
+    type RunWieldMcpBridgeHandle,
+    startRunWieldMcpBridge,
+} from "../../bridged-tools/mcp-bridge.ts";
+import { RUNWIELD_MCP_BRIDGE_TOKEN_ENV, RUNWIELD_MCP_BRIDGE_URL_ENV } from "../../bridged-tools/stdio-transport.ts";
 import { parseAgyCliStream } from "./stream-parser.ts";
 import type { AgyCliUsage } from "./stream-parser.ts";
 
@@ -44,6 +50,7 @@ export interface AgyCliExecutionSessionOptions {
     model: RunWieldModel;
     sessionManager: SessionManager;
     hostedSession?: HostedSession;
+    bridgedTools?: ToolDefinition[];
     thinkingLevel?: string;
     persistModelChange?: boolean;
 }
@@ -67,6 +74,7 @@ export class AgyCliExecutionSession {
     private readonly cwd: string;
     private readonly hostedSession?: HostedSession;
     private readonly ownership: AgyCustomAgentOwnership;
+    private readonly bridgedTools: ToolDefinition[];
     private readonly thinkingLevel?: string;
     private readonly persistModelChange: boolean;
     private messages: AgentMessage[] = [];
@@ -83,6 +91,7 @@ export class AgyCliExecutionSession {
         this.model = options.model;
         this.sessionManager = options.sessionManager;
         this.hostedSession = options.hostedSession;
+        this.bridgedTools = [...(options.bridgedTools || [])];
         this.thinkingLevel = options.thinkingLevel;
         this.persistModelChange = options.persistModelChange !== false;
         this.ownership = ownership;
@@ -148,12 +157,37 @@ export class AgyCliExecutionSession {
             ? AbortSignal.any([options.signal, this.turnAbortController.signal])
             : this.turnAbortController.signal;
         this.isStreaming = true;
+        let bridge: RunWieldMcpBridgeHandle | null = null;
         try {
+            if (this.bridgedTools.length > 0) {
+                bridge = await startRunWieldMcpBridge({
+                    tools: this.bridgedTools,
+                    cwd: this.cwd,
+                    hostedSession: this.hostedSession,
+                    sessionManager: this.sessionManager,
+                    onMessage: (message) => {
+                        this.messages.push(message);
+                    },
+                    signal: combinedSignal,
+                    assistantBase: {
+                        api: this.model.api,
+                        provider: this.model.provider,
+                        model: this.model.id,
+                    },
+                    provenance: AGY_CLI_MCP_PROVENANCE,
+                });
+            }
             const command = prepareAgyCliStreamCommand({
                 agentName: this.ownership.name,
                 model: this.model.id,
                 userRequest: serializedConversation,
                 effort,
+                env: bridge
+                    ? {
+                        [RUNWIELD_MCP_BRIDGE_URL_ENV]: bridge.url,
+                        [RUNWIELD_MCP_BRIDGE_TOKEN_ENV]: bridge.token,
+                    }
+                    : undefined,
             });
             const processPort = new DenoAgyCliProcessPort();
             const process = processPort.run(command, this.cwd, combinedSignal);
@@ -210,6 +244,7 @@ export class AgyCliExecutionSession {
             await cleanupAgyCustomAgent(this.ownership).catch(() => undefined);
             throw error;
         } finally {
+            if (bridge) await bridge.close();
             this.activeProcess = null;
             this.isStreaming = false;
             this.turnAbortController = null;

@@ -1,11 +1,14 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { AGENTS } from "../../constants.js";
+import { AGENTS, SUBAGENTS } from "../../constants.js";
+import { loadPlan } from "../../plan-store.js";
 import { withProcessGlobalTestLock } from "../../testing/process-global-lock.js";
 import { HostedSession } from "./hosted-session.js";
+import { installAgyCliMcpSetup } from "./backends/agy-cli/mcp-setup.ts";
 import { getRootSessionBranchEntries } from "./root-session.js";
 import { runActiveAgentTurn } from "./agent-switching.js";
+import { listPendingWorkflowToolEvents } from "../workflow/workflow-tool-events.ts";
 import {
     abortActiveSession,
     ensureRootAgentSession,
@@ -84,6 +87,49 @@ function emit(value: JsonRecord): void {
     console.log(JSON.stringify(value));
 }
 
+async function runConfiguredMcp(home: string): Promise<void> {
+    const callsPath = Deno.env.get("RUNWIELD_AGY_EXECUTION_MCP_CALLS") || "";
+    if (!callsPath) return;
+    const configPath = joinPath(home, ".gemini", "config", "mcp_config.json");
+    const settingsPath = joinPath(home, ".gemini", "antigravity-cli", "settings.json");
+    const config = JSON.parse(await Deno.readTextFile(configPath));
+    const settings = JSON.parse(await Deno.readTextFile(settingsPath));
+    if (!settings.permissions?.allow?.includes("mcp(runwield/*)")) {
+        throw new Error("missing runwield MCP permission");
+    }
+    const server = config.mcpServers?.runwield;
+    const clientModule = await import("npm:@modelcontextprotocol/sdk@^1.30.0/client/index.js");
+    const stdioModule = await import("npm:@modelcontextprotocol/sdk@^1.30.0/client/stdio.js");
+    const transport = new stdioModule.StdioClientTransport({
+        command: server.command,
+        args: server.args,
+        env: {
+            HOME: home,
+            PATH: Deno.env.get("PATH") || "",
+            RUNWIELD_MCP_BRIDGE_URL: Deno.env.get("RUNWIELD_MCP_BRIDGE_URL") || "",
+            RUNWIELD_MCP_BRIDGE_TOKEN: Deno.env.get("RUNWIELD_MCP_BRIDGE_TOKEN") || "",
+        },
+        stderr: "pipe",
+    });
+    const client = new clientModule.Client({ name: "runwield-agy-fixture", version: "1.0.0" });
+    try {
+        await client.connect(transport);
+        const listed = await client.listTools();
+        const logPath = Deno.env.get("RUNWIELD_AGY_EXECUTION_LOG") || "";
+        if (logPath) await Deno.writeTextFile(logPath, JSON.stringify({ mcp: { tools: listed.tools.map((tool: { name: string }) => tool.name) } }) + "\n", { append: true, create: true });
+        const calls = JSON.parse(await Deno.readTextFile(callsPath));
+        const results = [];
+        for (const call of calls) {
+            const result = await client.callTool({ name: call.name, arguments: call.arguments || {} });
+            results.push({ name: call.name, isError: result.isError === true });
+        }
+        if (logPath) await Deno.writeTextFile(logPath, JSON.stringify({ mcp: { calls: results } }) + "\n", { append: true, create: true });
+    } finally {
+        await client.close().catch(() => undefined);
+        await transport.close().catch(() => undefined);
+    }
+}
+
 async function main(): Promise<void> {
     const args = Deno.args;
     const home = Deno.env.get("HOME") || "";
@@ -124,16 +170,13 @@ async function main(): Promise<void> {
     }
     const definitionPath = joinPath(home, ".gemini", "config", "agents", agent, "agent.md");
     const definition = await Deno.readTextFile(definitionPath);
-    if (!definition.includes("Antigravity CLI backend limitations")) {
-        console.error("missing backend note");
-        Deno.exit(2);
-    }
-    if (prompt.includes("Antigravity CLI backend limitations") || prompt.includes("RunWield system prompt")) {
+    if (prompt.includes("RunWield Bridged Tools") || prompt.includes("RunWield system prompt")) {
         console.error("system prompt leaked into user text");
         Deno.exit(2);
     }
     if (logPath) await Deno.writeTextFile(logPath, JSON.stringify({ args, prompt, agent, model, definition }) + "\n", { append: true, create: true });
     if (Deno.env.get("RUNWIELD_AGY_FAIL_TURN") === "1") Deno.exit(4);
+    await runConfiguredMcp(home);
 
     const resultText = prompt.includes("ASSISTANT: agy:first")
         ? "agy:second saw agy:first"
@@ -151,6 +194,14 @@ await main();
     const agyPath = join(binDir, "agy");
     await Deno.writeTextFile(agyPath, `#!/bin/sh\nexec deno run -A ${JSON.stringify(fixturePath)} "$@"\n`);
     await Deno.chmod(agyPath, 0o755);
+    const wldPath = join(binDir, "wld");
+    await Deno.writeTextFile(
+        wldPath,
+        `#!/bin/sh\nexec deno run -A --unstable-no-legacy-abort ${
+            JSON.stringify(join(Deno.cwd(), "src", "cli.ts"))
+        } "$@"\n`,
+    );
+    await Deno.chmod(wldPath, 0o755);
     await Deno.writeTextFile(logPath, "");
 }
 
@@ -164,6 +215,7 @@ async function withAgyExecutionFixture(
         const previousExpectedModel = Deno.env.get("RUNWIELD_AGY_EXPECTED_MODEL");
         const previousFailAgents = Deno.env.get("RUNWIELD_AGY_FAIL_AGENTS");
         const previousFailTurn = Deno.env.get("RUNWIELD_AGY_FAIL_TURN");
+        const previousMcpCalls = Deno.env.get("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
         const home = await Deno.makeTempDir({ prefix: "runwield-agy-exec-home-" });
         const cwd = join(home, "project");
         const binDir = join(home, "bin");
@@ -177,6 +229,8 @@ async function withAgyExecutionFixture(
             Deno.env.set("RUNWIELD_AGY_EXPECTED_MODEL", "fixture-model");
             Deno.env.delete("RUNWIELD_AGY_FAIL_AGENTS");
             Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
+            Deno.env.delete("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
+            await installAgyCliMcpSetup();
             await callback(home, cwd, logPath);
         } finally {
             if (previousHome === undefined) Deno.env.delete("HOME");
@@ -191,6 +245,8 @@ async function withAgyExecutionFixture(
             else Deno.env.set("RUNWIELD_AGY_FAIL_AGENTS", previousFailAgents);
             if (previousFailTurn === undefined) Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
             else Deno.env.set("RUNWIELD_AGY_FAIL_TURN", previousFailTurn);
+            if (previousMcpCalls === undefined) Deno.env.delete("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
+            else Deno.env.set("RUNWIELD_AGY_EXECUTION_MCP_CALLS", previousMcpCalls);
             await removeTempDir(home);
         }
     });
@@ -274,6 +330,121 @@ Deno.test("Agy CLI selected root turn dispatches through agy and rebuilds RunWie
 
         await root.session.dispose();
         await assertNoTemporaryAgents(home);
+    });
+});
+
+Deno.test("every eligible Agy role invokes its real lifecycle tool through configured stdio transport", async () => {
+    await withAgyExecutionFixture(async (_home, cwd, logPath) => {
+        const writeCalls = async (name: string, calls: unknown[]) => {
+            const callsPath = join(cwd, `${name}-agy-mcp-calls.json`);
+            await Deno.writeTextFile(callsPath, JSON.stringify(calls));
+            Deno.env.set("RUNWIELD_AGY_EXECUTION_MCP_CALLS", callsPath);
+        };
+        const writeApprovedPlan = async (planName: string) => {
+            await Deno.mkdir(join(cwd, "docs", "plans"), { recursive: true });
+            await Deno.writeTextFile(
+                join(cwd, "docs", "plans", `${planName}.md`),
+                `---\nclassification: PLANNED_CHANGE\nworkKind: FEATURE\ncomplexity: MEDIUM\nstatus: approved\naffectedPaths:\n  - src/example.ts\n---\n# ${planName}\n`,
+            );
+        };
+        const assertWorkflowEvent = (branchText: string, kind: string, token: string) => {
+            assertStringIncludes(branchText, "runwield.workflow_tool_event");
+            assertStringIncludes(branchText, `\"kind\":\"${kind}\"`);
+            assertStringIncludes(branchText, token);
+            assertStringIncludes(branchText, "agy-cli-mcp");
+        };
+
+        const planName = `agy-stdio-plan-${crypto.randomUUID()}`;
+        const plannerManager = SessionManager.inMemory(cwd);
+        const plannerSession = createHostedSession(cwd, plannerManager);
+        plannerSession.setInteractionAdapter({
+            requestInteraction: async (request) => {
+                const reviewedPlanName = String(request._meta?.planName || planName);
+                const reviewed = await loadPlan(cwd, reviewedPlanName);
+                return {
+                    outcome: "accepted",
+                    _meta: {
+                        approved: true,
+                        approvalAction: "run",
+                        revision: reviewed?.revision,
+                    },
+                };
+            },
+            supportsInteraction: () => true,
+        });
+        await writeApprovedPlan(planName);
+        await writeCalls("planner", [{ name: "runwield_plan_written", arguments: { planName } }]);
+        const plannerRoot = await ensureRootAgentSession({
+            hostedSession: plannerSession,
+            agentName: AGENTS.PLANNER,
+        }) as never as AgyRootRef;
+        await runRootTurn({ hostedSession: plannerSession, agentName: AGENTS.PLANNER, userRequest: "submit the plan" });
+        const plannerBranch = JSON.stringify(getRootSessionBranchEntries(plannerManager));
+        assertWorkflowEvent(plannerBranch, "plan_written", planName);
+        assertStringIncludes(plannerBranch, "approved_execute");
+        await plannerRoot.session.dispose();
+
+        const completionMessage = `stdio completion ${crypto.randomUUID()}`;
+        const executionManager = SessionManager.inMemory(cwd);
+        const executionSession = createHostedSession(cwd, executionManager);
+        executionSession.setActiveExecutionWorkflow({
+            planName: "quick-fix",
+            triageMeta: { classification: "QUICK_FIX" },
+            executionAgent: "engineer",
+            executionStarted: true,
+            projectRoot: cwd,
+            executionCwd: cwd,
+            nonGitInPlace: true,
+            executionMode: "non_git_in_place",
+        });
+        await writeCalls("engineer", [{ name: "runwield_task_completed", arguments: { message: completionMessage } }]);
+        const executionRoot = await ensureRootAgentSession({
+            hostedSession: executionSession,
+            agentName: AGENTS.ENGINEER,
+        }) as never as AgyRootRef;
+        await runRootTurn({
+            hostedSession: executionSession,
+            agentName: AGENTS.ENGINEER,
+            userRequest: "complete the task",
+        });
+        const executionBranch = JSON.stringify(getRootSessionBranchEntries(executionManager));
+        assertWorkflowEvent(executionBranch, "task_completed", completionMessage);
+        assertStringIncludes(executionBranch, "task_completed");
+        await executionRoot.session.dispose();
+
+        const reviewTitle = `stdio review finding ${crypto.randomUUID()}`;
+        const reviewManager = SessionManager.inMemory(cwd);
+        const reviewSession = createHostedSession(cwd, reviewManager);
+        reviewSession.setActiveExecutionWorkflow({
+            planName: "review-plan",
+            triageMeta: { classification: "PLANNED_CHANGE" },
+            executionAgent: "engineer",
+            executionStarted: true,
+            validationGeneration: "agy-review-generation",
+        });
+        await writeCalls("reviewer", [{
+            name: "runwield_review_complete",
+            arguments: {
+                approved: false,
+                findings: [{
+                    title: reviewTitle,
+                    requirement: "must preserve real tool authority",
+                    evidence: "test fixture",
+                }],
+            },
+        }]);
+        await runIsolatedAgentSession({
+            hostedSession: reviewSession,
+            agentName: AGENTS.REVIEWER,
+            subAgentDefinition: { id: SUBAGENTS.REVIEWER, options: { reviewerMode: "discovery" } },
+            userRequest: "review the change",
+        });
+        const reviewEvents = listPendingWorkflowToolEvents(reviewSession);
+        assertEquals(reviewEvents.length, 1);
+        assertEquals(reviewEvents[0].kind, "review_complete");
+        assertEquals(reviewEvents[0].validationGeneration, "agy-review-generation");
+        assertStringIncludes(JSON.stringify(reviewEvents[0]), reviewTitle);
+        assertStringIncludes(await Deno.readTextFile(logPath), "runwield_review_complete");
     });
 });
 

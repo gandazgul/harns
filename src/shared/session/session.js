@@ -78,6 +78,8 @@ import {
 } from "./execution-backend.ts";
 import { ClaudeCliExecutionSession } from "./backends/claude-cli/execution-session.ts";
 import { AgyCliExecutionSession } from "./backends/agy-cli/execution-session.ts";
+import { ensureAgyCliMcpSetup } from "./backends/agy-cli/mcp-setup.ts";
+import { buildBridgedToolPromptAppendix } from "./bridged-tools/prompt.ts";
 import { completeRequestDispatch, failRequestDispatch, prepareRequestDispatch } from "./request-dispatch.ts";
 import { formatProviderModelReference, parseProviderModel } from "../models/model-validation.ts";
 import { directoryExists, fileExists } from "../helpers.js";
@@ -113,14 +115,6 @@ function homePromptsDir() {
 const HTML_ERROR_RE = /^(.*?\b404\b.*?)(?:<!DOCTYPE|<html|<body)/i;
 const UNSUPPORTED_TEMPERATURE_RE =
     /\bunsupported (?:parameter|field|argument)\b[^.:\n]*(?::|\b)\s*["']?temperature["']?|\btemperature\b[^.:\n]*\b(?:unsupported|not supported|not allowed|not accepted|invalid temperature)\b|\binvalid temperature\b.*\bonly\b.*\ballowed\b/i;
-
-const AGY_CLI_TRACER_BULLET_PROMPT = [
-    "## Antigravity CLI backend limitations",
-    "",
-    "This RunWield slice does not expose RunWield workflow tools to Antigravity CLI yet.",
-    "Assistant prose is non-terminal. Text that says a Plan was approved, execution is done, review is complete, or a workflow tool was called does not change RunWield workflow state.",
-    "Do not claim that you changed RunWield workflow state. If workflow completion is requested, explain that lifecycle completion is unavailable for this backend slice.",
-].join("\n");
 
 /** @type {Set<string>} */
 const modelsWithoutTemperature = new Set();
@@ -2456,6 +2450,74 @@ export async function composeClaudeCliBridgedTools({
 }
 
 /**
+ * Compose only the Agy CLI lifecycle Bridged Tools. Agy gets the same
+ * `runwield_` external aliases as Claude, but it does not receive Claude
+ * capability tools or caller-supplied MCP/root tools in this child.
+ *
+ * @param {{
+ *   agentDef: import('./types.js').AgentDefinition,
+ *   agentName: string,
+ *   hostedSession: import('./hosted-session.js').HostedSession | null,
+ *   triageMeta: import('../../tools/plan-written.ts').TriageMeta | undefined,
+ *   customTools?: import('@earendil-works/pi-coding-agent').ToolDefinition[],
+ *   workflowAuthority?: boolean,
+ * }} opts
+ * @returns {Promise<import('@earendil-works/pi-coding-agent').ToolDefinition[]>}
+ */
+export async function composeAgyCliBridgedTools({
+    agentDef,
+    agentName,
+    hostedSession,
+    triageMeta,
+    customTools = [],
+    workflowAuthority = true,
+}) {
+    const finalCustomTools = filterCustomWorkflowAdvancementTools(customTools, workflowAuthority === false);
+    const declared = new Set(filterWorkflowAdvancementTools(
+        resolveEffectiveSessionToolNames(
+            agentDef.tools,
+            undefined,
+            finalCustomTools.map((tool) => tool.name),
+        ),
+        workflowAuthority === false,
+    ));
+    const plannerRoles = new Set([AGENTS.PLANNER, AGENTS.ARCHITECT]);
+    const executionRoles = new Set([
+        AGENTS.ENGINEER,
+        AGENTS.PLAN_ENGINEER,
+        AGENTS.FRONTEND_ENGINEER,
+        AGENTS.REVIEWER_FEEDBACK_ENGINEER,
+    ]);
+    const eligible = new Set([
+        ...(plannerRoles.has(agentName) ? ["plan_written"] : []),
+        ...(executionRoles.has(agentName) ? ["task_completed"] : []),
+        ...(agentName === AGENTS.REVIEWER ? ["review_complete"] : []),
+    ]);
+    /** @param {string} name */
+    const hasTool = (name) => finalCustomTools.find((tool) => tool.name === name);
+
+    if (eligible.has("plan_written") && declared.has("plan_written") && hostedSession && !hasTool("plan_written")) {
+        const { createPlanWrittenTool } = await import("../../tools/plan-written.ts");
+        finalCustomTools.push(createPlanWrittenTool({ triageMeta, agentName, hostedSession }));
+    }
+    if (
+        eligible.has("task_completed") && declared.has("task_completed") && hostedSession &&
+        !hasTool("task_completed")
+    ) {
+        const { createTaskCompletedTool } = await import("../../tools/task-completed.ts");
+        finalCustomTools.push(createTaskCompletedTool({ hostedSession, agentName: agentDef.displayName }));
+    }
+    if (
+        eligible.has("review_complete") && declared.has("review_complete") && hostedSession &&
+        !hasTool("review_complete")
+    ) {
+        const { createReviewCompletedTool } = await import("../../tools/review-complete.ts");
+        finalCustomTools.push(createReviewCompletedTool({ hostedSession, agentName: agentDef.displayName }));
+    }
+    return finalCustomTools.filter((tool) => eligible.has(tool.name));
+}
+
+/**
  * @typedef {Object} AgyImageInputOptions
  * @property {{ base64: string, mimeType: string }[]} [images]
  */
@@ -2546,15 +2608,24 @@ export async function buildExecutionSession(opts) {
             workflowAuthority: opts.workflowAuthority !== false,
             mcpRootTools: opts.mcpRootTools,
         })
-        : [];
-    const rebuildToolNames = backend === "agy-cli" ? [] : filterWorkflowAdvancementTools(
-        resolveEffectiveSessionToolNames(
-            agentDef.tools,
-            opts.toolNames,
-            finalCustomTools.map((tool) => tool.name),
-        ),
-        opts.workflowAuthority === false,
-    );
+        : await composeAgyCliBridgedTools({
+            agentDef,
+            agentName: opts.agentName,
+            hostedSession: targetHostedSession,
+            triageMeta: opts.triageMeta,
+            customTools: filterCustomWorkflowAdvancementTools(opts.customTools || [], opts.workflowAuthority === false),
+            workflowAuthority: opts.workflowAuthority !== false,
+        });
+    const rebuildToolNames = backend === "agy-cli"
+        ? finalCustomTools.map((tool) => tool.name)
+        : filterWorkflowAdvancementTools(
+            resolveEffectiveSessionToolNames(
+                agentDef.tools,
+                opts.toolNames,
+                finalCustomTools.map((tool) => tool.name),
+            ),
+            opts.workflowAuthority === false,
+        );
     const { prompt: finalSystemPrompt, projection: contextProjection } =
         await assembleFinalSystemPromptWithContextProjection(
             agentDef,
@@ -2568,11 +2639,14 @@ export async function buildExecutionSession(opts) {
             },
         );
     const backendPrompt = backend === "agy-cli"
-        ? `${finalSystemPrompt}\n\n${AGY_CLI_TRACER_BULLET_PROMPT}`
+        ? finalSystemPrompt + buildBridgedToolPromptAppendix(finalCustomTools, "Antigravity CLI")
         : finalSystemPrompt;
     const promptState = {
         text: opts.workflowAuthority === false ? `${backendPrompt}\n\n${NO_WORKFLOW_AUTHORITY_PROMPT}` : backendPrompt,
     };
+    if (backend === "agy-cli") {
+        await ensureAgyCliMcpSetup({ hostedSession: targetHostedSession });
+    }
     const session = backend === "claude-cli"
         ? new ClaudeCliExecutionSession({
             cwd: sessionCwd,
@@ -2592,6 +2666,7 @@ export async function buildExecutionSession(opts) {
             model: resolvedModel,
             sessionManager: effectiveSessionManager,
             hostedSession: targetHostedSession || undefined,
+            bridgedTools: finalCustomTools,
             thinkingLevel: backendThinking,
             persistModelChange: opts.persistModelChange !== false,
         });
