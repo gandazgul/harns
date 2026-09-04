@@ -2,7 +2,7 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 import { createSessionRuntime } from "../../shared/session/session-runtime.js";
 import { getSettingsManager, setCustomSetting } from "../../shared/settings.js";
 import { withRuntimeCommandFixture } from "../testing/runtime-command-fixture.ts";
-import { runModelsCommand } from "./index.ts";
+import { getModelCompletions, runModelsCommand } from "./index.ts";
 
 const FIXTURE_MODEL = "runtime-command-fixture/fixture-model";
 
@@ -302,4 +302,65 @@ Deno.test("runModelsCommand sets the fixture-scoped default from the standalone 
         assertEquals(getSettingsManager(alternateRoot).getDefaultModel(), "fixture-model");
         assertEquals(getSettingsManager(alternateRoot).getDefaultProvider(), "runtime-command-fixture");
     }, { providerState: "provider-no-model" });
+});
+
+Deno.test("runModelsCommand accepts explicit Agy CLI references without catalog entries", async () => {
+    await withRuntimeCommandFixture("runwield-model-command-agy-cli-", async ({ alternateRoot }) => {
+        const modelIds = [
+            `model-${crypto.randomUUID()}`,
+            `vendor/path/${crypto.randomUUID()}`,
+            `very-long-${"x".repeat(4087)}`,
+        ];
+
+        const completions = await getModelCompletions("agy-cli/");
+        assertEquals(completions.some((completion) => completion.value.startsWith("agy-cli/")), false);
+
+        for (const modelId of modelIds) {
+            const reference = `agy-cli/${modelId}`;
+            const logs = await captureLogs(() => runModelsCommand([reference]));
+            assertEquals(logs, [`Set default model to ${reference}`]);
+            assertEquals(getSettingsManager(alternateRoot).getDefaultModel(), modelId);
+            assertEquals(getSettingsManager(alternateRoot).getDefaultProvider(), "agy-cli");
+        }
+    }, { providerState: "provider-no-model" });
+});
+
+Deno.test("runModelsCommand defers unsupported Agy CLI activation and keeps the current Session model", async () => {
+    await withRuntimeCommandFixture("runwield-model-command-agy-deferred-", async ({ projectRoot }) => {
+        const ui = makeUi();
+        const runtime = createSessionRuntime();
+        const modelId = `future-${crypto.randomUUID()}`;
+        try {
+            const { sessionId } = await runtime.createInteractiveSession({ cwd: projectRoot, mode: "new" });
+            await runModelsCommand([FIXTURE_MODEL], {
+                uiAPI: ui.uiAPI,
+                sessionId,
+                sessionRuntime: runtime,
+            });
+            assertEquals(runtime.getSessionSnapshot(sessionId)?.activeModel, {
+                model: "fixture-model",
+                provider: "runtime-command-fixture",
+            });
+            const firstTurn = await runtime.promptUserTurn(sessionId, { initialRequest: "Prime the fixture model" });
+            assertEquals(firstTurn.ok, true);
+            ui.messages.length = 0;
+
+            await runModelsCommand([`agy-cli/${modelId}`], {
+                uiAPI: ui.uiAPI,
+                sessionId,
+                sessionRuntime: runtime,
+            });
+
+            assertEquals(runtime.getSessionSnapshot(sessionId)?.activeModel, {
+                model: "fixture-model",
+                provider: "runtime-command-fixture",
+            });
+            assertEquals(getSettingsManager(projectRoot).getDefaultModel(), modelId);
+            assertEquals(getSettingsManager(projectRoot).getDefaultProvider(), "agy-cli");
+            assertStringIncludes(ui.messages.at(-1)?.text || "", `Unsupported model execution backend "agy-cli"`);
+            assertStringIncludes(ui.messages.at(-1)?.text || "", "The current Session was not switched.");
+        } finally {
+            runtime.closeAllSessions();
+        }
+    });
 });
