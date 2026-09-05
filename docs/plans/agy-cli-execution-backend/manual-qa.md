@@ -53,3 +53,21 @@ Manual verification steps for agy-cli-execution-backend/03-add-agy-cli-backend-t
       steering, or failure-hardening parity.
 
 <!-- runwield:manual-qa:end child="agy-cli-execution-backend/03-add-agy-cli-backend-transcript-tracer-bullet" -->
+
+<!-- runwield:manual-qa:start child="agy-cli-execution-backend/04-bridge-agy-workflow-signals-through-mcp" -->
+
+## Bridge Agy Workflow Signals Through MCP
+
+Manual verification steps for agy-cli-execution-backend/04-bridge-agy-workflow-signals-through-mcp
+
+- [ ] Approve setup with sandbox global Antigravity files. Confirm `agy mcp list` shows the `runwield` stdio server and
+      unrelated entries remain unchanged.
+- [ ] Inspect both global files. Confirm they contain no turn URL, bearer token, Session ID, or model data. Confirm the
+      workspace-only MCP file is not used as setup proof.
+- [ ] Run controlled Agy Planner, execution-owner, and Semantic Reviewer turns. Confirm each calls its eligible
+      `runwield_` tool and advances only after the accepted structured result.
+- [ ] Submit prose or rejected tool-call lookalikes during a controlled turn. Confirm they do not change workflow state
+      or create a completion result.
+- [ ] After each turn, confirm global setup is unchanged and no stdio bridge process or loopback listener remains.
+
+<!-- runwield:manual-qa:end child="agy-cli-execution-backend/04-bridge-agy-workflow-signals-through-mcp" -->
