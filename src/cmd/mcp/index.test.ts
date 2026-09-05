@@ -39,6 +39,14 @@ Deno.test("wld mcp rejects unknown adapters and does not write protocol output",
     assertStringIncludes(result.stderr, "Unknown MCP adapter: unknown");
 });
 
+Deno.test("wld mcp agy-cli rejects unknown options", async () => {
+    const result = await runCli(["mcp", "agy-cli", "--executable-kind"]);
+    assertEquals(result.code, 1);
+    assertEquals(result.stdout, "");
+    assertStringIncludes(result.stderr, "Unknown MCP option: --executable-kind");
+    assertStringIncludes(result.stderr, "Usage: wld mcp agy-cli [--setup]");
+});
+
 Deno.test("wld mcp agy-cli refuses missing bridge environment before stdio startup", async () => {
     await withProcessGlobalTestLock(async () => {
         const home = await Deno.makeTempDir({ prefix: "runwield-mcp-command-home-" });
@@ -55,18 +63,17 @@ Deno.test("wld mcp agy-cli refuses missing bridge environment before stdio start
 
 Deno.test("wld mcp agy-cli --setup asks on stderr and installs after yes", async () => {
     await withProcessGlobalTestLock(async () => {
-        const priorPath = Deno.env.get("PATH") || "";
         const home = await Deno.makeTempDir({ prefix: "runwield-mcp-command-setup-home-" });
         const binDir = join(home, "bin");
         try {
             await Deno.mkdir(binDir, { recursive: true });
             const wldPath = join(binDir, "wld");
-            await Deno.writeTextFile(wldPath, "#!/bin/sh\necho wld fixture\n");
+            await Deno.writeFile(wldPath, new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 0x00]));
             await Deno.chmod(wldPath, 0o755);
 
             const result = await runCli(
                 ["mcp", "agy-cli", "--setup"],
-                { HOME: home, PATH: `${binDir}:${priorPath}` },
+                { HOME: home, PATH: binDir },
                 "yes\n",
             );
 

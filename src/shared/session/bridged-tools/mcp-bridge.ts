@@ -201,6 +201,13 @@ function rejectionText(reason: string): string {
     return `runwield lifecycle call rejected: ${reason}`;
 }
 
+function mergeAbortSignals(first?: AbortSignal, second?: AbortSignal): AbortSignal | undefined {
+    const signals = [first, second].filter((signal): signal is AbortSignal => Boolean(signal));
+    if (signals.length === 0) return undefined;
+    if (signals.length === 1) return signals[0];
+    return AbortSignal.any(signals);
+}
+
 /**
  * Start a per-turn authenticated loopback MCP server advertising only the
  * supplied eligible RunWield tool aliases, and return the Claude config content
@@ -244,7 +251,6 @@ export async function startRunWieldMcpBridge(
 
     let terminal = false;
     let callQueue: Promise<void> = Promise.resolve();
-    const toolContext = createToolContext(options.cwd, options.signal);
     const toolStartedAt = new Map<string, number>();
     const toolArgs = new Map<string, JsonObject>();
 
@@ -350,6 +356,7 @@ export async function startRunWieldMcpBridge(
     async function executeCall(
         alias: string,
         args: JsonObject | undefined,
+        requestSignal?: AbortSignal,
     ): Promise<McpToolResult> {
         const callId = crypto.randomUUID();
         const entry = byAlias.get(alias);
@@ -384,13 +391,14 @@ export async function startRunWieldMcpBridge(
         recordToolCall(entry.internalName, callId, args ?? {});
 
         let result: DelegatedToolResult;
+        const callSignal = mergeAbortSignals(options.signal, requestSignal);
         try {
             const executed = await entry.definition.execute(
                 callId,
                 params,
-                options.signal,
+                callSignal,
                 (update) => emitToolUpdate(entry.internalName, callId, update as DelegatedToolResult),
-                toolContext,
+                createToolContext(options.cwd, callSignal),
             );
             result = {
                 content: executed.content,
@@ -421,10 +429,10 @@ export async function startRunWieldMcpBridge(
         };
     });
 
-    mcpServer.setRequestHandler(CallToolRequestSchema, (request) => {
+    mcpServer.setRequestHandler(CallToolRequestSchema, (request, extra) => {
         const name = request.params.name;
         const args = request.params.arguments as JsonObject | undefined;
-        const run = callQueue.then(() => executeCall(name, args));
+        const run = callQueue.then(() => executeCall(name, args, extra.signal));
         callQueue = run.then(
             () => undefined,
             () => undefined,

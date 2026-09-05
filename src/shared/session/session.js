@@ -2460,6 +2460,7 @@ export async function composeClaudeCliBridgedTools({
  *   hostedSession: import('./hosted-session.js').HostedSession | null,
  *   triageMeta: import('../../tools/plan-written.ts').TriageMeta | undefined,
  *   customTools?: import('@earendil-works/pi-coding-agent').ToolDefinition[],
+ *   invocationToolNames?: string[],
  *   workflowAuthority?: boolean,
  * }} opts
  * @returns {Promise<import('@earendil-works/pi-coding-agent').ToolDefinition[]>}
@@ -2469,16 +2470,13 @@ export async function composeAgyCliBridgedTools({
     agentName,
     hostedSession,
     triageMeta,
-    customTools = [],
+    invocationToolNames,
     workflowAuthority = true,
 }) {
-    const finalCustomTools = filterCustomWorkflowAdvancementTools(customTools, workflowAuthority === false);
+    /** @type {import('@earendil-works/pi-coding-agent').ToolDefinition[]} */
+    const finalCustomTools = [];
     const declared = new Set(filterWorkflowAdvancementTools(
-        resolveEffectiveSessionToolNames(
-            agentDef.tools,
-            undefined,
-            finalCustomTools.map((tool) => tool.name),
-        ),
+        resolveEffectiveSessionToolNames(agentDef.tools, invocationToolNames, []),
         workflowAuthority === false,
     ));
     const plannerRoles = new Set([AGENTS.PLANNER, AGENTS.ARCHITECT]);
@@ -2614,6 +2612,7 @@ export async function buildExecutionSession(opts) {
             hostedSession: targetHostedSession,
             triageMeta: opts.triageMeta,
             customTools: filterCustomWorkflowAdvancementTools(opts.customTools || [], opts.workflowAuthority === false),
+            invocationToolNames: opts.toolNames,
             workflowAuthority: opts.workflowAuthority !== false,
         });
     const rebuildToolNames = backend === "agy-cli"

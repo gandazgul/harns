@@ -68,11 +68,11 @@ export async function runRunWieldMcpStdioTransport(): Promise<void> {
         }
     }
 
-    server.setRequestHandler(ListToolsRequestSchema, (request) => {
-        return client.listTools(request.params);
+    server.setRequestHandler(ListToolsRequestSchema, (request, extra) => {
+        return client.listTools(request.params, { signal: extra.signal });
     });
-    server.setRequestHandler(CallToolRequestSchema, (request) => {
-        return client.callTool(request.params);
+    server.setRequestHandler(CallToolRequestSchema, (request, extra) => {
+        return client.callTool(request.params, undefined, { signal: extra.signal });
     });
     stdio.onclose = () => {
         close();
@@ -85,9 +85,13 @@ export async function runRunWieldMcpStdioTransport(): Promise<void> {
         await client.connect(clientTransport);
         await server.connect(stdio);
         await new Promise<void>((resolve) => {
-            stdio.onclose = () => {
+            const closeAndResolve = () => {
                 close().finally(resolve);
             };
+            stdio.onclose = closeAndResolve;
+            stdio.onerror = closeAndResolve;
+            client.onclose = closeAndResolve;
+            client.onerror = closeAndResolve;
         });
     } finally {
         await close();

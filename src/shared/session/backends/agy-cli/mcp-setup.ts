@@ -39,6 +39,13 @@ interface EnsureAgyCliMcpSetupOptions {
     signal?: AbortSignal;
 }
 
+export class AgyCliMcpSetupApprovalError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "AgyCliMcpSetupApprovalError";
+    }
+}
+
 function setupPaths(): SetupPaths {
     const home = getHomeDir();
     return {
@@ -80,14 +87,24 @@ function jsonArrayContains(values: JsonValue | undefined, expected: string): boo
 }
 
 function jsonArrayWithout(values: JsonValue | undefined, omitted: string): JsonValue[] {
-    if (!Array.isArray(values)) return [];
+    if (values === undefined) return [];
+    if (!Array.isArray(values)) throw new Error("permissions.allow must be a JSON array.");
     return values.filter((value) => value !== omitted);
+}
+
+function expectedServerShape(wldPath: string): string {
+    return JSON.stringify({ command: wldPath, args: [...AGY_MCP_ARGS] });
+}
+
+function expectedPermissionShape(): string {
+    return JSON.stringify({ permissions: { allow: [AGY_MCP_PERMISSION] } });
 }
 
 function isExactRunWieldServer(value: JsonValue | undefined, wldPath: string): boolean {
     if (!isJsonMap(value)) return false;
-    return value.command === wldPath && JSON.stringify(value.args || []) === JSON.stringify([...AGY_MCP_ARGS]) &&
-        value.env === undefined && value.url === undefined;
+    const keys = Object.keys(value).sort();
+    return keys.length === 2 && keys[0] === "args" && keys[1] === "command" && value.command === wldPath &&
+        JSON.stringify(value.args) === JSON.stringify([...AGY_MCP_ARGS]);
 }
 
 function isRepairableRunWieldServer(value: JsonValue | undefined, wldPath: string): boolean {
@@ -96,6 +113,20 @@ function isRepairableRunWieldServer(value: JsonValue | undefined, wldPath: strin
     if (value.command !== wldPath) return false;
     const args = JSON.stringify(value.args || []);
     return args === "[]" || args === JSON.stringify([...AGY_MCP_ARGS]);
+}
+
+function settingsPermissionShapeError(settings: JsonMap, settingsPath: string): string | undefined {
+    const permissions = settings.permissions;
+    if (permissions === undefined) return undefined;
+    if (!isJsonMap(permissions)) {
+        return `${settingsPath}: permissions must be a JSON object. Expected ${expectedPermissionShape()}.`;
+    }
+    for (const key of ["allow", "ask", "deny"] as const) {
+        if (permissions[key] !== undefined && !Array.isArray(permissions[key])) {
+            return `${settingsPath}: permissions.${key} must be a JSON array. Expected ${expectedPermissionShape()}.`;
+        }
+    }
+    return undefined;
 }
 
 function settingsHaveContradiction(settings: JsonMap): boolean {
@@ -113,7 +144,32 @@ function settingsHavePermission(settings: JsonMap): boolean {
 
 async function pathIsExecutableFile(path: string): Promise<boolean> {
     const info = await lstatOrNull(path);
-    return Boolean(info?.isFile && !info.isSymlink);
+    if (!info?.isFile || info.isSymlink) return false;
+    if (Deno.build.os === "windows") return true;
+    return typeof info.mode === "number" && (info.mode & 0o111) !== 0;
+}
+
+function hasStandaloneExecutableHeader(header: Uint8Array, byteCount: number): boolean {
+    if (byteCount < 2) return false;
+    if (header[0] === 0x4d && header[1] === 0x5a) return true;
+    if (byteCount < 4) return false;
+    return (header[0] === 0x7f && header[1] === 0x45 && header[2] === 0x4c && header[3] === 0x46) ||
+        (header[0] === 0xcf && header[1] === 0xfa && header[2] === 0xed && header[3] === 0xfe) ||
+        (header[0] === 0xfe && header[1] === 0xed && header[2] === 0xfa && header[3] === 0xcf) ||
+        (header[0] === 0xca && header[1] === 0xfe && header[2] === 0xba && header[3] === 0xbe) ||
+        (header[0] === 0xbe && header[1] === 0xba && header[2] === 0xfe && header[3] === 0xca);
+}
+
+async function pathIsStandaloneExecutableFile(path: string): Promise<boolean> {
+    if (!await pathIsExecutableFile(path)) return false;
+    const file = await Deno.open(path, { read: true });
+    try {
+        const header = new Uint8Array(4);
+        const byteCount = await file.read(header);
+        return hasStandaloneExecutableHeader(header, byteCount || 0);
+    } finally {
+        file.close();
+    }
 }
 
 async function findPathExecutable(name: string): Promise<string | null> {
@@ -121,7 +177,7 @@ async function findPathExecutable(name: string): Promise<string | null> {
     for (const directory of pathText.split(":")) {
         if (!directory) continue;
         const candidate = resolve(directory, name);
-        if (await pathIsExecutableFile(candidate)) return await Deno.realPath(candidate);
+        if (await pathIsStandaloneExecutableFile(candidate)) return await Deno.realPath(candidate);
     }
     return null;
 }
@@ -129,11 +185,11 @@ async function findPathExecutable(name: string): Promise<string | null> {
 export async function resolveInstalledWldExecutable(): Promise<string> {
     if (Deno.build.standalone) {
         const execPath = await Deno.realPath(Deno.execPath());
-        if (basename(execPath) === CLI_BIN && await pathIsExecutableFile(execPath)) return execPath;
+        if (basename(execPath) === CLI_BIN && await pathIsStandaloneExecutableFile(execPath)) return execPath;
     }
     const pathExecutable = await findPathExecutable(CLI_BIN);
     if (pathExecutable) return pathExecutable;
-    throw new Error(`Could not find an installed ${CLI_BIN} executable for Antigravity MCP setup.`);
+    throw new Error(`Could not find an installed standalone ${CLI_BIN} executable for Antigravity MCP setup.`);
 }
 
 export async function inspectAgyCliMcpSetup(): Promise<SetupStatus> {
@@ -160,16 +216,24 @@ export async function inspectAgyCliMcpSetup(): Promise<SetupStatus> {
             return {
                 ok: false,
                 repairable: false,
-                message: "Antigravity already has a different runwield MCP server.",
+                message:
+                    `${paths.configPath}: Antigravity already has a different mcpServers.runwield entry. Expected ${
+                        expectedServerShape(command)
+                    }.`,
                 ...paths,
                 command,
             };
+        }
+        const permissionShapeError = settingsPermissionShapeError(settings, paths.settingsPath);
+        if (permissionShapeError) {
+            return { ok: false, repairable: false, message: permissionShapeError, ...paths, command };
         }
         if (settingsHaveContradiction(settings)) {
             return {
                 ok: false,
                 repairable: false,
-                message: "Antigravity has an Ask or Deny rule for mcp(runwield/*).",
+                message:
+                    `${paths.settingsPath}: Antigravity has an Ask or Deny rule for ${AGY_MCP_PERMISSION}. Expected ${expectedPermissionShape()}.`,
                 ...paths,
                 command,
             };
@@ -235,6 +299,8 @@ function installConfig(config: JsonMap, command: string): JsonMap {
 }
 
 function installSettings(settings: JsonMap): JsonMap {
+    const shapeError = settingsPermissionShapeError(settings, "Antigravity settings");
+    if (shapeError) throw new Error(shapeError);
     const next: JsonMap = { ...settings };
     const permissions = isJsonMap(settings.permissions) ? { ...settings.permissions } : {};
     permissions.allow = [...jsonArrayWithout(permissions.allow, AGY_MCP_PERMISSION), AGY_MCP_PERMISSION];
@@ -300,7 +366,7 @@ export async function ensureAgyCliMcpSetup(options: EnsureAgyCliMcpSetupOptions 
     if (!status.repairable) throw new Error(status.message);
     const hostedSession = options.hostedSession || null;
     if (!hostedSession || !supportsHostedSessionInteraction(hostedSession, RuntimeInteractionTypes.APPROVAL)) {
-        throw new Error(`Antigravity MCP setup needs approval. Run ${setupCommand(status)}.`);
+        throw new AgyCliMcpSetupApprovalError(`Antigravity MCP setup needs approval. Run ${setupCommand(status)}.`);
     }
     const request = {
         type: RuntimeInteractionTypes.APPROVAL,
@@ -313,9 +379,25 @@ export async function ensureAgyCliMcpSetup(options: EnsureAgyCliMcpSetupOptions 
     const response = await requestHostedSessionInteraction(hostedSession, request, options.signal);
     const value = typeof response.value === "string" ? response.value : String(response.value || "");
     if (response.outcome !== RuntimeInteractionOutcomes.ACCEPTED || !isApprovalAcceptedValue(request, value)) {
-        throw new Error("Antigravity MCP setup was not approved.");
+        throw new AgyCliMcpSetupApprovalError("Antigravity MCP setup was not approved.");
     }
     await installAgyCliMcpSetup();
+}
+
+async function readApprovalLine(): Promise<string> {
+    const buffer = new Uint8Array(1024);
+    const decoder = new TextDecoder();
+    let text = "";
+    while (true) {
+        const count = await Deno.stdin.read(buffer);
+        if (count === null) break;
+        text += decoder.decode(buffer.subarray(0, count), { stream: true });
+        const newline = text.search(/\r?\n/);
+        if (newline >= 0) return text.slice(0, newline).trim().toLowerCase();
+        if (text.length > 1024) break;
+    }
+    text += decoder.decode();
+    return text.trim().toLowerCase();
 }
 
 export async function runAgyCliMcpSetupPrompt(): Promise<number> {
@@ -331,7 +413,7 @@ export async function runAgyCliMcpSetupPrompt(): Promise<number> {
     console.error(setupApprovalPrompt(status));
     console.error("");
     console.error("Type yes to approve this persistent change:");
-    const answer = (await new Response(Deno.stdin.readable).text()).trim().toLowerCase();
+    const answer = await readApprovalLine();
     if (answer !== "yes") {
         console.error("Antigravity MCP setup was not approved.");
         return 1;

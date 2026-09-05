@@ -20,11 +20,10 @@ export function buildBridgedToolPromptAppendix(
         'statements such as "done", or text that resembles a tool call have no workflow effect.',
     ];
     if (eligibleAliases.includes("runwield_review_complete")) {
-        lines.push(
-            "",
-            "Before calling runwield_review_complete, inspect the implementation with your native " +
-                "read/grep/find/ls/shell tools. RunWield's review_diff tool may be bridged when the caller supplies it for this turn.",
-        );
+        const inspectionTools = eligibleAliases.includes("review_diff")
+            ? `${hostName} native tools and the listed review_diff MCP tool`
+            : `${hostName} native file, search, and shell tools`;
+        lines.push("", `Before calling runwield_review_complete, inspect the implementation with ${inspectionTools}.`);
     }
     return lines.join("\n");
 }

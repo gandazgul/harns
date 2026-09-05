@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { Type } from "@earendil-works/pi-ai";
+import { defineTool, SessionManager } from "@earendil-works/pi-coding-agent";
 import { AGENTS, SUBAGENTS } from "../../constants.js";
 import { loadPlan } from "../../plan-store.js";
 import { withProcessGlobalTestLock } from "../../testing/process-global-lock.js";
@@ -11,6 +12,7 @@ import { runActiveAgentTurn } from "./agent-switching.js";
 import { listPendingWorkflowToolEvents } from "../workflow/workflow-tool-events.ts";
 import {
     abortActiveSession,
+    composeAgyCliBridgedTools,
     ensureRootAgentSession,
     runIsolatedAgentSession,
     runRootTurn,
@@ -47,6 +49,45 @@ interface BranchEntryRecord {
 
 async function removeTempDir(path: string): Promise<void> {
     await Deno.remove(path, { recursive: true }).catch(() => undefined);
+}
+
+let standaloneWldProxyPath: Promise<string> | null = null;
+
+async function compileStandaloneWldProxy(): Promise<string> {
+    const fixtureDir = await Deno.makeTempDir({ prefix: "runwield-standalone-wld-proxy-" });
+    const sourcePath = join(fixtureDir, "wld-proxy.ts");
+    const outputPath = join(fixtureDir, "wld");
+    await Deno.writeTextFile(
+        sourcePath,
+        `const child = new Deno.Command(${JSON.stringify(Deno.execPath())}, {\n` +
+            `    args: ["run", "-A", "--unstable-no-legacy-abort", ${
+                JSON.stringify(join(Deno.cwd(), "src", "cli.ts"))
+            }, ...Deno.args],\n` +
+            `    stdin: "piped",\n` +
+            `    stdout: "piped",\n` +
+            `    stderr: "piped",\n` +
+            `    env: Deno.env.toObject(),\n` +
+            `});\n` +
+            `const process = child.spawn();\n` +
+            `const stdinDone = Deno.stdin.readable.pipeTo(process.stdin).catch(() => undefined);\n` +
+            `const stdoutDone = process.stdout.pipeTo(Deno.stdout.writable, { preventClose: true }).catch(() => undefined);\n` +
+            `const stderrDone = process.stderr.pipeTo(Deno.stderr.writable, { preventClose: true }).catch(() => undefined);\n` +
+            `const status = await process.status;\n` +
+            `await Promise.all([stdinDone, stdoutDone, stderrDone]);\n` +
+            `Deno.exit(status.code);\n`,
+    );
+    const output = await new Deno.Command(Deno.execPath(), {
+        args: ["compile", "--output", outputPath, "-A", "--no-check", "--unstable-no-legacy-abort", sourcePath],
+        stdout: "null",
+        stderr: "piped",
+    }).output();
+    if (!output.success) throw new Error(new TextDecoder().decode(output.stderr));
+    return outputPath;
+}
+
+function getStandaloneWldProxyPath(): Promise<string> {
+    if (!standaloneWldProxyPath) standaloneWldProxyPath = compileStandaloneWldProxy();
+    return standaloneWldProxyPath;
 }
 
 async function installAgyExecutionFixture(binDir: string, logPath: string): Promise<void> {
@@ -104,6 +145,7 @@ async function runConfiguredMcp(home: string): Promise<void> {
         command: server.command,
         args: server.args,
         env: {
+            ...Deno.env.toObject(),
             HOME: home,
             PATH: Deno.env.get("PATH") || "",
             RUNWIELD_MCP_BRIDGE_URL: Deno.env.get("RUNWIELD_MCP_BRIDGE_URL") || "",
@@ -195,12 +237,7 @@ await main();
     await Deno.writeTextFile(agyPath, `#!/bin/sh\nexec deno run -A ${JSON.stringify(fixturePath)} "$@"\n`);
     await Deno.chmod(agyPath, 0o755);
     const wldPath = join(binDir, "wld");
-    await Deno.writeTextFile(
-        wldPath,
-        `#!/bin/sh\nexec deno run -A --unstable-no-legacy-abort ${
-            JSON.stringify(join(Deno.cwd(), "src", "cli.ts"))
-        } "$@"\n`,
-    );
+    await Deno.copyFile(await getStandaloneWldProxyPath(), wldPath);
     await Deno.chmod(wldPath, 0o755);
     await Deno.writeTextFile(logPath, "");
 }
@@ -279,6 +316,48 @@ async function assertNoTemporaryAgents(home: string): Promise<void> {
     }
     assertEquals(names.filter((name) => name.startsWith("runwield-")).length, 0);
 }
+
+Deno.test("Agy lifecycle tools honor invocation ceilings and ignore caller replacements", async () => {
+    const cwd = await Deno.makeTempDir({ prefix: "runwield-agy-compose-" });
+    try {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        const agentDef = { displayName: "Engineer", tools: ["task_completed"] } as never;
+        const callerTool = defineTool({
+            name: "task_completed",
+            label: "Caller Task Completed",
+            description: "Caller-owned completion.",
+            parameters: Type.Object({ message: Type.String() }),
+            execute() {
+                return Promise.resolve({ content: [{ type: "text" as const, text: "caller" }], details: {} });
+            },
+        });
+
+        const withoutCeiling = await composeAgyCliBridgedTools({
+            agentDef,
+            agentName: AGENTS.ENGINEER,
+            hostedSession,
+            triageMeta: undefined,
+            customTools: [callerTool],
+            invocationToolNames: ["task_completed"],
+        });
+        assertEquals(withoutCeiling.length, 1);
+        assertEquals(withoutCeiling[0].name, "task_completed");
+        assertEquals(withoutCeiling[0] === callerTool, false);
+
+        const withCeiling = await composeAgyCliBridgedTools({
+            agentDef,
+            agentName: AGENTS.ENGINEER,
+            hostedSession,
+            triageMeta: undefined,
+            customTools: [callerTool],
+            invocationToolNames: [],
+        });
+        assertEquals(withCeiling, []);
+    } finally {
+        await Deno.remove(cwd, { recursive: true }).catch(() => undefined);
+    }
+});
 
 Deno.test("Agy CLI selected root turn dispatches through agy and rebuilds RunWield transcript history", async () => {
     await withAgyExecutionFixture(async (home, cwd, logPath) => {
