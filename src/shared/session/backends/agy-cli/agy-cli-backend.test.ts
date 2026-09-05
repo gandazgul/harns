@@ -5,7 +5,8 @@ import { assertModelExecutionBackendSupported } from "../../../models/model-exec
 import { getModelRegistry } from "../../../models/model-registry.ts";
 import { prepareAgyCliStreamCommand } from "./command.ts";
 import { cleanupAgyCustomAgent, materializeAgyCustomAgent, resolveAgyCustomAgentPaths } from "./custom-agent.ts";
-import { parseAgyCliStream } from "./stream-parser.ts";
+import { buildAgyBackendStatusEntry, sanitizeAgyStatusMessage } from "./failure.ts";
+import { AgyCliStreamError, parseAgyCliStream } from "./stream-parser.ts";
 import { proveAgyCustomAgentExecution, verifyAgyCustomAgentListed } from "./spike.ts";
 
 async function withTempDir(callback: (dir: string) => Promise<void>): Promise<void> {
@@ -246,6 +247,8 @@ Deno.test("Agy command uses direct arguments, requires a model, and keeps Agent 
         "--output-format",
         "stream-json",
         "--disable-slash-commands",
+        "--print-timeout",
+        "24h",
     ]);
     assertEquals(command.args.includes("--dangerously-skip-permissions"), false);
     assertThrows(
@@ -281,7 +284,7 @@ Deno.test("Agy parser handles byte splits, display-only tool info, metadata, and
     assertEquals(result.metadata.agent, "runwield-parser-agent");
     assertEquals(result.metadata.sessionId, "session-1");
     assertEquals(result.metadata.usage.inputTokens, 1);
-    assertEquals(result.metadata.toolInfo.length, 1);
+    assertEquals(result.metadata.toolInfoCount, 1);
 });
 
 Deno.test("Agy parser handles real Antigravity 1.1 stream-json shape", async () => {
@@ -312,8 +315,29 @@ Deno.test("Agy parser handles real Antigravity 1.1 stream-json shape", async () 
 });
 
 Deno.test("Agy parser rejects malformed, empty, missing-result, and mismatched streams", async () => {
-    await assertRejects(() => parseAgyCliStream(streamFromText("{not json}\n")), Error, "malformed");
-    await assertRejects(() => parseAgyCliStream(streamFromText("")), Error, "without output");
+    await assertRejects(() => parseAgyCliStream(streamFromText("{not json}\n")), AgyCliStreamError, "malformed");
+    let pulledChunks = 0;
+    const malformedThenResult = [
+        new TextEncoder().encode("{not json}\n"),
+        new TextEncoder().encode(JSON.stringify({ type: "result", result: "finished" }) + "\n"),
+    ];
+    await assertRejects(
+        () =>
+            parseAgyCliStream(
+                new ReadableStream<Uint8Array>({
+                    pull(controller) {
+                        const chunk = malformedThenResult[pulledChunks];
+                        pulledChunks += 1;
+                        if (chunk) controller.enqueue(chunk);
+                        else controller.close();
+                    },
+                }),
+            ),
+        AgyCliStreamError,
+        "malformed",
+    );
+    assertEquals(pulledChunks, 3);
+    await assertRejects(() => parseAgyCliStream(streamFromText("")), AgyCliStreamError, "without output");
     await assertRejects(
         () =>
             parseAgyCliStream(
@@ -321,7 +345,7 @@ Deno.test("Agy parser rejects malformed, empty, missing-result, and mismatched s
                     `${JSON.stringify({ type: "step_update", update_type: "text_delta", text: "hello" })}\n`,
                 ),
             ),
-        Error,
+        AgyCliStreamError,
         "terminal result",
     );
     await assertRejects(
@@ -330,8 +354,92 @@ Deno.test("Agy parser rejects malformed, empty, missing-result, and mismatched s
                 JSON.stringify({ type: "step_update", update_type: "text_delta", text: "hello" }),
                 JSON.stringify({ type: "result", result: "goodbye" }),
             ].join("\n"))),
-        Error,
+        AgyCliStreamError,
         "did not match",
+    );
+});
+
+Deno.test("Agy parser reports non-success, permission, and MCP evidence without raw tool payloads", async () => {
+    const result = await parseAgyCliStream(streamFromText([
+        JSON.stringify({ event: "init", init: { agent: "runwield-parser-agent", model: "fixture-model" } }),
+        JSON.stringify({ event: "step_update", step_update: { update_type: "tool_info", command: "raw secret" } }),
+        JSON.stringify({
+            event: "step_update",
+            step_update: { step_type: "agent_response", text_delta: "Permission denied." },
+        }),
+        JSON.stringify({
+            event: "result",
+            status: "failed",
+            denied_actions: [{ command: "cat token" }],
+            error: "MCP tool server failed because permission denied",
+            result: { response: "Permission denied.", usage: { input_tokens: 2, output_tokens: 3 } },
+        }),
+    ].join("\n")));
+
+    assertEquals(result.metadata.status, "failed");
+    assertEquals(result.metadata.permissionDenied, true);
+    assertEquals(result.metadata.mcpUnavailable, true);
+    assertEquals(result.metadata.toolInfoCount, 1);
+    assertEquals(JSON.stringify(result.metadata).includes("raw secret"), false);
+    assertEquals(JSON.stringify(result.metadata).includes("cat token"), false);
+});
+
+Deno.test("Agy backend status covers all closed kinds and sanitizes persisted messages", () => {
+    const kinds = [
+        "missing_executable",
+        "auth_failed",
+        "custom_agent_invalid",
+        "permission_denied",
+        "mcp_unavailable",
+        "bridge_startup_failed",
+        "bridge_disconnected",
+        "non_zero_exit",
+        "malformed_stream",
+        "empty_result",
+        "result_mismatch",
+        "selection_mismatch",
+        "timeout",
+        "canceled",
+        "cleanup_failed",
+    ] as const;
+    const raw = "Bearer abc123\nHOME=/secret/path TOKEN=value\nhttps://example.test/private runwield-guide-secret " +
+        "x".repeat(2000);
+
+    for (const kind of kinds) {
+        const entry = buildAgyBackendStatusEntry(kind, {
+            exitCode: 9,
+            message: raw,
+            requestId: "request-1",
+            attemptId: "attempt-1",
+            afterAcceptedTerminal: true,
+        });
+        assertEquals(entry.version, 1);
+        assertEquals(entry.backend, "agy-cli");
+        assertEquals(entry.kind, kind);
+        assertEquals(entry.exitCode, 9);
+        assertEquals(entry.afterAcceptedTerminal, true);
+        assertEquals(entry.message.includes("abc123"), false);
+        assertEquals(entry.message.includes("TOKEN=value"), false);
+        assertEquals(entry.message.includes("example.test"), false);
+        assertEquals(entry.message.includes("runwield-guide-secret"), false);
+        assert(entry.message.length <= 1024);
+    }
+
+    assertEquals(
+        sanitizeAgyStatusMessage("token=secret", "auth_failed"),
+        "Antigravity CLI authentication failed. Sign in to Antigravity, then retry this turn.",
+    );
+    assertEquals(
+        sanitizeAgyStatusMessage("USER_NAME=alice FEATURE_VALUE=private visible", "non_zero_exit"),
+        "[redacted] [redacted] visible",
+    );
+    assertEquals(
+        sanitizeAgyStatusMessage("feature_value=private next", "non_zero_exit"),
+        "[redacted] next",
+    );
+    assertEquals(
+        sanitizeAgyStatusMessage("FEATURE_VALUE='private text' next", "non_zero_exit"),
+        "[redacted] next",
     );
 });
 

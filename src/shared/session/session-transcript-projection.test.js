@@ -93,6 +93,49 @@ Deno.test("committed projection verifies exact prefix and ignores later tail", a
     });
 });
 
+Deno.test("committed projection replays Agy backend status as display-only system status", () => {
+    const events = createReplayEvents("projection", [
+        {
+            type: "custom",
+            customType: "runwield.backend_status",
+            data: {
+                version: 1,
+                backend: "agy-cli",
+                kind: "non_zero_exit",
+                message: "Antigravity CLI exited before completing the turn.",
+            },
+        },
+        {
+            type: "custom",
+            id: "agy-warning",
+            customType: "runwield.backend_status",
+            data: {
+                version: 1,
+                backend: "agy-cli",
+                kind: "non_zero_exit",
+                afterAcceptedTerminal: true,
+                message: "Late Agy host failure after accepted workflow result.",
+            },
+        },
+        {
+            type: "custom",
+            customType: "runwield.backend_status",
+            data: {
+                version: 1,
+                backend: "claude-cli",
+                kind: "canceled",
+                message: "Claude Code turn canceled.",
+            },
+        },
+    ], { projectRoot: Deno.cwd() });
+
+    assertEquals(events.map((event) => event.type), ["system_status", "system_status", "system_status"]);
+    assertEquals(events.map((event) => event.level), ["error", "warning", "warning"]);
+    assertEquals(events[0].messageId.includes("agy-cli-backend-status"), true);
+    assertEquals(events[2].messageId.includes("claude-cli-backend-status"), true);
+    assertEquals(JSON.stringify(events).includes("workflow_tool_event"), false);
+});
+
 Deno.test("committed projection replays CLI backend final messages as ordinary transcript text", async () => {
     await withHome(async (home) => {
         const cwd = `${home}/project`;
