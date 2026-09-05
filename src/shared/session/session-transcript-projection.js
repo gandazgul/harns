@@ -75,9 +75,15 @@ function makeEventId(entry, eventKind, blockIndex, segmentId = null) {
     return `${entryId}:${eventKind}:${blockIndex}`;
 }
 
-/** @param {string} kind @returns {"warning" | "error"} */
-function claudeBackendStatusLevel(kind) {
-    return kind === "canceled" || kind === "bridge_disconnected" ? "warning" : "error";
+/**
+ * @param {{ kind?: string, backend?: string, afterAcceptedTerminal?: boolean }} status
+ * @returns {"warning" | "error"}
+ */
+function backendStatusLevel(status) {
+    if (status.afterAcceptedTerminal) return "warning";
+    const kind = status.kind || "non_zero_exit";
+    if (kind === "canceled" || kind === "bridge_disconnected" || kind === "cleanup_failed") return "warning";
+    return "error";
 }
 
 /**
@@ -330,15 +336,15 @@ export function createReplayEvents(sessionId, entries, options = {}) {
             continue;
         }
         if (value.type === "custom" && value.customType === "runwield.backend_status") {
-            const kind = typeof value.data?.kind === "string" ? value.data.kind : "non_zero_exit";
-            const message = typeof value.data?.message === "string" ? value.data.message : "Claude CLI backend status.";
+            const backend = typeof value.data?.backend === "string" ? value.data.backend : "cli";
+            const message = typeof value.data?.message === "string" ? value.data.message : "CLI backend status.";
             events.push({
                 ...common,
                 type: RuntimeEventTypes.SYSTEM_STATUS,
                 eventId: makeEventId(value, RuntimeEventTypes.SYSTEM_STATUS, 0, segmentId),
-                messageId: entryMessageId(value, `${sessionId}:claude-backend-status`, segmentId),
+                messageId: entryMessageId(value, `${sessionId}:${backend}-backend-status`, segmentId),
                 message,
-                level: claudeBackendStatusLevel(kind),
+                level: backendStatusLevel(value.data || {}),
             });
             continue;
         }

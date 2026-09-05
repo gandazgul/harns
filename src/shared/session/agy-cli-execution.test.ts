@@ -44,6 +44,7 @@ interface AgyRootRef {
 interface BranchEntryRecord {
     type?: string;
     customType?: string;
+    data?: { kind?: string; afterAcceptedTerminal?: boolean; level?: string };
     message?: { role?: string };
 }
 
@@ -90,6 +91,24 @@ function getStandaloneWldProxyPath(): Promise<string> {
     return standaloneWldProxyPath;
 }
 
+function processAlive(pid: number): boolean {
+    try {
+        Deno.kill(pid, "SIGCONT");
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function waitForProcessDeath(pid: number, timeoutMs = 5000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (!processAlive(pid)) return true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return !processAlive(pid);
+}
+
 async function installAgyExecutionFixture(binDir: string, logPath: string): Promise<void> {
     await Deno.mkdir(binDir, { recursive: true });
     const fixturePath = join(binDir, "fake-agy-execution.ts");
@@ -126,6 +145,19 @@ async function fileExists(path: string): Promise<boolean> {
 
 function emit(value: JsonRecord): void {
     console.log(JSON.stringify(value));
+}
+
+async function maybeStartDescendant(): Promise<void> {
+    const pidPath = Deno.env.get("RUNWIELD_AGY_DESCENDANT_PID") || "";
+    if (!pidPath) return;
+    const child = new Deno.Command("sleep", {
+        args: ["30"],
+        stdin: "null",
+        stdout: "null",
+        stderr: "null",
+    }).spawn();
+    await Deno.writeTextFile(pidPath, String(child.pid));
+    child.status.then(() => {}, () => {});
 }
 
 async function runConfiguredMcp(home: string): Promise<void> {
@@ -206,7 +238,7 @@ async function main(): Promise<void> {
         console.error("model mismatch: " + model);
         Deno.exit(2);
     }
-    if (!hasArg(args, "--disable-slash-commands") || hasArg(args, "--conversation") || hasArg(args, "--continue") || hasArg(args, "--dangerously-skip-permissions")) {
+    if (!hasArg(args, "--disable-slash-commands") || readArg(args, "--print-timeout") !== "24h" || hasArg(args, "--conversation") || hasArg(args, "--continue") || hasArg(args, "--dangerously-skip-permissions")) {
         console.error("bad flags");
         Deno.exit(2);
     }
@@ -217,8 +249,14 @@ async function main(): Promise<void> {
         Deno.exit(2);
     }
     if (logPath) await Deno.writeTextFile(logPath, JSON.stringify({ args, prompt, agent, model, definition }) + "\n", { append: true, create: true });
+    await maybeStartDescendant();
     if (Deno.env.get("RUNWIELD_AGY_FAIL_TURN") === "1") Deno.exit(4);
     await runConfiguredMcp(home);
+    if (Deno.env.get("RUNWIELD_AGY_FAIL_AFTER_MCP") === "1") Deno.exit(5);
+    if (Deno.env.get("RUNWIELD_AGY_MALFORMED_AFTER_MCP") === "1") {
+        console.log("{not json}");
+        return;
+    }
 
     const resultText = prompt.includes("ASSISTANT: agy:first")
         ? "agy:second saw agy:first"
@@ -252,6 +290,9 @@ async function withAgyExecutionFixture(
         const previousExpectedModel = Deno.env.get("RUNWIELD_AGY_EXPECTED_MODEL");
         const previousFailAgents = Deno.env.get("RUNWIELD_AGY_FAIL_AGENTS");
         const previousFailTurn = Deno.env.get("RUNWIELD_AGY_FAIL_TURN");
+        const previousFailAfterMcp = Deno.env.get("RUNWIELD_AGY_FAIL_AFTER_MCP");
+        const previousMalformedAfterMcp = Deno.env.get("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
+        const previousDescendantPid = Deno.env.get("RUNWIELD_AGY_DESCENDANT_PID");
         const previousMcpCalls = Deno.env.get("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
         const home = await Deno.makeTempDir({ prefix: "runwield-agy-exec-home-" });
         const cwd = join(home, "project");
@@ -266,6 +307,9 @@ async function withAgyExecutionFixture(
             Deno.env.set("RUNWIELD_AGY_EXPECTED_MODEL", "fixture-model");
             Deno.env.delete("RUNWIELD_AGY_FAIL_AGENTS");
             Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
+            Deno.env.delete("RUNWIELD_AGY_FAIL_AFTER_MCP");
+            Deno.env.delete("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
+            Deno.env.delete("RUNWIELD_AGY_DESCENDANT_PID");
             Deno.env.delete("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
             await installAgyCliMcpSetup();
             await callback(home, cwd, logPath);
@@ -282,6 +326,12 @@ async function withAgyExecutionFixture(
             else Deno.env.set("RUNWIELD_AGY_FAIL_AGENTS", previousFailAgents);
             if (previousFailTurn === undefined) Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
             else Deno.env.set("RUNWIELD_AGY_FAIL_TURN", previousFailTurn);
+            if (previousFailAfterMcp === undefined) Deno.env.delete("RUNWIELD_AGY_FAIL_AFTER_MCP");
+            else Deno.env.set("RUNWIELD_AGY_FAIL_AFTER_MCP", previousFailAfterMcp);
+            if (previousMalformedAfterMcp === undefined) Deno.env.delete("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
+            else Deno.env.set("RUNWIELD_AGY_MALFORMED_AFTER_MCP", previousMalformedAfterMcp);
+            if (previousDescendantPid === undefined) Deno.env.delete("RUNWIELD_AGY_DESCENDANT_PID");
+            else Deno.env.set("RUNWIELD_AGY_DESCENDANT_PID", previousDescendantPid);
             if (previousMcpCalls === undefined) Deno.env.delete("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
             else Deno.env.set("RUNWIELD_AGY_EXECUTION_MCP_CALLS", previousMcpCalls);
             await removeTempDir(home);
@@ -374,6 +424,7 @@ Deno.test("Agy CLI selected root turn dispatches through agy and rebuilds RunWie
         assertEquals(calls.length, 2);
         assertEquals(calls[0].model, "fixture-model");
         assertEquals(calls[0].args.includes("--disable-slash-commands"), true);
+        assertEquals(calls[0].args[calls[0].args.indexOf("--print-timeout") + 1], "24h");
         assertEquals(calls[0].args.includes("--conversation"), false);
         assertEquals(calls[0].prompt.includes("first user marker"), true);
         assertEquals(calls[0].prompt.includes("Antigravity CLI backend limitations"), false);
@@ -527,6 +578,193 @@ Deno.test("every eligible Agy role invokes its real lifecycle tool through confi
     });
 });
 
+Deno.test("Agy CLI rejects custom-agent drift before the next root turn commits a request", async () => {
+    await withAgyExecutionFixture(async (home, cwd, logPath) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        const root = await ensureRootAgentSession({ hostedSession, agentName: AGENTS.GUIDE }) as never as AgyRootRef;
+
+        await runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "first user marker" });
+        const callsBefore = await readCalls(logPath);
+        const definitionPath = join(home, ".gemini", "config", "agents", callsBefore[0].agent, "agent.md");
+        await Deno.writeTextFile(definitionPath, "changed by another owner\n");
+
+        await assertRejects(
+            () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "second user marker" }),
+            Error,
+            "RunWield could not verify its temporary Antigravity Agent",
+        );
+
+        assertEquals(await Deno.readTextFile(definitionPath), "changed by another owner\n");
+        assertEquals((await readCalls(logPath)).length, callsBefore.length);
+        const branch = getRootSessionBranchEntries(manager) as BranchEntryRecord[];
+        assertEquals(
+            branch.filter((entry) => entry.type === "message" && entry.message?.role === "user").length,
+            1,
+        );
+        const branchText = JSON.stringify(branch);
+        assertStringIncludes(branchText, "custom_agent_invalid");
+        assertEquals(branchText.includes("runwield.workflow_tool_event"), false);
+        await root.session.dispose();
+    });
+});
+
+Deno.test("Agy failures preserve workflow authority and terminate every owned process", async () => {
+    if (Deno.build.os === "windows") return;
+    await withAgyExecutionFixture(async (_home, cwd) => {
+        const beforePidPath = join(cwd, "before-descendant.pid");
+        const beforeManager = SessionManager.inMemory(cwd);
+        const beforeSession = createHostedSession(cwd, beforeManager);
+        beforeSession.setActiveExecutionWorkflow({
+            planName: "quick-fix-before",
+            triageMeta: { classification: "QUICK_FIX" },
+            executionAgent: "engineer",
+            executionStarted: true,
+            projectRoot: cwd,
+            executionCwd: cwd,
+            nonGitInPlace: true,
+            executionMode: "non_git_in_place",
+        });
+        const beforeRoot = await ensureRootAgentSession({
+            hostedSession: beforeSession,
+            agentName: AGENTS.ENGINEER,
+        }) as never as AgyRootRef;
+        Deno.env.set("RUNWIELD_AGY_DESCENDANT_PID", beforePidPath);
+        Deno.env.set("RUNWIELD_AGY_FAIL_TURN", "1");
+
+        await assertRejects(
+            () =>
+                runRootTurn({
+                    hostedSession: beforeSession,
+                    agentName: AGENTS.ENGINEER,
+                    userRequest: "fail before tool",
+                    dispatchKind: "plan_execution",
+                }),
+            Error,
+            "Antigravity CLI exited before completing the turn",
+        );
+        const beforeDescendantPid = Number((await Deno.readTextFile(beforePidPath)).trim());
+        assertEquals(await waitForProcessDeath(beforeDescendantPid), true);
+        const beforeEntries = getRootSessionBranchEntries(beforeManager) as BranchEntryRecord[];
+        assertEquals(
+            beforeEntries.filter((entry) => entry.customType === "runwield.workflow_tool_event").length,
+            0,
+        );
+        const beforeStatus = beforeEntries.find((entry) => entry.customType === "runwield.backend_status")?.data;
+        assertEquals(beforeStatus?.kind, "non_zero_exit");
+        assertEquals(beforeStatus?.afterAcceptedTerminal, undefined);
+        await beforeRoot.session.dispose();
+
+        Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
+        const afterPidPath = join(cwd, "after-descendant.pid");
+        const callsPath = join(cwd, "after-agy-mcp-calls.json");
+        const completionMessage = `accepted terminal ${crypto.randomUUID()}`;
+        await Deno.writeTextFile(
+            callsPath,
+            JSON.stringify([
+                { name: "runwield_task_completed", arguments: { message: completionMessage } },
+                { name: "runwield_task_completed", arguments: { message: `duplicate ${completionMessage}` } },
+            ]),
+        );
+        Deno.env.set("RUNWIELD_AGY_EXECUTION_MCP_CALLS", callsPath);
+        Deno.env.set("RUNWIELD_AGY_DESCENDANT_PID", afterPidPath);
+        Deno.env.set("RUNWIELD_AGY_FAIL_AFTER_MCP", "1");
+        const afterManager = SessionManager.inMemory(cwd);
+        const afterSession = createHostedSession(cwd, afterManager);
+        afterSession.setActiveExecutionWorkflow({
+            planName: "quick-fix-after",
+            triageMeta: { classification: "QUICK_FIX" },
+            executionAgent: "engineer",
+            executionStarted: true,
+            projectRoot: cwd,
+            executionCwd: cwd,
+            nonGitInPlace: true,
+            executionMode: "non_git_in_place",
+        });
+        const afterRoot = await ensureRootAgentSession({
+            hostedSession: afterSession,
+            agentName: AGENTS.ENGINEER,
+        }) as never as AgyRootRef;
+
+        await runRootTurn({
+            hostedSession: afterSession,
+            agentName: AGENTS.ENGINEER,
+            userRequest: "accept tool then fail host",
+            dispatchKind: "plan_execution",
+        });
+
+        const afterDescendantPid = Number((await Deno.readTextFile(afterPidPath)).trim());
+        assertEquals(await waitForProcessDeath(afterDescendantPid), true);
+        const afterEntries = getRootSessionBranchEntries(afterManager) as BranchEntryRecord[];
+        assertEquals(afterEntries.filter((entry) => entry.customType === "runwield.workflow_tool_event").length, 1);
+        const afterText = JSON.stringify(afterEntries);
+        assertStringIncludes(afterText, completionMessage);
+        assertStringIncludes(afterText, "the accepted completion already closed the lifecycle gate");
+        const afterStatus = afterEntries.find((entry) => entry.customType === "runwield.backend_status")?.data;
+        assertEquals(afterStatus?.kind, "non_zero_exit");
+        assertEquals(afterStatus?.afterAcceptedTerminal, true);
+        await afterRoot.session.dispose();
+    });
+});
+
+Deno.test("Agy retry reconstructs only committed transcript after classified failure", async () => {
+    await withAgyExecutionFixture(async (home, cwd, logPath) => {
+        const executablePath = join(home, "bin", "agy");
+        const executableText = await Deno.readTextFile(executablePath);
+        const fixturePath = Deno.env.get("PATH") || "";
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        const root = await ensureRootAgentSession({ hostedSession, agentName: AGENTS.GUIDE }) as never as AgyRootRef;
+
+        await Deno.remove(executablePath);
+        Deno.env.set("PATH", join(home, "bin"));
+        await assertRejects(
+            () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "missing executable turn" }),
+            Error,
+            "Antigravity CLI is not available",
+        );
+        let branch = getRootSessionBranchEntries(manager) as BranchEntryRecord[];
+        assertEquals(branch.filter((entry) => entry.type === "message" && entry.message?.role === "user").length, 0);
+        assertEquals(
+            branch.find((entry) => entry.customType === "runwield.backend_status")?.data?.kind,
+            "missing_executable",
+        );
+        const attemptsAfterMissing = branch.filter((entry) => entry.customType === "runwield.request_attempt");
+        assertStringIncludes(JSON.stringify(attemptsAfterMissing.at(-1)), '"promptMode":"original"');
+
+        await Deno.writeTextFile(executablePath, executableText);
+        await Deno.chmod(executablePath, 0o755);
+        Deno.env.set("PATH", fixturePath);
+        Deno.env.set("RUNWIELD_AGY_MALFORMED_AFTER_MCP", "1");
+        await assertRejects(
+            () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "bad stream turn" }),
+            Error,
+            "malformed stream output",
+        );
+        Deno.env.delete("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
+        await Deno.writeTextFile(logPath, "");
+
+        await runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "bad stream turn" });
+
+        branch = getRootSessionBranchEntries(manager) as BranchEntryRecord[];
+        const branchText = JSON.stringify(branch);
+        assertEquals(branchText.split("bad stream turn").length - 1, 1);
+        assertEquals(
+            branch.filter((entry) => entry.type === "message" && entry.message?.role === "assistant").length,
+            1,
+        );
+        const calls = await readCalls(logPath);
+        assertEquals(calls.length, 1);
+        assertStringIncludes(calls[0].prompt, "USER: bad stream turn");
+        assertStringIncludes(
+            calls[0].prompt,
+            "USER: Continue the active agent task after the previous backend failed.",
+        );
+        await root.session.dispose();
+        await assertNoTemporaryAgents(home);
+    });
+});
+
 Deno.test("Agy CLI replay expands durable named invocations once", async () => {
     await withAgyExecutionFixture(async (home, cwd, logPath) => {
         const manager = SessionManager.inMemory(cwd);
@@ -619,7 +857,7 @@ Deno.test("Agy CLI first root image requests fail before agent creation or trans
     });
 });
 
-Deno.test("Agy CLI root process failure removes the temporary agent", async () => {
+Deno.test("Agy CLI root process failure records sanitized status and keeps the reusable temporary agent", async () => {
     await withAgyExecutionFixture(async (home, cwd) => {
         const manager = SessionManager.inMemory(cwd);
         const hostedSession = createHostedSession(cwd, manager);
@@ -629,11 +867,14 @@ Deno.test("Agy CLI root process failure removes the temporary agent", async () =
         await assertRejects(
             () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "fail this turn" }),
             Error,
-            "stream ended without output",
+            "Antigravity CLI exited before completing the turn",
         );
 
-        await assertNoTemporaryAgents(home);
+        const branchText = JSON.stringify(getRootSessionBranchEntries(manager));
+        assertStringIncludes(branchText, "runwield.backend_status");
+        assertStringIncludes(branchText, "non_zero_exit");
         await root.session.dispose();
+        await assertNoTemporaryAgents(home);
     });
 });
 
@@ -745,7 +986,7 @@ Deno.test("Agy CLI root setup failure keeps the previous root session usable", a
                     modelOverride: "agy-cli/fixture-model",
                 }),
             Error,
-            "Could not prepare Antigravity custom agent for Planner",
+            "RunWield could not verify its temporary Antigravity Agent",
         );
         assertEquals(hostedSession.getRootAgentSession() === root as never, true);
         assertEquals(hostedSession.getRootAgentName(), AGENTS.GUIDE);
