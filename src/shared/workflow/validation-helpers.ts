@@ -27,6 +27,7 @@ import {
 
 import { extractAssistantOutput } from "./workflow.js";
 import { acknowledgeTaskCompletion, claimPendingTaskCompletion } from "../session/task-completion-session.ts";
+import { AGY_CLI_MCP_PROVENANCE, CLAUDE_CLI_MCP_PROVENANCE } from "../session/bridged-tools/mcp-bridge.ts";
 import { runActiveAgentTurn, switchActiveAgent } from "../session/agent-switching.js";
 import {
     requestHostedSessionInteraction,
@@ -438,20 +439,20 @@ interface ReviewDiffToolResult {
 }
 
 /**
- * Whether the latest accepted `review_complete` result came from the trusted
- * Claude CLI MCP bridge.
+ * Whether the latest accepted `review_complete` result came from a trusted
+ * opaque MCP bridge.
  *
- * Claude CLI owns its internal read/Bash tool loop and RunWield does not
- * ingest that internal transcript, so a bridge-stamped accepted result waives
- * only the Pi-specific `review_diff`-before-verdict prerequisite. The waiver
- * says nothing about what Claude actually inspected; it is not proof of
- * inspection and must not generalize to Pi, Attached Mode, arbitrary external
- * results, or approval with incomplete/open findings.
+ * External CLI backends own their internal read/shell tool loop and RunWield
+ * does not ingest that internal transcript, so a bridge-stamped accepted result
+ * waives only the Pi-specific `review_diff`-before-verdict prerequisite. The
+ * waiver says nothing about what the reviewer actually inspected; it is not
+ * proof of inspection and must not generalize to Pi, Attached Mode, arbitrary
+ * external results, or approval with incomplete/open findings.
  *
  * @param {import('@earendil-works/pi-agent-core').AgentMessage[]} messages
  * @returns {boolean}
  */
-export function hasTrustedClaudeMcpReview(messages: import("@earendil-works/pi-agent-core").AgentMessage[]) {
+export function hasTrustedOpaqueMcpReview(messages: import("@earendil-works/pi-agent-core").AgentMessage[]) {
     if (!Array.isArray(messages)) return false;
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
@@ -460,7 +461,7 @@ export function hasTrustedClaudeMcpReview(messages: import("@earendil-works/pi-a
         const details = (msg as { details?: { outcome?: unknown; provenance?: unknown } }).details || {};
         const outcome = details.outcome;
         if (outcome !== "approved" && outcome !== "feedback") continue;
-        return details.provenance === "claude-cli-mcp";
+        return details.provenance === CLAUDE_CLI_MCP_PROVENANCE || details.provenance === AGY_CLI_MCP_PROVENANCE;
     }
     return false;
 }
