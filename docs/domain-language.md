@@ -574,11 +574,13 @@ _Avoid_: settings key, Custom Tool definition
 **MCP Tool**: A tool discovered from a trusted MCP server. RunWield gives it a stable `mcp_<server>_<tool>` name and
 keeps the original server and tool names in the description. _Avoid_: RunWield built-in tool, Custom Tool
 
-**Bridged Tool**: A RunWield Tool exposed to one Claude CLI turn over the authenticated loopback MCP bridge. Lifecycle
-Bridged Tools can advance workflow state and keep the legacy `runwield_` aliases for `plan_written`, `task_completed`,
-`review_complete`, and `triage_report`. Capability Bridged Tools do memory, Cymbal code intelligence, web access, Work
-Record, interview, edit, MCP, or caller-supplied work and use their internal names, avoiding new aliases such as
-`runwield_memory` or `runwield_code_search`. _Avoid_: Claude native tool, MCP plugin
+**Bridged Tool**: A RunWield Tool exposed to an eligible external CLI Execution Backend turn over an authenticated MCP
+bridge. Claude CLI and Antigravity CLI are the current examples. Lifecycle Bridged Tools can advance workflow state and
+keep the shared external `runwield_` aliases for `plan_written`, `task_completed`, and `review_complete`; Claude CLI
+also keeps its existing `runwield_triage_report` alias. Capability Bridged Tools do memory, Cymbal code intelligence,
+web access, Work Record, interview, edit, MCP, or caller-supplied work and use their internal names, avoiding new
+aliases such as `runwield_memory` or `runwield_code_search`. A Session Transcript can display and audit the tool
+exchange, but a Workflow Tool Event remains the workflow authority. _Avoid_: CLI native tool, MCP plugin
 
 **Memory Tool**: The `memory` Custom Tool that recalls, stores, or deletes Mnemosyne memories through an explicit
 `action`. `action: "recall"` searches project and global memories together and labels each result group.

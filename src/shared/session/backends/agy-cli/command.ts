@@ -5,6 +5,7 @@ export interface AgyCliRunRequest {
     model: string;
     userRequest: string;
     effort?: "low" | "medium" | "high";
+    env?: Record<string, string>;
 }
 
 export interface PreparedAgyCliCommand {
@@ -24,7 +25,7 @@ export function prepareAgyCliStreamCommand(request: AgyCliRunRequest): PreparedA
     return {
         command: "agy",
         args,
-        env: {},
+        env: { ...(request.env || {}) },
     };
 }
 

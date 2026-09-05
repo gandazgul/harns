@@ -423,6 +423,11 @@ function normalizeManagedActiveModelState(modelState, managed) {
     return { model, provider };
 }
 
+/** @param {unknown} error */
+function isAgyCliMcpSetupApprovalError(error) {
+    return error instanceof Error && error.name === "AgyCliMcpSetupApprovalError";
+}
+
 /**
  * @param {import('@earendil-works/pi-coding-agent').SessionManager} sessionManager
  * @returns {string | undefined}
@@ -1386,10 +1391,12 @@ export class SessionRuntime {
                     model,
                 );
             } catch (error) {
-                if (previousUserOverride) {
-                    session.setActiveModelState(previousModelState.model, previousModelState.provider || "", true);
-                } else {
-                    session.clearUserModelOverride?.();
+                if (!isAgyCliMcpSetupApprovalError(error)) {
+                    if (previousUserOverride) {
+                        session.setActiveModelState(previousModelState.model, previousModelState.provider || "", true);
+                    } else {
+                        session.clearUserModelOverride?.();
+                    }
                 }
                 throw error;
             }
