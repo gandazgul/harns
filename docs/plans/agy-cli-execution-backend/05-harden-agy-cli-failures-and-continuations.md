@@ -16,7 +16,7 @@ affectedPaths:
 executionAgent: "engineer"
 collaborationRecommendation: "autonomous"
 createdAt: "2026-08-23T20:02:05.478Z"
-status: "validated_reviewer"
+status: "validated"
 origin: "internal"
 parentPlan: "agy-cli-execution-backend"
 order: 5

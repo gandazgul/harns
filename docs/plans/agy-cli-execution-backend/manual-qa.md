@@ -71,3 +71,20 @@ Manual verification steps for agy-cli-execution-backend/04-bridge-agy-workflow-s
 - [ ] After each turn, confirm global setup is unchanged and no stdio bridge process or loopback listener remains.
 
 <!-- runwield:manual-qa:end child="agy-cli-execution-backend/04-bridge-agy-workflow-signals-through-mcp" -->
+
+<!-- runwield:manual-qa:start child="agy-cli-execution-backend/05-harden-agy-cli-failures-and-continuations" -->
+
+## Harden Agy CLI Failures and Continuations
+
+Manual verification steps for agy-cli-execution-backend/05-harden-agy-cli-failures-and-continuations
+
+- [ ] Run an ordinary Agy Guide turn and confirm the command uses `--print-timeout 24h` and the verified assistant text
+      remains after replay.
+- [ ] Run an active workflow turn without a lifecycle call and confirm the workflow remains waiting; then accept one
+      lifecycle call and confirm it advances exactly once.
+- [ ] Press Escape during a live Agy turn and confirm Agy, its descendants, the MCP adapter, and the bridge stop without
+      changing workflow state.
+- [ ] Run unauthenticated and denied-action cases and confirm the UI shows bounded sign-in or permission guidance
+      without raw secrets, paths, URLs, environment data, or temporary Agent selectors.
+
+<!-- runwield:manual-qa:end child="agy-cli-execution-backend/05-harden-agy-cli-failures-and-continuations" -->
