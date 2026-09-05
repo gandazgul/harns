@@ -10,6 +10,7 @@ export interface AgyCliProcessStatus {
 }
 
 export interface AgyCliProcessResult {
+    pid: number | null;
     stdout: ReadableStream<Uint8Array>;
     stderrText: Promise<string>;
     completed: Promise<AgyCliProcessStatus>;
@@ -35,6 +36,7 @@ export class DenoAgyCliProcessPort {
             throw error;
         }
         return {
+            pid: process.pid,
             stdout: process.stdout,
             stderrText: new Response(process.stderr).text(),
             completed: process.done.then((outcome) => ({

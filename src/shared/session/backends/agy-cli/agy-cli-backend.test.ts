@@ -316,6 +316,27 @@ Deno.test("Agy parser handles real Antigravity 1.1 stream-json shape", async () 
 
 Deno.test("Agy parser rejects malformed, empty, missing-result, and mismatched streams", async () => {
     await assertRejects(() => parseAgyCliStream(streamFromText("{not json}\n")), AgyCliStreamError, "malformed");
+    let pulledChunks = 0;
+    const malformedThenResult = [
+        new TextEncoder().encode("{not json}\n"),
+        new TextEncoder().encode(JSON.stringify({ type: "result", result: "finished" }) + "\n"),
+    ];
+    await assertRejects(
+        () =>
+            parseAgyCliStream(
+                new ReadableStream<Uint8Array>({
+                    pull(controller) {
+                        const chunk = malformedThenResult[pulledChunks];
+                        pulledChunks += 1;
+                        if (chunk) controller.enqueue(chunk);
+                        else controller.close();
+                    },
+                }),
+            ),
+        AgyCliStreamError,
+        "malformed",
+    );
+    assertEquals(pulledChunks, 3);
     await assertRejects(() => parseAgyCliStream(streamFromText("")), AgyCliStreamError, "without output");
     await assertRejects(
         () =>
@@ -401,12 +422,24 @@ Deno.test("Agy backend status covers all closed kinds and sanitizes persisted me
         assertEquals(entry.message.includes("TOKEN=value"), false);
         assertEquals(entry.message.includes("example.test"), false);
         assertEquals(entry.message.includes("runwield-guide-secret"), false);
-        assert(entry.message.length <= 1025);
+        assert(entry.message.length <= 1024);
     }
 
     assertEquals(
         sanitizeAgyStatusMessage("token=secret", "auth_failed"),
         "Antigravity CLI authentication failed. Sign in to Antigravity, then retry this turn.",
+    );
+    assertEquals(
+        sanitizeAgyStatusMessage("USER_NAME=alice FEATURE_VALUE=private visible", "non_zero_exit"),
+        "[redacted] [redacted] visible",
+    );
+    assertEquals(
+        sanitizeAgyStatusMessage("feature_value=private next", "non_zero_exit"),
+        "[redacted] next",
+    );
+    assertEquals(
+        sanitizeAgyStatusMessage("FEATURE_VALUE='private text' next", "non_zero_exit"),
+        "[redacted] next",
     );
 });
 

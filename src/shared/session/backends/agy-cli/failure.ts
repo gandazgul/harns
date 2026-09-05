@@ -69,7 +69,7 @@ const AGENT_SELECTOR = /runwield-[A-Za-z0-9._-]+/g;
 const SECRET_VALUE =
     /\b(api[_-]?key|token|authorization|bearer|oauth|secret|password|credential)\b\s*[:=]\s*([^\s,;]+)/gi;
 const BEARER = /bearer\s+[^\s,;]+/gi;
-const ENV_ASSIGNMENT = /\b[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL|HOME|PATH)\b=[^\s]+/g;
+const ENV_ASSIGNMENT = /\b[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]+)/g;
 const SENSITIVE_LINE =
     /\b(api[_-]?key|token|authorization|bearer|oauth|secret|password|credential|environment|env|prompt|config)\b/i;
 
@@ -127,15 +127,15 @@ export function sanitizeAgyStatusMessage(message: string, kind: AgyCliBackendSta
         .replace(URL, "[redacted-url]")
         .replace(SECRET_VALUE, "$1=[redacted]")
         .replace(BEARER, "Bearer [redacted]")
-        .replace(ENV_ASSIGNMENT, "[redacted-env]")
+        .replace(ENV_ASSIGNMENT, "[redacted]")
         .replace(AGENT_SELECTOR, "[redacted-agent]");
     const lines = redactedHome
         .split(/\r?\n/)
         .map((line) => line.trim().replace(/\s+/g, " "))
-        .filter((line) => line && !SENSITIVE_LINE.test(line));
+        .filter((line) => line && line !== "[redacted]" && !SENSITIVE_LINE.test(line));
     const joined = lines.join("\n").trim();
     const fallback = joined || DEFAULT_MESSAGES[kind];
-    return fallback.length > MAX_MESSAGE_LENGTH ? `${fallback.slice(0, MAX_MESSAGE_LENGTH)}…` : fallback;
+    return fallback.length > MAX_MESSAGE_LENGTH ? `${fallback.slice(0, MAX_MESSAGE_LENGTH - 1)}…` : fallback;
 }
 
 export function isAgyAuthFailure(text: string): boolean {

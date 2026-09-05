@@ -210,6 +210,12 @@ async function main(): Promise<void> {
     const prompt = readArg(args, "-p");
     const outputFormat = readArg(args, "--output-format");
     if (prompt === "/agents" && outputFormat === "json") {
+        const sleepAgentsPidPath = Deno.env.get("RUNWIELD_AGY_SLEEP_AGENTS_PID") || "";
+        if (sleepAgentsPidPath) {
+            await Deno.writeTextFile(sleepAgentsPidPath, String(Deno.pid));
+            setInterval(() => {}, 1000);
+            await new Promise(() => {});
+        }
         if (Deno.env.get("RUNWIELD_AGY_FAIL_AGENTS") === "1") Deno.exit(3);
         const agentsRoot = joinPath(home, ".gemini", "config", "agents");
         const agents: JsonRecord[] = [];
@@ -253,8 +259,24 @@ async function main(): Promise<void> {
     if (Deno.env.get("RUNWIELD_AGY_FAIL_TURN") === "1") Deno.exit(4);
     await runConfiguredMcp(home);
     if (Deno.env.get("RUNWIELD_AGY_FAIL_AFTER_MCP") === "1") Deno.exit(5);
+    if (Deno.env.get("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR") === "1") {
+        console.log("{not json}");
+        console.error("authentication failed for private account");
+        Deno.exit(7);
+    }
+    if (Deno.env.get("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO") === "1") {
+        console.log("{not json}");
+        console.error("authentication failed for private account");
+        return;
+    }
     if (Deno.env.get("RUNWIELD_AGY_MALFORMED_AFTER_MCP") === "1") {
         console.log("{not json}");
+        return;
+    }
+
+    if (Deno.env.get("RUNWIELD_AGY_PERMISSION_RESULT") === "1") {
+        emit({ event: "init", conversation_id: "conversation-" + crypto.randomUUID(), init: { agent, model } });
+        emit({ event: "result", result: { response: "permission result", status: "blocked", error: "permission denied by Antigravity", usage: { input_tokens: 1, output_tokens: 2 } } });
         return;
     }
 
@@ -292,6 +314,10 @@ async function withAgyExecutionFixture(
         const previousFailTurn = Deno.env.get("RUNWIELD_AGY_FAIL_TURN");
         const previousFailAfterMcp = Deno.env.get("RUNWIELD_AGY_FAIL_AFTER_MCP");
         const previousMalformedAfterMcp = Deno.env.get("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
+        const previousMalformedFailWithStderr = Deno.env.get("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR");
+        const previousMalformedAuthStderrZero = Deno.env.get("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO");
+        const previousPermissionResult = Deno.env.get("RUNWIELD_AGY_PERMISSION_RESULT");
+        const previousSleepAgentsPid = Deno.env.get("RUNWIELD_AGY_SLEEP_AGENTS_PID");
         const previousDescendantPid = Deno.env.get("RUNWIELD_AGY_DESCENDANT_PID");
         const previousMcpCalls = Deno.env.get("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
         const home = await Deno.makeTempDir({ prefix: "runwield-agy-exec-home-" });
@@ -309,6 +335,10 @@ async function withAgyExecutionFixture(
             Deno.env.delete("RUNWIELD_AGY_FAIL_TURN");
             Deno.env.delete("RUNWIELD_AGY_FAIL_AFTER_MCP");
             Deno.env.delete("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
+            Deno.env.delete("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR");
+            Deno.env.delete("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO");
+            Deno.env.delete("RUNWIELD_AGY_PERMISSION_RESULT");
+            Deno.env.delete("RUNWIELD_AGY_SLEEP_AGENTS_PID");
             Deno.env.delete("RUNWIELD_AGY_DESCENDANT_PID");
             Deno.env.delete("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
             await installAgyCliMcpSetup();
@@ -330,6 +360,16 @@ async function withAgyExecutionFixture(
             else Deno.env.set("RUNWIELD_AGY_FAIL_AFTER_MCP", previousFailAfterMcp);
             if (previousMalformedAfterMcp === undefined) Deno.env.delete("RUNWIELD_AGY_MALFORMED_AFTER_MCP");
             else Deno.env.set("RUNWIELD_AGY_MALFORMED_AFTER_MCP", previousMalformedAfterMcp);
+            if (previousMalformedFailWithStderr === undefined) {
+                Deno.env.delete("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR");
+            } else Deno.env.set("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR", previousMalformedFailWithStderr);
+            if (previousMalformedAuthStderrZero === undefined) {
+                Deno.env.delete("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO");
+            } else Deno.env.set("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO", previousMalformedAuthStderrZero);
+            if (previousPermissionResult === undefined) Deno.env.delete("RUNWIELD_AGY_PERMISSION_RESULT");
+            else Deno.env.set("RUNWIELD_AGY_PERMISSION_RESULT", previousPermissionResult);
+            if (previousSleepAgentsPid === undefined) Deno.env.delete("RUNWIELD_AGY_SLEEP_AGENTS_PID");
+            else Deno.env.set("RUNWIELD_AGY_SLEEP_AGENTS_PID", previousSleepAgentsPid);
             if (previousDescendantPid === undefined) Deno.env.delete("RUNWIELD_AGY_DESCENDANT_PID");
             else Deno.env.set("RUNWIELD_AGY_DESCENDANT_PID", previousDescendantPid);
             if (previousMcpCalls === undefined) Deno.env.delete("RUNWIELD_AGY_EXECUTION_MCP_CALLS");
@@ -609,6 +649,44 @@ Deno.test("Agy CLI rejects custom-agent drift before the next root turn commits 
     });
 });
 
+Deno.test("Agy abort stops the custom-agent preflight before committing the request", async () => {
+    if (Deno.build.os === "windows") return;
+    await withAgyExecutionFixture(async (_home, cwd) => {
+        const manager = SessionManager.inMemory(cwd);
+        const hostedSession = createHostedSession(cwd, manager);
+        const root = await ensureRootAgentSession({ hostedSession, agentName: AGENTS.GUIDE }) as never as AgyRootRef;
+        const pidPath = join(cwd, "agents-preflight.pid");
+        const controller = new AbortController();
+        Deno.env.set("RUNWIELD_AGY_SLEEP_AGENTS_PID", pidPath);
+        const turn = runRootTurn({
+            hostedSession,
+            agentName: AGENTS.GUIDE,
+            userRequest: "preflight abort request",
+            signal: controller.signal,
+        });
+        turn.catch(() => undefined);
+        while (true) {
+            try {
+                await Deno.stat(pidPath);
+                break;
+            } catch (error) {
+                if (!(error instanceof Deno.errors.NotFound)) throw error;
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+        }
+        const preflightPid = Number((await Deno.readTextFile(pidPath)).trim());
+        controller.abort();
+        await assertRejects(() => turn, Error, "Antigravity CLI turn canceled");
+        assertEquals(await waitForProcessDeath(preflightPid), true);
+        const branch = getRootSessionBranchEntries(manager) as BranchEntryRecord[];
+        assertEquals(
+            branch.filter((entry) => entry.type === "message" && entry.message?.role === "user").length,
+            0,
+        );
+        await root.session.dispose();
+    });
+});
+
 Deno.test("Agy failures preserve workflow authority and terminate every owned process", async () => {
     if (Deno.build.os === "windows") return;
     await withAgyExecutionFixture(async (_home, cwd) => {
@@ -704,6 +782,44 @@ Deno.test("Agy failures preserve workflow authority and terminate every owned pr
         assertEquals(afterStatus?.kind, "non_zero_exit");
         assertEquals(afterStatus?.afterAcceptedTerminal, true);
         await afterRoot.session.dispose();
+
+        Deno.env.delete("RUNWIELD_AGY_FAIL_AFTER_MCP");
+        Deno.env.delete("RUNWIELD_AGY_DESCENDANT_PID");
+        const permissionCallsPath = join(cwd, "permission-agy-mcp-calls.json");
+        await Deno.writeTextFile(
+            permissionCallsPath,
+            JSON.stringify([{ name: "runwield_task_completed", arguments: { message: "accepted permission result" } }]),
+        );
+        Deno.env.set("RUNWIELD_AGY_EXECUTION_MCP_CALLS", permissionCallsPath);
+        Deno.env.set("RUNWIELD_AGY_PERMISSION_RESULT", "1");
+        const permissionManager = SessionManager.inMemory(cwd);
+        const permissionSession = createHostedSession(cwd, permissionManager);
+        permissionSession.setActiveExecutionWorkflow({
+            planName: "quick-fix-permission",
+            triageMeta: { classification: "QUICK_FIX" },
+            executionAgent: "engineer",
+            executionStarted: true,
+            projectRoot: cwd,
+            executionCwd: cwd,
+            nonGitInPlace: true,
+            executionMode: "non_git_in_place",
+        });
+        const permissionRoot = await ensureRootAgentSession({
+            hostedSession: permissionSession,
+            agentName: AGENTS.ENGINEER,
+        }) as never as AgyRootRef;
+        await runRootTurn({
+            hostedSession: permissionSession,
+            agentName: AGENTS.ENGINEER,
+            userRequest: "accept tool then permission result",
+            dispatchKind: "plan_execution",
+        });
+        const permissionEntries = getRootSessionBranchEntries(permissionManager) as BranchEntryRecord[];
+        const permissionStatus = permissionEntries.find((entry) => entry.customType === "runwield.backend_status")
+            ?.data;
+        assertEquals(permissionStatus?.kind, "permission_denied");
+        assertEquals(permissionStatus?.afterAcceptedTerminal, true);
+        await permissionRoot.session.dispose();
     });
 });
 
@@ -735,6 +851,30 @@ Deno.test("Agy retry reconstructs only committed transcript after classified fai
         await Deno.writeTextFile(executablePath, executableText);
         await Deno.chmod(executablePath, 0o755);
         Deno.env.set("PATH", fixturePath);
+        Deno.env.set("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR", "1");
+        await assertRejects(
+            () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "auth stderr turn" }),
+            Error,
+            "authentication failed for private account",
+        );
+        branch = getRootSessionBranchEntries(manager) as BranchEntryRecord[];
+        assertEquals(
+            branch.filter((entry) => entry.customType === "runwield.backend_status").at(-1)?.data?.kind,
+            "auth_failed",
+        );
+        Deno.env.delete("RUNWIELD_AGY_MALFORMED_FAIL_WITH_STDERR");
+        Deno.env.set("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO", "1");
+        await assertRejects(
+            () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "auth stderr exit zero turn" }),
+            Error,
+            "authentication failed for private account",
+        );
+        branch = getRootSessionBranchEntries(manager) as BranchEntryRecord[];
+        assertEquals(
+            branch.filter((entry) => entry.customType === "runwield.backend_status").at(-1)?.data?.kind,
+            "auth_failed",
+        );
+        Deno.env.delete("RUNWIELD_AGY_MALFORMED_AUTH_STDERR_ZERO");
         Deno.env.set("RUNWIELD_AGY_MALFORMED_AFTER_MCP", "1");
         await assertRejects(
             () => runRootTurn({ hostedSession, agentName: AGENTS.GUIDE, userRequest: "bad stream turn" }),

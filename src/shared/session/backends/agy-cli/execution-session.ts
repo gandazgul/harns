@@ -233,7 +233,7 @@ export class AgyCliExecutionSession {
 
         try {
             try {
-                await this.verifyCustomAgentReady();
+                await this.verifyCustomAgentReady(combinedSignal);
             } catch (error) {
                 const failure = classifySetupFailure(error instanceof Error ? error : String(error));
                 emitFailure(failure, false);
@@ -288,6 +288,11 @@ export class AgyCliExecutionSession {
             try {
                 process = processPort.run(command, this.cwd, combinedSignal);
                 this.activeProcess = process;
+                if (process.pid === null) {
+                    const failure: ClassifiedFailure = { kind: "canceled", exitCode: null };
+                    emitFailure(failure, false);
+                    throw new AgyCliBackendError(failure.kind, { exitCode: failure.exitCode });
+                }
             } catch (error) {
                 const failure = classifySetupFailure(error instanceof Error ? error : String(error));
                 emitFailure(failure, false);
@@ -319,9 +324,6 @@ export class AgyCliExecutionSession {
                 });
             } catch (error) {
                 parseError = error instanceof Error ? error : new Error(String(error));
-                if (!(parseError instanceof AgyCliStreamError && parseError.kind === "empty_result")) {
-                    process.kill();
-                }
             }
 
             const [status, stderrText] = await Promise.all([process.completed, process.stderrText]);
@@ -352,8 +354,11 @@ export class AgyCliExecutionSession {
                 throw new AgyCliBackendError(fallback.kind, { exitCode: fallback.exitCode });
             }
 
-            if (acceptedTerminal) return this.getMessages();
             const softFailure = classifySoftResultStatus(parsed);
+            if (acceptedTerminal) {
+                if (softFailure) emitFailure(softFailure, true);
+                return this.getMessages();
+            }
             if (this.persistModelChange) this.sessionManager.appendModelChange(this.model.provider, this.model.id);
             const assistantMessage = makeAssistantMessage(parsed.text, this.model, parsed.metadata.usage);
             this.sessionManager.appendMessage(assistantMessage);
@@ -377,9 +382,9 @@ export class AgyCliExecutionSession {
         }
     }
 
-    private async verifyCustomAgentReady(): Promise<void> {
+    private async verifyCustomAgentReady(signal: AbortSignal): Promise<void> {
         await verifyAgyCustomAgentOwnership(this.ownership);
-        await verifyAgyCustomAgentListed(this.ownership.name, this.cwd);
+        await verifyAgyCustomAgentListed(this.ownership.name, this.cwd, signal);
     }
 
     private emitCleanupWarning(error: Error | string): void {
@@ -440,13 +445,23 @@ function classifySetupFailure(error: Error | string): ClassifiedFailure {
     return { kind: "custom_agent_invalid", exitCode: null };
 }
 
-async function verifyAgyCustomAgentListed(agentName: string, cwd: string): Promise<void> {
+async function verifyAgyCustomAgentListed(agentName: string, cwd: string, signal?: AbortSignal): Promise<void> {
     const processPort = new DenoAgyCliProcessPort();
-    const result = processPort.run(prepareAgyCliAgentsCommand(), cwd);
-    const stdoutText = await new Response(result.stdout).text();
-    const [status, stderrText] = await Promise.all([result.completed, result.stderrText]);
+    const result = processPort.run(prepareAgyCliAgentsCommand(), cwd, signal);
+    const stdoutTextPromise = new Response(result.stdout).text().catch(() => "");
+    const [status, stderrText, stdoutText] = await Promise.all([
+        result.completed,
+        result.stderrText,
+        stdoutTextPromise,
+    ]);
     if (!status.success) {
         const detail = stderrText || `agy /agents exited with code ${status.code}`;
+        if (signal?.aborted || status.terminatedBy === "abort") {
+            throw new AgyCliBackendError("canceled", { exitCode: status.code });
+        }
+        if (status.terminatedBy === "timeout") {
+            throw new AgyCliBackendError("timeout", { exitCode: status.code });
+        }
         if (isAgyAuthFailure(detail)) {
             throw new AgyCliBackendError("auth_failed", { exitCode: status.code, message: detail });
         }
@@ -483,16 +498,16 @@ function classifyTurnFailure(options: {
     if (status.terminatedBy === "abort" && signalAborted) return { kind: "canceled", exitCode: status.code };
     if (status.terminatedBy === "timeout") return { kind: "timeout", exitCode: status.code };
     const processDetail = stderrText || parsed?.metadata.errorText || parsed?.text || "";
+    if ((parseError || !status.success) && isAgyAuthFailure(processDetail)) {
+        return { kind: "auth_failed", exitCode: status.code, message: processDetail };
+    }
+    if ((parseError || !status.success) && isAgyPermissionDenied(processDetail)) {
+        return { kind: "permission_denied", exitCode: status.code, message: processDetail };
+    }
+    if ((parseError || !status.success) && isAgyMcpUnavailable(processDetail)) {
+        return { kind: "mcp_unavailable", exitCode: status.code, message: processDetail };
+    }
     if (!status.success && status.terminatedBy !== "abort") {
-        if (isAgyAuthFailure(processDetail)) {
-            return { kind: "auth_failed", exitCode: status.code, message: processDetail };
-        }
-        if (isAgyPermissionDenied(processDetail)) {
-            return { kind: "permission_denied", exitCode: status.code, message: processDetail };
-        }
-        if (isAgyMcpUnavailable(processDetail)) {
-            return { kind: "mcp_unavailable", exitCode: status.code, message: processDetail };
-        }
         return { kind: "non_zero_exit", exitCode: status.code, message: processDetail };
     }
     if (parseError) {

@@ -197,6 +197,7 @@ export async function parseAgyCliStream(
     let errorText = "";
     let deniedActions = false;
     let toolInfoCount = 0;
+    let streamError: AgyCliStreamError | null = null;
 
     const applyEvent = (event: AgyCliStreamEvent) => {
         if (event.kind === "init") {
@@ -230,15 +231,34 @@ export async function parseAgyCliStream(
         const lines = buffered.split(/\r?\n/);
         buffered = lines.pop() || "";
         for (const line of lines) {
-            const event = parseAgyCliJsonLine(line);
+            let event: AgyCliStreamEvent | null = null;
+            try {
+                event = parseAgyCliJsonLine(line);
+            } catch (error) {
+                if (!streamError) {
+                    streamError = error instanceof AgyCliStreamError
+                        ? error
+                        : new AgyCliStreamError("malformed_stream", String(error));
+                }
+            }
             if (event) applyEvent(event);
         }
     }
     buffered += decoder.decode();
     if (buffered.trim()) {
-        const event = parseAgyCliJsonLine(buffered);
+        let event: AgyCliStreamEvent | null = null;
+        try {
+            event = parseAgyCliJsonLine(buffered);
+        } catch (error) {
+            if (!streamError) {
+                streamError = error instanceof AgyCliStreamError
+                    ? error
+                    : new AgyCliStreamError("malformed_stream", String(error));
+            }
+        }
         if (event) applyEvent(event);
     }
+    if (streamError) throw streamError;
     if (!sawResult) {
         if (!visibleText) throw new AgyCliStreamError("empty_result", "Agy CLI stream ended without output");
         throw new AgyCliStreamError("empty_result", "Agy CLI stream ended without a terminal result");
