@@ -87,7 +87,6 @@
     "npm:class-variance-authority@~0.7.1": "0.7.1",
     "npm:clsx@^2.1.1": "2.1.1",
     "npm:codemirror@^6.0.2": "6.0.2",
-    "npm:diff@8.0.4": "8.0.4",
     "npm:diff@9": "9.0.0",
     "npm:dockview-react@^8.2.0": "8.2.0_react@19.2.7_react-dom@19.2.7__react@19.2.7",
     "npm:dompurify@*": "3.4.11",
@@ -95,7 +94,7 @@
     "npm:esbuild@~0.28.2": "0.28.2",
     "npm:fuse.js@^7.4.2": "7.4.2",
     "npm:highlight.js@^11.11.1": "11.11.1",
-    "npm:katex@~0.18.2": "0.18.4",
+    "npm:katex@~0.18.4": "0.18.5",
     "npm:lucide-react@^1.25.0": "1.26.0_react@19.2.7",
     "npm:marked@^17.0.6": "17.0.6",
     "npm:mermaid@^11.16.0": "11.16.0",
@@ -4214,6 +4213,9 @@
     "commander@11.1.0": {
       "integrity": "sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ=="
     },
+    "commander@15.0.0": {
+      "integrity": "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="
+    },
     "commander@7.2.0": {
       "integrity": "sha512-QrWXB+ZQSVPmIWIhtEO9H+gwHaMGYiF5ChvoJ+K9ZGHG/sVsa6yiesAD1GC/x46sET00Xlwo1u49RVVVzvcSkw=="
     },
@@ -5245,10 +5247,10 @@
       ],
       "bin": true
     },
-    "katex@0.18.4": {
-      "integrity": "sha512-IMPntbRLOU+eu88XDiFKqQ8Akhr9Tv7jDMXqPhjG9SI1JMA4DIgXk4x9k4skJz2NZJXBRbC+2pYBLj9olqcZow==",
+    "katex@0.18.5": {
+      "integrity": "sha512-1FU5H3RjGJVj6GT9fMjf2uMIXmPQp232aXS3UEeQzf0dxefHg/CKMvNB3DuOC46LFG/E5PNxrE8dOwB782FDGg==",
       "dependencies": [
-        "commander@8.3.0"
+        "commander@15.0.0"
       ],
       "bin": true
     },
@@ -6873,7 +6875,7 @@
       "npm:esbuild@~0.28.2",
       "npm:fuse.js@^7.4.2",
       "npm:highlight.js@^11.11.1",
-      "npm:katex@~0.18.2",
+      "npm:katex@~0.18.4",
       "npm:lucide-react@^1.25.0",
       "npm:marked@^17.0.6",
       "npm:mermaid@^11.16.0",
@@ -6890,11 +6892,6 @@
       "npm:typescript@^5.9.3",
       "npm:unique-username-generator@^1.5.1",
       "npm:vite@^8.1.5"
-    ],
-    "packageJson": {
-      "dependencies": [
-        "npm:diff@8.0.4"
-      ]
-    }
+    ]
   }
 }
